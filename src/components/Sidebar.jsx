@@ -70,13 +70,13 @@ const NAV_ITEMS = [
   },
 ]
 
-const SIDEBAR_BG = '#0f2d4a'
-const SIDEBAR_ACTIVE = '#1e5799'
-const SIDEBAR_HOVER = 'rgba(255,255,255,0.08)'
-const SIDEBAR_TEXT = 'rgba(255,255,255,0.72)'
-const SIDEBAR_TEXT_ACTIVE = '#ffffff'
+const BG = '#0f2d4a'
+const ACTIVE = '#1e5799'
+const HOVER = 'rgba(255,255,255,0.08)'
+const TEXT = 'rgba(255,255,255,0.72)'
+const TEXT_ACTIVE = '#ffffff'
 
-export default function Sidebar() {
+export default function Sidebar({ isMobile = false, isOpen = false, onClose = () => {} }) {
   const { profile, signOut } = useAuth()
   const navigate = useNavigate()
 
@@ -85,22 +85,43 @@ export default function Sidebar() {
     navigate('/login')
   }
 
+  // No mobile: sidebar é um drawer fixo que desliza da esquerda
+  // No desktop: sidebar é parte normal do layout (posição relativa)
+  const asideStyle = isMobile
+    ? {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        height: '100vh',
+        width: '270px',
+        zIndex: 50,
+        transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
+        transition: 'transform 0.26s ease',
+      }
+    : {
+        width: '260px',
+        minWidth: '260px',
+        height: '100vh',
+        position: 'sticky',
+        top: 0,
+        flexShrink: 0,
+      }
+
   return (
     <aside style={{
-      width: '260px',
-      minWidth: '260px',
-      background: SIDEBAR_BG,
+      ...asideStyle,
+      background: BG,
       display: 'flex',
       flexDirection: 'column',
-      height: '100vh',
-      position: 'sticky',
-      top: 0,
-      flexShrink: 0,
+      boxShadow: isMobile ? '4px 0 24px rgba(0,0,0,0.3)' : 'none',
     }}>
-      {/* Logo */}
+      {/* Logo + botão fechar (só no mobile) */}
       <div style={{
-        padding: '1.5rem 1.25rem 1.25rem',
+        padding: '1.25rem 1.25rem 1.1rem',
         borderBottom: '1px solid rgba(255,255,255,0.08)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
           <span style={{ fontSize: '1.75rem' }}>👓</span>
@@ -113,31 +134,59 @@ export default function Sidebar() {
             </div>
           </div>
         </div>
+
+        {/* Botão X — somente no mobile */}
+        {isMobile && (
+          <button
+            onClick={onClose}
+            aria-label="Fechar menu"
+            style={{
+              background: 'rgba(255,255,255,0.08)',
+              border: 'none',
+              borderRadius: '0.5rem',
+              width: '32px',
+              height: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: 'rgba(255,255,255,0.7)',
+              flexShrink: 0,
+            }}
+          >
+            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5"
+              strokeLinecap="round" viewBox="0 0 24 24">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        )}
       </div>
 
-      {/* Navigation */}
-      <nav style={{ flex: 1, padding: '0.75rem 0.75rem', overflowY: 'auto' }}>
+      {/* Navegação */}
+      <nav style={{ flex: 1, padding: '0.75rem', overflowY: 'auto' }}>
         {NAV_ITEMS.map(({ to, label, icon }) => (
           <NavLink
             key={to}
             to={to}
+            onClick={isMobile ? onClose : undefined}
             style={({ isActive }) => ({
               display: 'flex',
               alignItems: 'center',
               gap: '0.75rem',
-              padding: '0.625rem 0.75rem',
+              padding: '0.7rem 0.75rem',
               borderRadius: '0.625rem',
               marginBottom: '0.125rem',
-              color: isActive ? SIDEBAR_TEXT_ACTIVE : SIDEBAR_TEXT,
-              background: isActive ? SIDEBAR_ACTIVE : 'transparent',
+              color: isActive ? TEXT_ACTIVE : TEXT,
+              background: isActive ? ACTIVE : 'transparent',
               textDecoration: 'none',
               fontWeight: isActive ? '600' : '400',
-              fontSize: '0.875rem',
+              fontSize: '0.9rem',
               transition: 'all 0.15s',
             })}
             onMouseEnter={e => {
               const isActive = e.currentTarget.getAttribute('aria-current') === 'page'
-              if (!isActive) e.currentTarget.style.background = SIDEBAR_HOVER
+              if (!isActive) e.currentTarget.style.background = HOVER
             }}
             onMouseLeave={e => {
               const isActive = e.currentTarget.getAttribute('aria-current') === 'page'
@@ -150,7 +199,7 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* User info + logout */}
+      {/* Usuário + Sair */}
       <div style={{
         padding: '1rem',
         borderTop: '1px solid rgba(255,255,255,0.08)',
@@ -167,13 +216,13 @@ export default function Sidebar() {
           onClick={handleSignOut}
           style={{
             width: '100%',
-            padding: '0.5rem',
+            padding: '0.55rem',
             background: 'rgba(255,255,255,0.08)',
-            color: 'rgba(255,255,255,0.72)',
+            color: TEXT,
             border: 'none',
             borderRadius: '0.5rem',
             cursor: 'pointer',
-            fontSize: '0.8rem',
+            fontSize: '0.82rem',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -186,7 +235,7 @@ export default function Sidebar() {
           }}
           onMouseLeave={e => {
             e.currentTarget.style.background = 'rgba(255,255,255,0.08)'
-            e.currentTarget.style.color = 'rgba(255,255,255,0.72)'
+            e.currentTarget.style.color = TEXT
           }}
         >
           <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
