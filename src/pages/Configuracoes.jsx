@@ -110,9 +110,11 @@ function Modal({ title, onClose, children }) {
       <div style={{
         background: '#fff',
         borderRadius: '1.25rem',
-        padding: '2rem',
+        padding: 'clamp(1rem, 5vw, 2rem)',
         width: '100%',
         maxWidth: '480px',
+        maxHeight: '90dvh',
+        overflowY: 'auto',
         boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -715,8 +717,8 @@ export default function Configuracoes() {
   })
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <h1 style={{ fontSize: '1.5rem', fontWeight: '800', color: '#0f2d4a', margin: '0 0 1.5rem', letterSpacing: '-0.3px' }}>
+    <div className="pg">
+      <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: '0 0 1.5rem', letterSpacing: '-0.3px' }}>
         Configurações
       </h1>
 
