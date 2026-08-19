@@ -39,7 +39,7 @@ export default function Login() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(145deg, #0f2d4a 0%, #1e5799 60%, #2563eb 100%)',
+      background: 'linear-gradient(145deg, #0f2d4a 0%, #7a1010 60%, #C0272D 100%)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -56,7 +56,15 @@ export default function Login() {
       }}>
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div style={{ fontSize: '3.25rem', marginBottom: '0.75rem', lineHeight: 1 }}>👓</div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.75rem' }}>
+            <img
+              src={`${import.meta.env.BASE_URL}logo.png`}
+              alt="Logo"
+              style={{ width: '80px', height: '80px', objectFit: 'contain' }}
+              onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'block' }}
+            />
+            <div style={{ fontSize: '3.25rem', lineHeight: 1, display: 'none' }}>👓</div>
+          </div>
           <h1 style={{
             fontSize: '1.4rem',
             fontWeight: '800',
@@ -94,8 +102,8 @@ export default function Login() {
               placeholder="seu@email.com"
               style={inputStyle}
               onFocus={e => {
-                e.target.style.borderColor = '#2563eb'
-                e.target.style.boxShadow = '0 0 0 3px rgba(37,99,235,0.12)'
+                e.target.style.borderColor = '#C0272D'
+                e.target.style.boxShadow = '0 0 0 3px rgba(192,39,45,0.12)'
                 e.target.style.background = '#fff'
               }}
               onBlur={e => {
@@ -127,8 +135,8 @@ export default function Login() {
               placeholder="••••••••"
               style={inputStyle}
               onFocus={e => {
-                e.target.style.borderColor = '#2563eb'
-                e.target.style.boxShadow = '0 0 0 3px rgba(37,99,235,0.12)'
+                e.target.style.borderColor = '#C0272D'
+                e.target.style.boxShadow = '0 0 0 3px rgba(192,39,45,0.12)'
                 e.target.style.background = '#fff'
               }}
               onBlur={e => {
@@ -163,8 +171,8 @@ export default function Login() {
               width: '100%',
               padding: '0.8rem',
               background: loading
-                ? '#93c5fd'
-                : 'linear-gradient(135deg, #1e5799, #2563eb)',
+                ? '#e88a8d'
+                : 'linear-gradient(135deg, #a01f24, #C0272D)',
               color: '#fff',
               border: 'none',
               borderRadius: '0.625rem',

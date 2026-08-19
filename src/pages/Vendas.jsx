@@ -1,12 +1,616 @@
-import EmConstrucao from '../components/EmConstrucao'
+import { useState, useEffect, useCallback } from 'react'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
 
+/* ── helpers ── */
+function fBRL(v) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
+}
+function fDateBR(iso) {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+function toISO(br) {
+  const [d, m, y] = br.split('/')
+  return `${y}-${m}-${d}`
+}
+function todayISO() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+/* ── estilos reutilizáveis ── */
+const card = {
+  background: '#fff',
+  borderRadius: '1rem',
+  padding: '1.5rem',
+  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+  border: '1px solid #f1f5f9',
+}
+const inputCss = {
+  width: '100%',
+  padding: '0.65rem 0.875rem',
+  border: '1.5px solid #e2e8f0',
+  borderRadius: '0.625rem',
+  fontSize: '0.9rem',
+  outline: 'none',
+  boxSizing: 'border-box',
+  color: '#1e293b',
+  background: '#f8fafc',
+}
+const btnPrimary = {
+  padding: '0.6rem 1.25rem',
+  background: '#C0272D',
+  color: '#fff',
+  border: 'none',
+  borderRadius: '0.625rem',
+  fontSize: '0.875rem',
+  fontWeight: '600',
+  cursor: 'pointer',
+}
+const btnSecondary = {
+  padding: '0.6rem 1.25rem',
+  background: '#f1f5f9',
+  color: '#475569',
+  border: '1.5px solid #e2e8f0',
+  borderRadius: '0.625rem',
+  fontSize: '0.875rem',
+  fontWeight: '600',
+  cursor: 'pointer',
+}
+const Label = ({ children }) => (
+  <label style={{
+    display: 'block', fontSize: '0.8rem', fontWeight: '600',
+    color: '#475569', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px',
+  }}>{children}</label>
+)
+
+const FORM_INIT = {
+  os_numero: '',
+  nota_fiscal: '',
+  data: todayISO(),
+  vendedor_id: '',
+  valor_bruto: '',
+  desconto: '0',
+  valor_final: '',
+  forma_pagamento: '',
+}
+
+/* ── componente FormVenda ── */
+function FormVenda({ form, onChange, onCalc, vendedores, formasPagamento, isAdmin, onSubmit, onCancel, saving, editando }) {
+  function handleBrutoDesc(field, val) {
+    const next = { ...form, [field]: val }
+    const bruto = parseFloat(String(next.valor_bruto).replace(',', '.')) || 0
+    const desc = parseFloat(String(next.desconto).replace(',', '.')) || 0
+    next.valor_final = Math.max(0, bruto - desc).toFixed(2)
+    onChange(next)
+  }
+  function handleFinal(val) {
+    onChange({ ...form, valor_final: val })
+  }
+
+  const bruto = parseFloat(String(form.valor_bruto).replace(',', '.')) || 0
+  const desc = parseFloat(String(form.desconto).replace(',', '.')) || 0
+
+  return (
+    <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem' }}>
+        {/* O.S. */}
+        <div>
+          <Label>Nº O.S.</Label>
+          <input style={{ ...inputCss, background: '#f1f5f9', color: '#94a3b8' }}
+            value={form.os_numero} readOnly />
+        </div>
+
+        {/* Nota Fiscal */}
+        <div>
+          <Label>Nota Fiscal</Label>
+          <input style={inputCss} placeholder="Opcional"
+            value={form.nota_fiscal}
+            onChange={e => onChange({ ...form, nota_fiscal: e.target.value })} />
+        </div>
+
+        {/* Data */}
+        <div>
+          <Label>Data</Label>
+          <input type="date" style={inputCss} required
+            value={form.data}
+            onChange={e => onChange({ ...form, data: e.target.value })} />
+        </div>
+
+        {/* Vendedor */}
+        {isAdmin ? (
+          <div>
+            <Label>Vendedor</Label>
+            <select style={inputCss} required
+              value={form.vendedor_id}
+              onChange={e => onChange({ ...form, vendedor_id: e.target.value })}>
+              <option value="">Selecione...</option>
+              {vendedores.map(v => (
+                <option key={v.id} value={v.id}>{v.nome}</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div>
+            <Label>Vendedor</Label>
+            <input style={{ ...inputCss, background: '#f1f5f9', color: '#64748b' }}
+              value={vendedores.find(v => v.id === form.vendedor_id)?.nome || ''}
+              readOnly />
+          </div>
+        )}
+
+        {/* Valor Bruto */}
+        <div>
+          <Label>Valor Bruto (R$)</Label>
+          <input style={inputCss} type="number" min="0.01" step="0.01" required placeholder="0,00"
+            value={form.valor_bruto}
+            onChange={e => handleBrutoDesc('valor_bruto', e.target.value)} />
+        </div>
+
+        {/* Desconto */}
+        <div>
+          <Label>Desconto (R$)</Label>
+          <input style={inputCss} type="number" min="0" step="0.01" placeholder="0,00"
+            value={form.desconto}
+            onChange={e => handleBrutoDesc('desconto', e.target.value)} />
+          {desc > bruto && bruto > 0 && (
+            <span style={{ color: '#dc2626', fontSize: '0.78rem' }}>Desconto maior que o valor bruto</span>
+          )}
+        </div>
+
+        {/* Valor Final */}
+        <div>
+          <Label>Valor Final (R$)</Label>
+          <input style={inputCss} type="number" min="0" step="0.01" required placeholder="0,00"
+            value={form.valor_final}
+            onChange={e => handleFinal(e.target.value)} />
+        </div>
+
+        {/* Forma de Pagamento */}
+        <div>
+          <Label>Forma de Pagamento</Label>
+          <select style={inputCss} required
+            value={form.forma_pagamento}
+            onChange={e => onChange({ ...form, forma_pagamento: e.target.value })}>
+            <option value="">Selecione...</option>
+            {formasPagamento.map(f => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', paddingTop: '0.5rem' }}>
+        <button type="button" style={btnSecondary} onClick={onCancel}>Cancelar</button>
+        <button type="submit" style={btnPrimary} disabled={saving}>
+          {saving ? 'Salvando...' : (editando ? 'Atualizar Venda' : 'Registrar Venda')}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+/* ── componente principal ── */
 export default function Vendas() {
+  const { profile, isAdmin } = useAuth()
+  const [dataSel, setDataSel] = useState(todayISO())
+  const [vendas, setVendas] = useState([])
+  const [diasComVendas, setDiasComVendas] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [formasPagamento, setFormasPagamento] = useState([])
+  const [vendedores, setVendedores] = useState([])
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState(FORM_INIT)
+  const [editId, setEditId] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)
+  const [toast, setToast] = useState(null)
+
+  /* toast temporário */
+  function showToast(msg, tipo = 'ok') {
+    setToast({ msg, tipo })
+    setTimeout(() => setToast(null), 3500)
+  }
+
+  /* carrega configurações e vendedores (uma vez) */
+  useEffect(() => {
+    async function init() {
+      const [{ data: cfg }, { data: vends }] = await Promise.all([
+        supabase.from('configuracoes').select('formas_pagamento').single(),
+        supabase.from('profiles').select('id, nome').eq('ativo', true).order('nome'),
+      ])
+      if (cfg?.formas_pagamento) setFormasPagamento(cfg.formas_pagamento)
+      if (vends) setVendedores(vends)
+    }
+    init()
+  }, [])
+
+  /* carrega dias com movimento (mês corrente) */
+  const carregarDias = useCallback(async () => {
+    const mes = dataSel.slice(0, 7)
+    const { data } = await supabase
+      .from('vendas')
+      .select('data')
+      .gte('data', `${mes}-01`)
+      .lte('data', `${mes}-31`)
+    if (data) {
+      const unique = [...new Set(data.map(r => r.data))].sort()
+      setDiasComVendas(unique)
+    }
+  }, [dataSel])
+
+  /* carrega vendas do dia selecionado */
+  const carregarVendas = useCallback(async () => {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('vendas')
+      .select('*')
+      .eq('data', dataSel)
+      .order('os_numero')
+    if (!error && data) setVendas(data)
+    setLoading(false)
+  }, [dataSel])
+
+  useEffect(() => {
+    carregarDias()
+    carregarVendas()
+  }, [carregarDias, carregarVendas])
+
+  /* próximo número de O.S. */
+  async function getProximoOs() {
+    const { data: maxRow } = await supabase
+      .from('vendas')
+      .select('os_numero')
+      .order('os_numero', { ascending: false })
+      .limit(1)
+      .single()
+    if (maxRow) return maxRow.os_numero + 1
+    const { data: cfg } = await supabase
+      .from('configuracoes')
+      .select('os_numero_inicial')
+      .single()
+    return cfg?.os_numero_inicial ?? 1
+  }
+
+  async function abrirNovaVenda() {
+    const proximo = await getProximoOs()
+    setForm({
+      ...FORM_INIT,
+      os_numero: proximo,
+      data: dataSel,
+      vendedor_id: profile?.id || '',
+    })
+    setEditId(null)
+    setShowForm(true)
+  }
+
+  function abrirEdicao(v) {
+    setForm({
+      os_numero: v.os_numero,
+      nota_fiscal: v.nota_fiscal || '',
+      data: v.data,
+      vendedor_id: v.vendedor_id,
+      valor_bruto: v.valor_bruto,
+      desconto: v.desconto || 0,
+      valor_final: v.valor_final,
+      forma_pagamento: v.forma_pagamento,
+    })
+    setEditId(v.id)
+    setShowForm(true)
+  }
+
+  async function salvar(e) {
+    e.preventDefault()
+    const bruto = parseFloat(String(form.valor_bruto).replace(',', '.')) || 0
+    const desc = parseFloat(String(form.desconto).replace(',', '.')) || 0
+    const final = parseFloat(String(form.valor_final).replace(',', '.')) || 0
+    if (bruto <= 0) return showToast('Valor Bruto deve ser maior que zero.', 'err')
+    if (desc > bruto) return showToast('Desconto não pode ser maior que o Valor Bruto.', 'err')
+
+    setSaving(true)
+    const payload = {
+      os_numero: form.os_numero,
+      nota_fiscal: form.nota_fiscal || null,
+      data: form.data,
+      vendedor_id: form.vendedor_id,
+      valor_bruto: bruto,
+      desconto: desc,
+      valor_final: final,
+      forma_pagamento: form.forma_pagamento,
+    }
+
+    let error
+    if (editId) {
+      ;({ error } = await supabase.from('vendas').update(payload).eq('id', editId))
+    } else {
+      ;({ error } = await supabase.from('vendas').insert(payload))
+    }
+
+    setSaving(false)
+    if (error) {
+      showToast('Erro ao salvar: ' + error.message, 'err')
+    } else {
+      showToast(editId ? 'Venda atualizada!' : 'Venda registrada!')
+      setShowForm(false)
+      carregarVendas()
+      carregarDias()
+    }
+  }
+
+  async function excluir(id) {
+    if (!window.confirm('Confirma exclusão desta venda?')) return
+    const { error } = await supabase.from('vendas').delete().eq('id', id)
+    if (error) {
+      showToast('Erro ao excluir: ' + error.message, 'err')
+    } else {
+      showToast('Venda excluída.')
+      setDeletingId(null)
+      carregarVendas()
+      carregarDias()
+    }
+  }
+
+  function podeAlterar(v) {
+    return isAdmin || v.vendedor_id === profile?.id
+  }
+
+  /* totais rodapé */
+  const totBruto = vendas.reduce((s, v) => s + (v.valor_bruto || 0), 0)
+  const totDesc = vendas.reduce((s, v) => s + (v.desconto || 0), 0)
+  const totFinal = vendas.reduce((s, v) => s + (v.valor_final || 0), 0)
+
+  /* mapa vendedor_id → nome */
+  const vendedorMap = Object.fromEntries(vendedores.map(v => [v.id, v.nome]))
+
+  /* navegação por datas */
+  function navegarDia(delta) {
+    const d = new Date(dataSel + 'T12:00:00')
+    d.setDate(d.getDate() + delta)
+    setDataSel(d.toISOString().slice(0, 10))
+  }
+
   return (
     <div className="pg">
-      <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: '0 0 1.5rem', letterSpacing: '-0.3px' }}>
-        Vendas
-      </h1>
-      <EmConstrucao modulo="Vendas" />
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: 'fixed', top: '1.25rem', right: '1.25rem', zIndex: 9999,
+          padding: '0.75rem 1.25rem', borderRadius: '0.75rem', fontSize: '0.875rem',
+          fontWeight: '600', color: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+          background: toast.tipo === 'err' ? '#dc2626' : '#16a34a',
+          maxWidth: '320px',
+        }}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Cabeçalho */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: 0, letterSpacing: '-0.3px' }}>
+          Vendas Diárias
+        </h1>
+        {!showForm && (
+          <button style={btnPrimary} onClick={abrirNovaVenda}>
+            + Nova Venda
+          </button>
+        )}
+      </div>
+
+      {/* Formulário Nova/Editar Venda */}
+      {showForm && (
+        <div style={{ ...card, marginBottom: '1.5rem', borderLeft: '4px solid #C0272D' }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: '700', color: '#0f2d4a', margin: '0 0 1.25rem' }}>
+            {editId ? 'Editar Venda' : 'Nova Venda'}
+          </h2>
+          <FormVenda
+            form={form}
+            onChange={setForm}
+            vendedores={vendedores}
+            formasPagamento={formasPagamento}
+            isAdmin={isAdmin}
+            onSubmit={salvar}
+            onCancel={() => setShowForm(false)}
+            saving={saving}
+            editando={!!editId}
+          />
+        </div>
+      )}
+
+      {/* Seletor de Data */}
+      <div style={{ ...card, marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => navegarDia(-1)}
+            style={{ ...btnSecondary, padding: '0.5rem 0.875rem', fontSize: '1.1rem' }}
+            title="Dia anterior"
+          >‹</button>
+
+          <input
+            type="date"
+            value={dataSel}
+            onChange={e => setDataSel(e.target.value)}
+            style={{ ...inputCss, width: 'auto', minWidth: '145px' }}
+          />
+
+          <button
+            onClick={() => navegarDia(1)}
+            style={{ ...btnSecondary, padding: '0.5rem 0.875rem', fontSize: '1.1rem' }}
+            title="Próximo dia"
+          >›</button>
+
+          <button
+            onClick={() => setDataSel(todayISO())}
+            style={{
+              ...btnSecondary,
+              padding: '0.5rem 0.875rem',
+              background: dataSel === todayISO() ? '#C0272D' : '#f1f5f9',
+              color: dataSel === todayISO() ? '#fff' : '#475569',
+              border: dataSel === todayISO() ? 'none' : '1.5px solid #e2e8f0',
+            }}
+          >
+            Hoje
+          </button>
+        </div>
+
+        {/* Dias com movimento */}
+        {diasComVendas.length > 0 && (
+          <div style={{ marginTop: '0.875rem' }}>
+            <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: '600', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Dias com movimento
+            </div>
+            <div style={{ display: 'flex', gap: '0.4rem', overflowX: 'auto', paddingBottom: '4px' }}>
+              {diasComVendas.map(d => (
+                <button
+                  key={d}
+                  onClick={() => setDataSel(d)}
+                  style={{
+                    flexShrink: 0,
+                    padding: '0.3rem 0.7rem',
+                    borderRadius: '2rem',
+                    border: 'none',
+                    fontSize: '0.8rem',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    background: d === dataSel ? '#C0272D' : '#f1f5f9',
+                    color: d === dataSel ? '#fff' : '#475569',
+                  }}
+                >
+                  {fDateBR(d)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Tabela / Lista */}
+      <div style={{ ...card }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem',
+        }}>
+          <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.95rem' }}>
+            {fDateBR(dataSel)}
+            {vendas.length > 0 && (
+              <span style={{ marginLeft: '0.5rem', color: '#64748b', fontWeight: '400', fontSize: '0.85rem' }}>
+                — {vendas.length} O.S.
+              </span>
+            )}
+          </div>
+        </div>
+
+        {loading ? (
+          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem 0' }}>Carregando...</div>
+        ) : vendas.length === 0 ? (
+          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem 0' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📋</div>
+            <div style={{ fontWeight: '600' }}>Nenhuma venda neste dia</div>
+            <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>Clique em "+ Nova Venda" para registrar</div>
+          </div>
+        ) : (
+          /* Tabela desktop + cards mobile */
+          <>
+            {/* Tabela (esconde em telas muito pequenas) */}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                    {['O.S.', 'N. Fiscal', 'Data', 'Vendedor', 'Valor Bruto', 'Desconto', 'Valor Final', 'Pagamento', 'Ações'].map(h => (
+                      <th key={h} style={{
+                        padding: '0.6rem 0.75rem', textAlign: 'left', fontSize: '0.75rem',
+                        fontWeight: '700', color: '#64748b', textTransform: 'uppercase',
+                        letterSpacing: '0.4px', whiteSpace: 'nowrap',
+                      }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {vendas.map(v => (
+                    <tr key={v.id} style={{ borderBottom: '1px solid #f8fafc' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a' }}>
+                        #{v.os_numero}
+                      </td>
+                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>
+                        {v.nota_fiscal || '—'}
+                      </td>
+                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>
+                        {fDateBR(v.data)}
+                      </td>
+                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>
+                        {vendedorMap[v.vendedor_id] || '—'}
+                      </td>
+                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>
+                        {fBRL(v.valor_bruto)}
+                      </td>
+                      <td style={{ padding: '0.65rem 0.75rem', color: v.desconto > 0 ? '#dc2626' : '#94a3b8', whiteSpace: 'nowrap' }}>
+                        {v.desconto > 0 ? `- ${fBRL(v.desconto)}` : '—'}
+                      </td>
+                      <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#16a34a', whiteSpace: 'nowrap' }}>
+                        {fBRL(v.valor_final)}
+                      </td>
+                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>
+                        <span style={{
+                          background: '#f1f5f9', borderRadius: '0.4rem',
+                          padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontWeight: '600',
+                        }}>
+                          {v.forma_pagamento}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.65rem 0.75rem' }}>
+                        {podeAlterar(v) && (
+                          <div style={{ display: 'flex', gap: '0.4rem' }}>
+                            <button
+                              onClick={() => abrirEdicao(v)}
+                              title="Editar"
+                              style={{
+                                padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
+                                borderRadius: '0.4rem', border: '1.5px solid #e2e8f0',
+                                background: '#f8fafc', color: '#475569', cursor: 'pointer',
+                              }}>
+                              Editar
+                            </button>
+                            <button
+                              onClick={() => excluir(v.id)}
+                              title="Excluir"
+                              style={{
+                                padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
+                                borderRadius: '0.4rem', border: '1.5px solid #fecaca',
+                                background: '#fef2f2', color: '#dc2626', cursor: 'pointer',
+                              }}>
+                              Excluir
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {/* Rodapé totais */}
+                <tfoot>
+                  <tr style={{ borderTop: '2px solid #f1f5f9', background: '#f8fafc' }}>
+                    <td colSpan={4} style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.82rem' }}>
+                      TOTAL — {vendas.length} O.S.
+                    </td>
+                    <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', whiteSpace: 'nowrap' }}>
+                      {fBRL(totBruto)}
+                    </td>
+                    <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#dc2626', whiteSpace: 'nowrap' }}>
+                      {totDesc > 0 ? `- ${fBRL(totDesc)}` : '—'}
+                    </td>
+                    <td style={{ padding: '0.65rem 0.75rem', fontWeight: '800', color: '#16a34a', whiteSpace: 'nowrap' }}>
+                      {fBRL(totFinal)}
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

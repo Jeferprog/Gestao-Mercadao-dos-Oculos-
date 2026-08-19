@@ -71,7 +71,7 @@ const NAV_ITEMS = [
 ]
 
 const BG = '#0f2d4a'
-const ACTIVE = '#1e5799'
+const ACTIVE = '#C0272D'
 const HOVER = 'rgba(255,255,255,0.08)'
 const TEXT = 'rgba(255,255,255,0.72)'
 const TEXT_ACTIVE = '#ffffff'
@@ -124,7 +124,13 @@ export default function Sidebar({ isMobile = false, isOpen = false, onClose = ()
         justifyContent: 'space-between',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-          <span style={{ fontSize: '1.75rem' }}>👓</span>
+          <img
+            src={`${import.meta.env.BASE_URL}logo.png`}
+            alt="Logo"
+            style={{ width: '36px', height: '36px', objectFit: 'contain', borderRadius: '6px', flexShrink: 0 }}
+            onError={e => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'inline' }}
+          />
+          <span style={{ fontSize: '1.75rem', display: 'none' }}>👓</span>
           <div>
             <div style={{ color: '#fff', fontWeight: '700', fontSize: '0.9rem', lineHeight: '1.2' }}>
               Mercadão dos Óculos
