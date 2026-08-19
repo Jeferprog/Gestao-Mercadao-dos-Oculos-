@@ -138,6 +138,8 @@ function TabSistema({ showToast }) {
   const [osNumero, setOsNumero] = useState('')
   const [formas, setFormas] = useState([])
   const [novaForma, setNovaForma] = useState('')
+  const [categorias, setCategorias] = useState([])
+  const [novaCategoria, setNovaCategoria] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -147,6 +149,7 @@ function TabSistema({ showToast }) {
       const map = Object.fromEntries(data.map(r => [r.chave, r.valor]))
       setOsNumero(map.os_numero_inicial || '1')
       setFormas((map.formas_pagamento || '').split(',').filter(Boolean))
+      setCategorias((map.categorias_despesa || '').split(',').filter(Boolean))
     }
     setLoading(false)
   }, [])
@@ -185,6 +188,29 @@ function TabSistema({ showToast }) {
 
   function removeForma(f) {
     setFormas(prev => prev.filter(x => x !== f))
+  }
+
+  async function salvarCategorias() {
+    if (categorias.length === 0) return
+    setSaving(true)
+    const { error } = await supabase
+      .from('configuracoes')
+      .update({ valor: categorias.join(',') })
+      .eq('chave', 'categorias_despesa')
+    showToast(error ? 'Erro ao salvar categorias.' : 'Categorias salvas!')
+    setSaving(false)
+  }
+
+  function addCategoria() {
+    const c = novaCategoria.trim()
+    if (c && !categorias.includes(c)) {
+      setCategorias(prev => [...prev, c])
+      setNovaCategoria('')
+    }
+  }
+
+  function removeCategoria(c) {
+    setCategorias(prev => prev.filter(x => x !== c))
   }
 
   if (loading) return <p style={{ color: '#94a3b8' }}>Carregando configurações...</p>
@@ -278,6 +304,53 @@ function TabSistema({ showToast }) {
 
         <button onClick={salvarFormas} disabled={saving || formas.length === 0} style={btnPrimary}>
           {saving ? 'Salvando...' : 'Salvar Formas de Pagamento'}
+        </button>
+      </div>
+
+      {/* Categorias de Despesa */}
+      <div style={card}>
+        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: '#1e293b' }}>
+          Categorias de Despesa
+        </h3>
+        <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5' }}>
+          Gerencie as categorias disponíveis no módulo de Contas a Pagar.
+        </p>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem', minHeight: '36px' }}>
+          {categorias.map(c => (
+            <span key={c} style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
+              background: '#fef2f2', color: '#991b1b',
+              padding: '0.3rem 0.75rem', borderRadius: '999px',
+              fontSize: '0.82rem', fontWeight: '500',
+            }}>
+              {c}
+              <button
+                onClick={() => removeCategoria(c)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', fontSize: '1rem', lineHeight: 1, padding: 0 }}
+                title={`Remover ${c}`}
+              >×</button>
+            </span>
+          ))}
+          {categorias.length === 0 && (
+            <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>Nenhuma categoria cadastrada.</span>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+          <input
+            type="text"
+            value={novaCategoria}
+            onChange={e => setNovaCategoria(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCategoria())}
+            placeholder="Ex: Manutenção"
+            style={{ ...inputCss, flex: 1 }}
+          />
+          <button onClick={addCategoria} style={btnSecondary}>+ Adicionar</button>
+        </div>
+
+        <button onClick={salvarCategorias} disabled={saving || categorias.length === 0} style={btnPrimary}>
+          {saving ? 'Salvando...' : 'Salvar Categorias'}
         </button>
       </div>
     </>
