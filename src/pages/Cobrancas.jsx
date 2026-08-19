@@ -329,6 +329,22 @@ export default function Cobrancas() {
       observacoes:        editForm.observacoes || null,
       ultima_atualizacao: todayISO(),
     }).eq('id', selectedId)
+
+    // Sincronizar com a tabela de clientes
+    const nomeDev = selectedDev?.nome_pagador
+    if (nomeDev) {
+      const { data: cli } = await supabase.from('clientes').select('id, telefone').ilike('nome', nomeDev).limit(1)
+      if (cli?.length) {
+        // Atualiza telefone no cliente existente se ele ainda não tiver
+        if (editForm.telefone && !cli[0].telefone) {
+          await supabase.from('clientes').update({ telefone: editForm.telefone }).eq('id', cli[0].id)
+        }
+      } else {
+        // Cria novo cliente com nome e telefone
+        await supabase.from('clientes').insert({ nome: nomeDev, telefone: editForm.telefone || null })
+      }
+    }
+
     await carregar()
     setSalvando(false)
   }
