@@ -11,15 +11,11 @@ function fDateBR(iso) {
   const [y, m, d] = iso.split('-')
   return `${d}/${m}/${y}`
 }
-function toISO(br) {
-  const [d, m, y] = br.split('/')
-  return `${y}-${m}-${d}`
-}
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
 }
 
-/* ── estilos reutilizáveis ── */
+/* ── estilos ── */
 const card = {
   background: '#fff',
   borderRadius: '1rem',
@@ -68,7 +64,7 @@ const Label = ({ children }) => (
 const FORM_INIT = {
   os_numero: '',
   nota_fiscal: '',
-  data: todayISO(),
+  data_venda: todayISO(),
   vendedor_id: '',
   valor_bruto: '',
   desconto: '0',
@@ -76,17 +72,14 @@ const FORM_INIT = {
   forma_pagamento: '',
 }
 
-/* ── componente FormVenda ── */
-function FormVenda({ form, onChange, onCalc, vendedores, formasPagamento, isAdmin, onSubmit, onCancel, saving, editando }) {
+/* ── FormVenda ── */
+function FormVenda({ form, onChange, vendedores, formasPagamento, isAdmin, onSubmit, onCancel, saving, editando }) {
   function handleBrutoDesc(field, val) {
     const next = { ...form, [field]: val }
     const bruto = parseFloat(String(next.valor_bruto).replace(',', '.')) || 0
     const desc = parseFloat(String(next.desconto).replace(',', '.')) || 0
     next.valor_final = Math.max(0, bruto - desc).toFixed(2)
     onChange(next)
-  }
-  function handleFinal(val) {
-    onChange({ ...form, valor_final: val })
   }
 
   const bruto = parseFloat(String(form.valor_bruto).replace(',', '.')) || 0
@@ -114,8 +107,8 @@ function FormVenda({ form, onChange, onCalc, vendedores, formasPagamento, isAdmi
         <div>
           <Label>Data</Label>
           <input type="date" style={inputCss} required
-            value={form.data}
-            onChange={e => onChange({ ...form, data: e.target.value })} />
+            value={form.data_venda}
+            onChange={e => onChange({ ...form, data_venda: e.target.value })} />
         </div>
 
         {/* Vendedor */}
@@ -164,7 +157,7 @@ function FormVenda({ form, onChange, onCalc, vendedores, formasPagamento, isAdmi
           <Label>Valor Final (R$)</Label>
           <input style={inputCss} type="number" min="0" step="0.01" required placeholder="0,00"
             value={form.valor_final}
-            onChange={e => handleFinal(e.target.value)} />
+            onChange={e => onChange({ ...form, valor_final: e.target.value })} />
         </div>
 
         {/* Forma de Pagamento */}
@@ -204,10 +197,8 @@ export default function Vendas() {
   const [form, setForm] = useState(FORM_INIT)
   const [editId, setEditId] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [deletingId, setDeletingId] = useState(null)
   const [toast, setToast] = useState(null)
 
-  /* toast temporário */
   function showToast(msg, tipo = 'ok') {
     setToast({ msg, tipo })
     setTimeout(() => setToast(null), 3500)
@@ -216,37 +207,41 @@ export default function Vendas() {
   /* carrega configurações e vendedores (uma vez) */
   useEffect(() => {
     async function init() {
-      const [{ data: cfg }, { data: vends }] = await Promise.all([
-        supabase.from('configuracoes').select('formas_pagamento').single(),
+      const [{ data: cfgRows }, { data: vends }] = await Promise.all([
+        supabase.from('configuracoes').select('*'),
         supabase.from('profiles').select('id, nome').eq('ativo', true).order('nome'),
       ])
-      if (cfg?.formas_pagamento) setFormasPagamento(cfg.formas_pagamento)
+      if (cfgRows) {
+        const map = Object.fromEntries(cfgRows.map(r => [r.chave, r.valor]))
+        const formas = (map.formas_pagamento || '').split(',').filter(Boolean)
+        setFormasPagamento(formas)
+      }
       if (vends) setVendedores(vends)
     }
     init()
   }, [])
 
-  /* carrega dias com movimento (mês corrente) */
+  /* dias com movimento no mês atual */
   const carregarDias = useCallback(async () => {
     const mes = dataSel.slice(0, 7)
     const { data } = await supabase
       .from('vendas')
-      .select('data')
-      .gte('data', `${mes}-01`)
-      .lte('data', `${mes}-31`)
+      .select('data_venda')
+      .gte('data_venda', `${mes}-01`)
+      .lte('data_venda', `${mes}-31`)
     if (data) {
-      const unique = [...new Set(data.map(r => r.data))].sort()
+      const unique = [...new Set(data.map(r => r.data_venda))].sort()
       setDiasComVendas(unique)
     }
   }, [dataSel])
 
-  /* carrega vendas do dia selecionado */
+  /* vendas do dia selecionado */
   const carregarVendas = useCallback(async () => {
     setLoading(true)
     const { data, error } = await supabase
       .from('vendas')
       .select('*')
-      .eq('data', dataSel)
+      .eq('data_venda', dataSel)
       .order('os_numero')
     if (!error && data) setVendas(data)
     setLoading(false)
@@ -257,20 +252,23 @@ export default function Vendas() {
     carregarVendas()
   }, [carregarDias, carregarVendas])
 
-  /* próximo número de O.S. */
+  /* próximo O.S. */
   async function getProximoOs() {
     const { data: maxRow } = await supabase
       .from('vendas')
       .select('os_numero')
       .order('os_numero', { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle()
+
     if (maxRow) return maxRow.os_numero + 1
-    const { data: cfg } = await supabase
-      .from('configuracoes')
-      .select('os_numero_inicial')
-      .single()
-    return cfg?.os_numero_inicial ?? 1
+
+    const { data: cfgRows } = await supabase.from('configuracoes').select('*')
+    if (cfgRows) {
+      const map = Object.fromEntries(cfgRows.map(r => [r.chave, r.valor]))
+      return parseInt(map.os_numero_inicial) || 1
+    }
+    return 1
   }
 
   async function abrirNovaVenda() {
@@ -278,7 +276,7 @@ export default function Vendas() {
     setForm({
       ...FORM_INIT,
       os_numero: proximo,
-      data: dataSel,
+      data_venda: dataSel,
       vendedor_id: profile?.id || '',
     })
     setEditId(null)
@@ -289,7 +287,7 @@ export default function Vendas() {
     setForm({
       os_numero: v.os_numero,
       nota_fiscal: v.nota_fiscal || '',
-      data: v.data,
+      data_venda: v.data_venda,
       vendedor_id: v.vendedor_id,
       valor_bruto: v.valor_bruto,
       desconto: v.desconto || 0,
@@ -312,7 +310,7 @@ export default function Vendas() {
     const payload = {
       os_numero: form.os_numero,
       nota_fiscal: form.nota_fiscal || null,
-      data: form.data,
+      data_venda: form.data_venda,
       vendedor_id: form.vendedor_id,
       valor_bruto: bruto,
       desconto: desc,
@@ -345,7 +343,6 @@ export default function Vendas() {
       showToast('Erro ao excluir: ' + error.message, 'err')
     } else {
       showToast('Venda excluída.')
-      setDeletingId(null)
       carregarVendas()
       carregarDias()
     }
@@ -355,20 +352,18 @@ export default function Vendas() {
     return isAdmin || v.vendedor_id === profile?.id
   }
 
-  /* totais rodapé */
   const totBruto = vendas.reduce((s, v) => s + (v.valor_bruto || 0), 0)
   const totDesc = vendas.reduce((s, v) => s + (v.desconto || 0), 0)
   const totFinal = vendas.reduce((s, v) => s + (v.valor_final || 0), 0)
-
-  /* mapa vendedor_id → nome */
   const vendedorMap = Object.fromEntries(vendedores.map(v => [v.id, v.nome]))
 
-  /* navegação por datas */
   function navegarDia(delta) {
     const d = new Date(dataSel + 'T12:00:00')
     d.setDate(d.getDate() + delta)
     setDataSel(d.toISOString().slice(0, 10))
   }
+
+  const hoje = todayISO()
 
   return (
     <div className="pg">
@@ -397,7 +392,7 @@ export default function Vendas() {
         )}
       </div>
 
-      {/* Formulário Nova/Editar Venda */}
+      {/* Formulário */}
       {showForm && (
         <div style={{ ...card, marginBottom: '1.5rem', borderLeft: '4px solid #C0272D' }}>
           <h2 style={{ fontSize: '1rem', fontWeight: '700', color: '#0f2d4a', margin: '0 0 1.25rem' }}>
@@ -420,40 +415,30 @@ export default function Vendas() {
       {/* Seletor de Data */}
       <div style={{ ...card, marginBottom: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <button
-            onClick={() => navegarDia(-1)}
+          <button onClick={() => navegarDia(-1)}
             style={{ ...btnSecondary, padding: '0.5rem 0.875rem', fontSize: '1.1rem' }}
-            title="Dia anterior"
-          >‹</button>
+            title="Dia anterior">‹</button>
 
-          <input
-            type="date"
-            value={dataSel}
+          <input type="date" value={dataSel}
             onChange={e => setDataSel(e.target.value)}
-            style={{ ...inputCss, width: 'auto', minWidth: '145px' }}
-          />
+            style={{ ...inputCss, width: 'auto', minWidth: '145px' }} />
 
-          <button
-            onClick={() => navegarDia(1)}
+          <button onClick={() => navegarDia(1)}
             style={{ ...btnSecondary, padding: '0.5rem 0.875rem', fontSize: '1.1rem' }}
-            title="Próximo dia"
-          >›</button>
+            title="Próximo dia">›</button>
 
-          <button
-            onClick={() => setDataSel(todayISO())}
+          <button onClick={() => setDataSel(hoje)}
             style={{
-              ...btnSecondary,
-              padding: '0.5rem 0.875rem',
-              background: dataSel === todayISO() ? '#C0272D' : '#f1f5f9',
-              color: dataSel === todayISO() ? '#fff' : '#475569',
-              border: dataSel === todayISO() ? 'none' : '1.5px solid #e2e8f0',
-            }}
-          >
+              ...btnSecondary, padding: '0.5rem 0.875rem',
+              background: dataSel === hoje ? '#C0272D' : '#f1f5f9',
+              color: dataSel === hoje ? '#fff' : '#475569',
+              border: dataSel === hoje ? 'none' : '1.5px solid #e2e8f0',
+            }}>
             Hoje
           </button>
         </div>
 
-        {/* Dias com movimento */}
+        {/* Pills — dias com movimento */}
         {diasComVendas.length > 0 && (
           <div style={{ marginTop: '0.875rem' }}>
             <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: '600', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -461,21 +446,13 @@ export default function Vendas() {
             </div>
             <div style={{ display: 'flex', gap: '0.4rem', overflowX: 'auto', paddingBottom: '4px' }}>
               {diasComVendas.map(d => (
-                <button
-                  key={d}
-                  onClick={() => setDataSel(d)}
+                <button key={d} onClick={() => setDataSel(d)}
                   style={{
-                    flexShrink: 0,
-                    padding: '0.3rem 0.7rem',
-                    borderRadius: '2rem',
-                    border: 'none',
-                    fontSize: '0.8rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
+                    flexShrink: 0, padding: '0.3rem 0.7rem', borderRadius: '2rem',
+                    border: 'none', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer',
                     background: d === dataSel ? '#C0272D' : '#f1f5f9',
                     color: d === dataSel ? '#fff' : '#475569',
-                  }}
-                >
+                  }}>
                   {fDateBR(d)}
                 </button>
               ))}
@@ -484,12 +461,9 @@ export default function Vendas() {
         )}
       </div>
 
-      {/* Tabela / Lista */}
+      {/* Tabela */}
       <div style={{ ...card }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem',
-        }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.95rem' }}>
             {fDateBR(dataSel)}
             {vendas.length > 0 && (
@@ -509,106 +483,75 @@ export default function Vendas() {
             <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>Clique em "+ Nova Venda" para registrar</div>
           </div>
         ) : (
-          /* Tabela desktop + cards mobile */
-          <>
-            {/* Tabela (esconde em telas muito pequenas) */}
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                    {['O.S.', 'N. Fiscal', 'Data', 'Vendedor', 'Valor Bruto', 'Desconto', 'Valor Final', 'Pagamento', 'Ações'].map(h => (
-                      <th key={h} style={{
-                        padding: '0.6rem 0.75rem', textAlign: 'left', fontSize: '0.75rem',
-                        fontWeight: '700', color: '#64748b', textTransform: 'uppercase',
-                        letterSpacing: '0.4px', whiteSpace: 'nowrap',
-                      }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {vendas.map(v => (
-                    <tr key={v.id} style={{ borderBottom: '1px solid #f8fafc' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a' }}>
-                        #{v.os_numero}
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>
-                        {v.nota_fiscal || '—'}
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>
-                        {fDateBR(v.data)}
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>
-                        {vendedorMap[v.vendedor_id] || '—'}
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>
-                        {fBRL(v.valor_bruto)}
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: v.desconto > 0 ? '#dc2626' : '#94a3b8', whiteSpace: 'nowrap' }}>
-                        {v.desconto > 0 ? `- ${fBRL(v.desconto)}` : '—'}
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#16a34a', whiteSpace: 'nowrap' }}>
-                        {fBRL(v.valor_final)}
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>
-                        <span style={{
-                          background: '#f1f5f9', borderRadius: '0.4rem',
-                          padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontWeight: '600',
-                        }}>
-                          {v.forma_pagamento}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem' }}>
-                        {podeAlterar(v) && (
-                          <div style={{ display: 'flex', gap: '0.4rem' }}>
-                            <button
-                              onClick={() => abrirEdicao(v)}
-                              title="Editar"
-                              style={{
-                                padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
-                                borderRadius: '0.4rem', border: '1.5px solid #e2e8f0',
-                                background: '#f8fafc', color: '#475569', cursor: 'pointer',
-                              }}>
-                              Editar
-                            </button>
-                            <button
-                              onClick={() => excluir(v.id)}
-                              title="Excluir"
-                              style={{
-                                padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
-                                borderRadius: '0.4rem', border: '1.5px solid #fecaca',
-                                background: '#fef2f2', color: '#dc2626', cursor: 'pointer',
-                              }}>
-                              Excluir
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                  {['O.S.', 'N. Fiscal', 'Data', 'Vendedor', 'Valor Bruto', 'Desconto', 'Valor Final', 'Pagamento', 'Ações'].map(h => (
+                    <th key={h} style={{
+                      padding: '0.6rem 0.75rem', textAlign: 'left', fontSize: '0.75rem',
+                      fontWeight: '700', color: '#64748b', textTransform: 'uppercase',
+                      letterSpacing: '0.4px', whiteSpace: 'nowrap',
+                    }}>{h}</th>
                   ))}
-                </tbody>
-                {/* Rodapé totais */}
-                <tfoot>
-                  <tr style={{ borderTop: '2px solid #f1f5f9', background: '#f8fafc' }}>
-                    <td colSpan={4} style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.82rem' }}>
-                      TOTAL — {vendas.length} O.S.
+                </tr>
+              </thead>
+              <tbody>
+                {vendas.map(v => (
+                  <tr key={v.id} style={{ borderBottom: '1px solid #f8fafc' }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a' }}>#{v.os_numero}</td>
+                    <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>{v.nota_fiscal || '—'}</td>
+                    <td style={{ padding: '0.65rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>{fDateBR(v.data_venda)}</td>
+                    <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>{vendedorMap[v.vendedor_id] || '—'}</td>
+                    <td style={{ padding: '0.65rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>{fBRL(v.valor_bruto)}</td>
+                    <td style={{ padding: '0.65rem 0.75rem', color: v.desconto > 0 ? '#dc2626' : '#94a3b8', whiteSpace: 'nowrap' }}>
+                      {v.desconto > 0 ? `- ${fBRL(v.desconto)}` : '—'}
                     </td>
-                    <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', whiteSpace: 'nowrap' }}>
-                      {fBRL(totBruto)}
+                    <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#16a34a', whiteSpace: 'nowrap' }}>{fBRL(v.valor_final)}</td>
+                    <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>
+                      <span style={{
+                        background: '#f1f5f9', borderRadius: '0.4rem',
+                        padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontWeight: '600',
+                      }}>{v.forma_pagamento}</span>
                     </td>
-                    <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#dc2626', whiteSpace: 'nowrap' }}>
-                      {totDesc > 0 ? `- ${fBRL(totDesc)}` : '—'}
+                    <td style={{ padding: '0.65rem 0.75rem' }}>
+                      {podeAlterar(v) && (
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <button onClick={() => abrirEdicao(v)}
+                            style={{
+                              padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
+                              borderRadius: '0.4rem', border: '1.5px solid #e2e8f0',
+                              background: '#f8fafc', color: '#475569', cursor: 'pointer',
+                            }}>Editar</button>
+                          <button onClick={() => excluir(v.id)}
+                            style={{
+                              padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
+                              borderRadius: '0.4rem', border: '1.5px solid #fecaca',
+                              background: '#fef2f2', color: '#dc2626', cursor: 'pointer',
+                            }}>Excluir</button>
+                        </div>
+                      )}
                     </td>
-                    <td style={{ padding: '0.65rem 0.75rem', fontWeight: '800', color: '#16a34a', whiteSpace: 'nowrap' }}>
-                      {fBRL(totFinal)}
-                    </td>
-                    <td colSpan={2} />
                   </tr>
-                </tfoot>
-              </table>
-            </div>
-          </>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: '2px solid #f1f5f9', background: '#f8fafc' }}>
+                  <td colSpan={4} style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.82rem' }}>
+                    TOTAL — {vendas.length} O.S.
+                  </td>
+                  <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', whiteSpace: 'nowrap' }}>{fBRL(totBruto)}</td>
+                  <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#dc2626', whiteSpace: 'nowrap' }}>
+                    {totDesc > 0 ? `- ${fBRL(totDesc)}` : '—'}
+                  </td>
+                  <td style={{ padding: '0.65rem 0.75rem', fontWeight: '800', color: '#16a34a', whiteSpace: 'nowrap' }}>{fBRL(totFinal)}</td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         )}
       </div>
     </div>
