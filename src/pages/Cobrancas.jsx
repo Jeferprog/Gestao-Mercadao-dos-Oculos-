@@ -156,6 +156,11 @@ async function importarBoletos(boletos) {
       .select('id, nome_normalizado')
     if (e2) throw new Error(e2.message)
     inseridos?.forEach(d => { mapId[d.nome_normalizado] = d.id })
+
+    // Sincronizar novos devedores com a tabela de clientes
+    if (novosNomes.length > 0) {
+      await supabase.from('clientes').insert(novosNomes.map(nome => ({ nome })))
+    }
   }
 
   // Atualizar ultima_atualizacao dos existentes
