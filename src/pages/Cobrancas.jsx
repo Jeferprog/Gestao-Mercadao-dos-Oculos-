@@ -248,7 +248,7 @@ export default function Cobrancas() {
     const { data } = await supabase
       .from('cobrancas_devedores')
       .select(`
-        id, nome_pagador, status_cobranca, primeiro_registro, ultima_atualizacao,
+        id, nome_pagador, telefone, status_cobranca, primeiro_registro, ultima_atualizacao,
         pequenas_causas, data_audiencia, situacao_audiencia, observacoes,
         cobrancas_boletos (
           id, data_vencimento, data_liquidacao, valor, valor_liquidacao,
@@ -285,6 +285,7 @@ export default function Cobrancas() {
     setSelectedId(id)
     setEditForm({
       status_cobranca:    dev?.status_cobranca    || 'Novo',
+      telefone:           dev?.telefone           || '',
       pequenas_causas:    dev?.pequenas_causas    || false,
       data_audiencia:     dev?.data_audiencia     || '',
       situacao_audiencia: dev?.situacao_audiencia || '',
@@ -316,6 +317,7 @@ export default function Cobrancas() {
     setSalvando(true)
     await supabase.from('cobrancas_devedores').update({
       status_cobranca:    editForm.status_cobranca,
+      telefone:           editForm.telefone || null,
       pequenas_causas:    editForm.pequenas_causas,
       data_audiencia:     editForm.data_audiencia || null,
       situacao_audiencia: editForm.situacao_audiencia || null,
@@ -334,7 +336,8 @@ export default function Cobrancas() {
     const linhas = lista.map(b =>
       `• Venc. ${fDate(b.data_vencimento)} — ${fBRL(b.valor)}${b.situacao_boleto ? ` [${b.situacao_boleto}]` : ''}`
     ).join('\n')
-    const txt = `*COBRANÇA — ${dev.nome_pagador}*\n\nBoleto(s) em aberto:\n${linhas}\n\n*Total em aberto: ${fBRL(total)}*\n\nEntre em contato para regularizar sua situação.`
+    const telLinha = dev.telefone ? `\nTelefone: ${dev.telefone}` : ''
+    const txt = `*COBRANÇA — ${dev.nome_pagador}*${telLinha}\n\nBoleto(s) em aberto:\n${linhas}\n\n*Total em aberto: ${fBRL(total)}*\n\nEntre em contato para regularizar sua situação.`
     navigator.clipboard.writeText(txt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2200) })
   }
 
@@ -476,7 +479,7 @@ export default function Cobrancas() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                      {['Devedor', 'Em aberto', 'Valor em aberto', 'Status', 'P. Causas', 'Audiência', 'Atualização'].map(h => (
+                      {['Devedor', 'Telefone', 'Em aberto', 'Valor em aberto', 'Status', 'P. Causas', 'Audiência', 'Atualização'].map(h => (
                         <th key={h} style={{ padding: '0.65rem 0.875rem', textAlign: 'left', fontSize: '0.72rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -507,6 +510,11 @@ export default function Cobrancas() {
                                 )}
                               </div>
                             </div>
+                          </td>
+                          <td style={{ padding: '0.8rem 0.875rem', color: '#475569', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                            {dev.telefone
+                              ? <a href={`tel:${dev.telefone}`} onClick={e => e.stopPropagation()} style={{ color: '#0f2d4a', textDecoration: 'none', fontWeight: '500' }}>{dev.telefone}</a>
+                              : <span style={{ color: '#e2e8f0' }}>—</span>}
                           </td>
                           <td style={{ padding: '0.8rem 0.875rem', fontWeight: '700', color: qtdAbertos > 0 ? '#0f2d4a' : '#cbd5e1' }}>{qtdAbertos}</td>
                           <td style={{ padding: '0.8rem 0.875rem', fontWeight: '700', color: valAberto > 0 ? '#C0272D' : '#cbd5e1', whiteSpace: 'nowrap' }}>{fBRL(valAberto)}</td>
@@ -618,6 +626,14 @@ export default function Cobrancas() {
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1.25rem' }}>
                 <div style={{ fontWeight: '700', color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '1rem' }}>Dados da cobrança</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.875rem 1rem' }}>
+                  {/* Telefone */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Telefone</label>
+                    <input type="text" placeholder="(00) 00000-0000" value={editForm.telefone || ''}
+                      onChange={e => setEditForm(f => ({ ...f, telefone: e.target.value }))}
+                      style={{ ...inputCss, width: '100%' }} />
+                  </div>
+
                   {/* Status */}
                   <div>
                     <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</label>

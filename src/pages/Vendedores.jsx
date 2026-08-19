@@ -54,6 +54,7 @@ export default function Vendedores() {
   const [vendedores, setVendedores] = useState([])
   const [vendas, setVendas] = useState([])
   const [selectedId, setSelectedId] = useState(null)
+  const [filtroVendedor, setFiltroVendedor] = useState('')
   const [loading, setLoading] = useState(true)
 
   /* carrega perfis e vendas do período */
@@ -86,6 +87,7 @@ export default function Vendedores() {
 
   /* linhas da tabela principal — admin vê todos, vendedor só o próprio */
   const linhas = (isAdmin ? vendedores : vendedores.filter(v => v.id === profile?.id))
+    .filter(v => !filtroVendedor || v.id === filtroVendedor)
     .map(v => {
       const s = statsMap[v.id] || { qtd: 0, total: 0 }
       const pct = v.comissao_percentual || 0
@@ -136,6 +138,21 @@ export default function Vendedores() {
             <input type="date" style={{ ...inputCss, minWidth: '140px' }}
               value={dataFim} onChange={e => { setDataFim(e.target.value); setSelectedId(null) }} />
           </div>
+          {isAdmin && vendedores.length > 1 && (
+            <div>
+              <Label>Vendedor</Label>
+              <select
+                style={{ ...inputCss, minWidth: '160px' }}
+                value={filtroVendedor}
+                onChange={e => { setFiltroVendedor(e.target.value); setSelectedId(null) }}
+              >
+                <option value="">Todos</option>
+                {vendedores.map(v => (
+                  <option key={v.id} value={v.id}>{v.nome}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div style={{ color: '#94a3b8', fontSize: '0.82rem', alignSelf: 'flex-end', paddingBottom: '0.7rem' }}>
             {!loading && `${vendas.length} venda${vendas.length !== 1 ? 's' : ''} no período`}
           </div>

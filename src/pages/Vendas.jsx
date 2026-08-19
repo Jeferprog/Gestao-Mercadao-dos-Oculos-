@@ -64,6 +64,7 @@ const Label = ({ children }) => (
 const FORM_INIT = {
   os_numero: '',
   nota_fiscal: '',
+  nome_cliente: '',
   data_venda: todayISO(),
   vendedor_id: '',
   valor_bruto: '',
@@ -101,6 +102,14 @@ function FormVenda({ form, onChange, vendedores, formasPagamento, isAdmin, onSub
           <input style={inputCss} placeholder="Opcional"
             value={form.nota_fiscal}
             onChange={e => onChange({ ...form, nota_fiscal: e.target.value })} />
+        </div>
+
+        {/* Nome do Cliente */}
+        <div>
+          <Label>Nome do Cliente</Label>
+          <input style={inputCss} placeholder="Opcional"
+            value={form.nome_cliente}
+            onChange={e => onChange({ ...form, nome_cliente: e.target.value })} />
         </div>
 
         {/* Data */}
@@ -287,6 +296,7 @@ export default function Vendas() {
     setForm({
       os_numero: v.os_numero,
       nota_fiscal: v.nota_fiscal || '',
+      nome_cliente: v.nome_cliente || '',
       data_venda: v.data_venda,
       vendedor_id: v.vendedor_id,
       valor_bruto: v.valor_bruto,
@@ -310,6 +320,7 @@ export default function Vendas() {
     const payload = {
       os_numero: form.os_numero,
       nota_fiscal: form.nota_fiscal || null,
+      nome_cliente: form.nome_cliente || null,
       data_venda: form.data_venda,
       vendedor_id: form.vendedor_id,
       valor_bruto: bruto,
@@ -487,7 +498,7 @@ export default function Vendas() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                  {['O.S.', 'N. Fiscal', 'Data', 'Vendedor', 'Valor Bruto', 'Desconto', 'Valor Final', 'Pagamento', 'Ações'].map(h => (
+                  {['O.S.', 'N. Fiscal', 'Cliente', 'Data', 'Vendedor', 'Valor Bruto', 'Desconto', 'Valor Final', 'Pagamento', 'Ações'].map(h => (
                     <th key={h} style={{
                       padding: '0.6rem 0.75rem', textAlign: 'left', fontSize: '0.75rem',
                       fontWeight: '700', color: '#64748b', textTransform: 'uppercase',
@@ -503,6 +514,7 @@ export default function Vendas() {
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a' }}>#{v.os_numero}</td>
                     <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>{v.nota_fiscal || '—'}</td>
+                    <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>{v.nome_cliente || '—'}</td>
                     <td style={{ padding: '0.65rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>{fDateBR(v.data_venda)}</td>
                     <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>{vendedorMap[v.vendedor_id] || '—'}</td>
                     <td style={{ padding: '0.65rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>{fBRL(v.valor_bruto)}</td>
@@ -539,7 +551,7 @@ export default function Vendas() {
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: '2px solid #f1f5f9', background: '#f8fafc' }}>
-                  <td colSpan={4} style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.82rem' }}>
+                  <td colSpan={5} style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.82rem' }}>
                     TOTAL — {vendas.length} O.S.
                   </td>
                   <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', whiteSpace: 'nowrap' }}>{fBRL(totBruto)}</td>

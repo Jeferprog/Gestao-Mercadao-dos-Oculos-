@@ -59,6 +59,18 @@ const NAV_ITEMS = [
     ),
   },
   {
+    to: '/clientes',
+    label: 'Clientes',
+    icon: (
+      <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+        <rect x="2" y="4" width="20" height="16" rx="2" />
+        <circle cx="8.5" cy="11" r="2" />
+        <path d="M5 19c0-1.93 1.57-3.5 3.5-3.5S12 17.07 12 19" />
+        <path d="M15 10h4M15 14h2.5" />
+      </svg>
+    ),
+  },
+  {
     to: '/configuracoes',
     label: 'Configurações',
     icon: (
