@@ -341,6 +341,11 @@ export default function Vendas() {
       showToast('Erro ao salvar: ' + error.message, 'err')
     } else {
       showToast(editId ? 'Venda atualizada!' : 'Venda registrada!')
+      if (form.nome_cliente?.trim()) {
+        const n = form.nome_cliente.trim()
+        supabase.from('clientes').select('id').ilike('nome', n).limit(1)
+          .then(({ data }) => { if (!data?.length) supabase.from('clientes').insert({ nome: n }) })
+      }
       setShowForm(false)
       carregarVendas()
       carregarDias()
