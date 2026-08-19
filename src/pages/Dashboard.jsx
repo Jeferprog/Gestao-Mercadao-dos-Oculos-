@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -12,6 +13,10 @@ function lastOfMonth() {
   const d = new Date()
   return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
 }
+function em7DiasISO() {
+  const d = new Date(); d.setDate(d.getDate() + 7)
+  return d.toISOString().slice(0, 10)
+}
 function fBRL(v) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
 }
@@ -20,19 +25,112 @@ function fDateBR(iso) {
   const [y, m, d] = iso.split('-')
   return `${d}/${m}/${y}`
 }
+function diffDias(iso) {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0)
+  return Math.round((new Date(iso + 'T00:00:00') - hoje) / 86400000)
+}
+function buildChartData(vendas) {
+  const now   = new Date()
+  const ano   = now.getFullYear()
+  const mes   = now.getMonth()
+  const dias  = new Date(ano, mes + 1, 0).getDate()
+  const pfx   = `${ano}-${String(mes + 1).padStart(2, '0')}-`
+  const map   = {}
+  ;(vendas || []).forEach(v => { if (v.data_venda) map[v.data_venda] = (map[v.data_venda] || 0) + (v.valor_final || 0) })
+  return Array.from({ length: dias }, (_, i) => ({
+    dia: i + 1,
+    total: map[pfx + String(i + 1).padStart(2, '0')] || 0,
+  }))
+}
 
-/* ── Card de estatística ── */
-function StatCard({ icon, label, value, sub, color, bg, shimmer }) {
+/* ── Gráfico de barras (SVG inline) ── */
+function BarChart({ dados, shimmer }) {
+  if (shimmer) return (
+    <div style={{ height: '155px', background: '#f8fafc', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: '90%', height: '80%', background: 'linear-gradient(90deg,#f1f5f9 30%,#e2e8f0 50%,#f1f5f9 70%)', backgroundSize: '200% 100%', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+    </div>
+  )
+
+  const hojeNum = new Date().getDate()
+  const maxVal  = Math.max(...dados.map(d => d.total), 1)
+  const allZero = dados.every(d => d.total === 0)
+  const n       = dados.length
+
+  const W = 760, padL = 50, padR = 6, padT = 10, padB = 24, chartH = 128
+  const chartW = W - padL - padR
+  const slotW  = chartW / n
+  const barW   = Math.max(slotW - 1.5, 1.5)
+
+  const yLines = [1, 0.5, 0.25].map(p => ({
+    y: padT + chartH * (1 - p),
+    v: maxVal * p,
+  }))
+
   return (
-    <div style={{
-      background: '#fff', borderRadius: '1rem', padding: '1.25rem',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9',
-      display: 'flex', flexDirection: 'column', gap: '0.75rem',
-    }}>
-      <div style={{
-        width: '44px', height: '44px', borderRadius: '0.75rem', background: bg,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.35rem',
-      }}>{icon}</div>
+    <svg viewBox={`0 0 ${W} ${padT + chartH + padB}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      {yLines.map((gl, i) => (
+        <g key={i}>
+          <line x1={padL} y1={gl.y} x2={padL + chartW} y2={gl.y} stroke="#f1f5f9" strokeWidth="1" />
+          <text x={padL - 4} y={gl.y + 3.5} textAnchor="end" fontSize="9" fill="#cbd5e1">
+            {gl.v >= 1000 ? (gl.v / 1000).toFixed(gl.v >= 10000 ? 0 : 1) + 'k' : Math.round(gl.v)}
+          </text>
+        </g>
+      ))}
+
+      <line x1={padL} y1={padT} x2={padL} y2={padT + chartH} stroke="#e2e8f0" strokeWidth="1" />
+      <line x1={padL} y1={padT + chartH} x2={padL + chartW} y2={padT + chartH} stroke="#e2e8f0" strokeWidth="1" />
+
+      {dados.map((d, i) => {
+        const barH  = allZero ? 0 : Math.max((d.total / maxVal) * chartH, d.total > 0 ? 2 : 0)
+        const x     = padL + i * slotW + (slotW - barW) / 2
+        const y     = padT + chartH - barH
+        const isHj  = d.dia === hojeNum
+        return (
+          <g key={i}>
+            {d.total > 0 && (
+              <rect x={x} y={y} width={barW} height={barH} rx="2"
+                fill={isHj ? '#0f2d4a' : '#C0272D'} opacity="0.82">
+                <title>{`Dia ${d.dia}: ${fBRL(d.total)}`}</title>
+              </rect>
+            )}
+            {(d.dia === 1 || d.dia % 5 === 0 || d.dia === n) && (
+              <text x={x + barW / 2} y={padT + chartH + 14} textAnchor="middle" fontSize="9"
+                fill={isHj ? '#0f2d4a' : '#94a3b8'} fontWeight={isHj ? '700' : '400'}>
+                {d.dia}
+              </text>
+            )}
+          </g>
+        )
+      })}
+
+      {allZero && (
+        <text x={padL + chartW / 2} y={padT + chartH / 2 + 4}
+          textAnchor="middle" fontSize="11" fill="#cbd5e1">
+          Sem vendas registradas no mês
+        </text>
+      )}
+    </svg>
+  )
+}
+
+/* ── Card de indicador ── */
+function StatCard({ icon, label, value, sub, alert, alertColor, color, bg, shimmer, onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        background: '#fff', borderRadius: '1rem', padding: '1.25rem',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9',
+        display: 'flex', flexDirection: 'column', gap: '0.75rem',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'box-shadow 0.15s, transform 0.12s',
+      }}
+      onMouseEnter={e => { if (onClick) { e.currentTarget.style.boxShadow = '0 6px 18px rgba(0,0,0,0.1)'; e.currentTarget.style.transform = 'translateY(-2px)' } }}
+      onMouseLeave={e => { if (onClick) { e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)'; e.currentTarget.style.transform = 'none' } }}
+    >
+      <div style={{ width: '44px', height: '44px', borderRadius: '0.75rem', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.35rem' }}>
+        {icon}
+      </div>
       <div>
         <p style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 0.25rem' }}>
           {label}
@@ -44,7 +142,8 @@ function StatCard({ icon, label, value, sub, color, bg, shimmer }) {
             <p style={{ color: color || '#1e293b', fontSize: '1.45rem', fontWeight: '800', margin: 0, letterSpacing: '-0.5px' }}>
               {value}
             </p>
-            {sub && <p style={{ margin: '0.15rem 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>{sub}</p>}
+            {sub   && <p style={{ margin: '0.15rem 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>{sub}</p>}
+            {alert && <p style={{ margin: '0.1rem 0 0', fontSize: '0.75rem', fontWeight: '700', color: alertColor || '#dc2626' }}>{alert}</p>}
           </>
         )}
       </div>
@@ -52,185 +151,267 @@ function StatCard({ icon, label, value, sub, color, bg, shimmer }) {
   )
 }
 
-/* ── Dashboard ── */
+/* ── Linha de shimmer para lembretes ── */
+function LembreteShimmer() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+      {[100, 80, 90].map(w => (
+        <div key={w} style={{ height: '14px', width: `${w}%`, background: '#f1f5f9', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+      ))}
+    </div>
+  )
+}
+
+/* ════════════════════ DASHBOARD ════════════════════ */
 export default function Dashboard() {
   const { profile, isAdmin } = useAuth()
-  const [stats, setStats] = useState(null)
-  const [recentVendas, setRecentVendas] = useState([])
-  const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
+
+  const [loading,       setLoading]       = useState(true)
+  const [stats,         setStats]         = useState({})
+  const [chartData,     setChartData]     = useState([])
+  const [despProximas,  setDespProximas]  = useState([])
+  const [audiencias,    setAudiencias]    = useState([])
 
   useEffect(() => {
     if (!profile) return
 
     async function load() {
       setLoading(true)
-      const hoje = todayISO()
+      const hoje  = todayISO()
       const inicio = firstOfMonth()
-      const fim = lastOfMonth()
+      const fim   = lastOfMonth()
+      const em7   = em7DiasISO()
 
-      /* ── vendas ── */
       let qHoje = supabase.from('vendas').select('valor_final').eq('data_venda', hoje)
-      let qMes = supabase.from('vendas').select('valor_final').gte('data_venda', inicio).lte('data_venda', fim)
-      let qRecentes = supabase.from('vendas')
-        .select('os_numero, data_venda, valor_final, forma_pagamento')
-        .order('os_numero', { ascending: false })
-        .limit(5)
-
+      let qMes  = supabase.from('vendas').select('data_venda, valor_final').gte('data_venda', inicio).lte('data_venda', fim)
       if (!isAdmin) {
         qHoje = qHoje.eq('vendedor_id', profile.id)
-        qMes = qMes.eq('vendedor_id', profile.id)
-        qRecentes = qRecentes.eq('vendedor_id', profile.id)
+        qMes  = qMes.eq('vendedor_id', profile.id)
       }
 
-      const [
-        { data: vHoje },
-        { data: vMes },
-        { data: recentes },
-      ] = await Promise.all([qHoje, qMes, qRecentes])
+      const adminQs = isAdmin ? [
+        supabase.from('despesas').select('valor').eq('pago', false),
+        supabase.from('despesas').select('valor').eq('pago', false).lt('data_vencimento', hoje),
+        supabase.from('despesas').select('descricao, data_vencimento, valor')
+          .eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7)
+          .order('data_vencimento').limit(8),
+        supabase.from('cobrancas_boletos').select('valor, devedor_id').is('data_liquidacao', null),
+        supabase.from('cobrancas_devedores').select('id, status_cobranca'),
+        supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia')
+          .gte('data_audiencia', hoje).lte('data_audiencia', em7)
+          .order('data_audiencia').limit(8),
+      ] : []
 
-      const totHoje = (vHoje || []).reduce((s, v) => s + (v.valor_final || 0), 0)
-      const qtdHoje = (vHoje || []).length
-      const totMes = (vMes || []).reduce((s, v) => s + (v.valor_final || 0), 0)
-      const qtdMes = (vMes || []).length
+      const [r0, r1, ...aR] = await Promise.all([qHoje, qMes, ...adminQs])
 
-      /* ── despesas (admin only — pode não existir ainda) ── */
-      let qtdAberto = null, totAberto = null, qtdAtrasadas = null
+      const vHoje  = r0.data || []
+      const vMes   = r1.data || []
+      const totHoje = vHoje.reduce((s, v) => s + (v.valor_final || 0), 0)
+      const qtdHoje = vHoje.length
+      const totMes  = vMes.reduce((s, v)  => s + (v.valor_final || 0), 0)
+      const qtdMes  = vMes.length
+
+      setChartData(buildChartData(vMes))
+
+      const s = { totHoje, qtdHoje, totMes, qtdMes }
+
       if (isAdmin) {
-        const [{ data: dAberto }, { data: dAtrasadas }] = await Promise.all([
-          supabase.from('despesas').select('valor').eq('pago', false),
-          supabase.from('despesas').select('id').eq('pago', false).lt('data_vencimento', hoje),
-        ])
-        if (dAberto) {
-          qtdAberto = dAberto.length
-          totAberto = dAberto.reduce((s, d) => s + (d.valor || 0), 0)
-        }
-        if (dAtrasadas) qtdAtrasadas = dAtrasadas.length
+        const dAberto   = aR[0]?.data || []
+        const dAtras    = aR[1]?.data || []
+        const boletos   = aR[3]?.data || []
+        const devedores = aR[4]?.data || []
+
+        s.totDespAberto   = dAberto.reduce((a, d)   => a + (d.valor || 0), 0)
+        s.qtdDespAberto   = dAberto.length
+        s.totDespAtrasado = dAtras.reduce((a, d)    => a + (d.valor || 0), 0)
+        s.qtdDespAtrasado = dAtras.length
+
+        const devsSet     = new Set(boletos.map(b => b.devedor_id))
+        s.totBolAberto    = boletos.reduce((a, b)   => a + (b.valor  || 0), 0)
+        s.qtdDevsAberto   = devsSet.size
+        s.qtdDevsNovos    = devedores.filter(d => d.status_cobranca === 'Novo').length
+
+        setDespProximas(aR[2]?.data || [])
+        setAudiencias(aR[5]?.data   || [])
       }
 
-      setStats({ totHoje, qtdHoje, totMes, qtdMes, qtdAberto, totAberto, qtdAtrasadas })
-      setRecentVendas(recentes || [])
+      setStats(s)
       setLoading(false)
     }
 
     load()
   }, [profile, isAdmin])
 
-  const hoje = new Date().toLocaleDateString('pt-BR', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  })
+  const hoje   = todayISO()
+  const mesTit = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  const greet  = new Date().toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  const cardBox = {
+    background: '#fff', borderRadius: '1rem', padding: '1.25rem',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9',
+  }
 
   return (
     <div className="pg">
-      {/* Cabeçalho */}
+
+      {/* ── Cabeçalho ── */}
       <div style={{ marginBottom: '1.75rem' }}>
         <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: '0 0 0.25rem', letterSpacing: '-0.3px' }}>
           Olá, {profile?.nome?.split(' ')[0] || 'seja bem-vindo'} 👋
         </h1>
-        <p style={{ color: '#94a3b8', margin: 0, fontSize: '0.85rem', textTransform: 'capitalize' }}>
-          {hoje}
-        </p>
+        <p style={{ color: '#94a3b8', margin: 0, fontSize: '0.85rem', textTransform: 'capitalize' }}>{greet}</p>
       </div>
 
-      {/* Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+      {/* ── Cards de indicadores ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
         <StatCard
-          icon="💰"
+          icon="💰" bg="#fff0f0" color="#C0272D"
           label={isAdmin ? 'Vendas Hoje' : 'Minhas Vendas Hoje'}
-          value={fBRL(stats?.totHoje)}
-          sub={stats?.qtdHoje > 0 ? `${stats.qtdHoje} O.S.` : null}
-          bg="#fff0f0" color="#C0272D"
+          value={fBRL(stats.totHoje)}
+          sub={stats.qtdHoje > 0 ? `${stats.qtdHoje} O.S.` : 'Sem vendas hoje'}
           shimmer={loading}
+          onClick={() => navigate('/vendas')}
         />
         <StatCard
-          icon="📈"
-          label={isAdmin ? 'Total do Mês' : 'Meu Total do Mês'}
-          value={fBRL(stats?.totMes)}
-          sub={stats?.qtdMes > 0 ? `${stats.qtdMes} O.S.` : null}
-          bg="#f0fdf4" color="#15803d"
+          icon="📈" bg="#f0fdf4" color="#15803d"
+          label={isAdmin ? 'Vendas do Mês' : 'Minhas Vendas do Mês'}
+          value={fBRL(stats.totMes)}
+          sub={stats.qtdMes > 0 ? `${stats.qtdMes} O.S. no mês` : 'Sem vendas no mês'}
           shimmer={loading}
+          onClick={() => navigate('/vendas')}
         />
 
-        {isAdmin ? (
+        {isAdmin && (
           <>
             <StatCard
-              icon="💳"
-              label="Contas em Aberto"
-              value={stats?.qtdAberto != null ? String(stats.qtdAberto) : '—'}
-              sub={stats?.totAberto > 0 ? fBRL(stats.totAberto) : null}
-              bg="#fffbeb" color="#d97706"
+              icon="💳" bg="#fffbeb" color="#d97706"
+              label="Contas a Pagar"
+              value={fBRL(stats.totDespAberto)}
+              sub={`${stats.qtdDespAberto ?? 0} conta${stats.qtdDespAberto !== 1 ? 's' : ''} em aberto`}
+              alert={stats.totDespAtrasado > 0 ? `⚠️ ${fBRL(stats.totDespAtrasado)} atrasado` : null}
+              alertColor="#dc2626"
               shimmer={loading}
+              onClick={() => navigate('/resumo')}
             />
             <StatCard
-              icon="⚠️"
-              label="Contas Atrasadas"
-              value={stats?.qtdAtrasadas != null ? String(stats.qtdAtrasadas) : '—'}
-              bg="#fef2f2" color="#dc2626"
+              icon="⚖️" bg="#fef2f2" color="#991b1b"
+              label="Cobranças em Aberto"
+              value={fBRL(stats.totBolAberto)}
+              sub={`${stats.qtdDevsAberto ?? 0} devedor${stats.qtdDevsAberto !== 1 ? 'es' : ''} em aberto`}
+              alert={stats.qtdDevsNovos > 0 ? `🆕 ${stats.qtdDevsNovos} novo${stats.qtdDevsNovos > 1 ? 's' : ''}` : null}
+              alertColor="#C0272D"
               shimmer={loading}
-            />
-          </>
-        ) : (
-          <>
-            <StatCard
-              icon="📋"
-              label="Minhas O.S. Hoje"
-              value={loading ? '…' : String(stats?.qtdHoje ?? 0)}
-              bg="#eff6ff" color="#1d4ed8"
-              shimmer={loading}
-            />
-            <StatCard
-              icon="📊"
-              label="Minhas O.S. do Mês"
-              value={loading ? '…' : String(stats?.qtdMes ?? 0)}
-              bg="#fdf4ff" color="#7e22ce"
-              shimmer={loading}
+              onClick={() => navigate('/cobrancas')}
             />
           </>
         )}
       </div>
 
-      {/* Últimas vendas */}
-      {!loading && recentVendas.length > 0 && (
-        <div style={{ background: '#fff', borderRadius: '1rem', padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9' }}>
-          <div style={{ fontWeight: '700', color: '#0f2d4a', marginBottom: '1rem', fontSize: '0.95rem' }}>
-            {isAdmin ? 'Últimas Vendas Registradas' : 'Minhas Últimas Vendas'}
+      {/* ── Gráfico de barras ── */}
+      <div style={{ ...cardBox, marginBottom: '1.25rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.9rem' }}>
+            {isAdmin ? 'Vendas por Dia' : 'Minhas Vendas por Dia'} —&nbsp;
+            <span style={{ textTransform: 'capitalize', fontWeight: '500', color: '#64748b' }}>{mesTit}</span>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                  {['O.S.', 'Data', 'Valor Final', 'Pagamento'].map(h => (
-                    <th key={h} style={{ padding: '0.5rem 0.75rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', whiteSpace: 'nowrap' }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {recentVendas.map(v => (
-                  <tr key={v.os_numero} style={{ borderBottom: '1px solid #f8fafc' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#0f2d4a' }}>#{v.os_numero}</td>
-                    <td style={{ padding: '0.6rem 0.75rem', color: '#64748b', whiteSpace: 'nowrap' }}>{fDateBR(v.data_venda)}</td>
-                    <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#16a34a', whiteSpace: 'nowrap' }}>{fBRL(v.valor_final)}</td>
-                    <td style={{ padding: '0.6rem 0.75rem', color: '#475569' }}>
-                      {v.forma_pagamento
-                        ? <span style={{ background: '#f1f5f9', borderRadius: '0.4rem', padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontWeight: '600' }}>{v.forma_pagamento}</span>
-                        : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {!loading && (
+            <div style={{ display: 'flex', gap: '0.875rem', fontSize: '0.72rem', color: '#94a3b8' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ display: 'inline-block', width: '10px', height: '10px', background: '#C0272D', borderRadius: '2px', opacity: 0.82 }} />
+                Outros dias
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ display: 'inline-block', width: '10px', height: '10px', background: '#0f2d4a', borderRadius: '2px' }} />
+                Hoje
+              </span>
+            </div>
+          )}
         </div>
-      )}
+        <BarChart dados={chartData} shimmer={loading} />
+      </div>
 
-      {!loading && recentVendas.length === 0 && (
-        <div style={{ background: '#fff', border: '1px dashed #cbd5e1', borderRadius: '1rem', padding: '1.5rem', textAlign: 'center', color: '#94a3b8' }}>
-          <p style={{ margin: 0, fontSize: '0.875rem' }}>
-            Nenhuma venda registrada ainda. Acesse <strong>Vendas</strong> para lançar a primeira O.S.
-          </p>
+      {/* ── Lembretes (admin only) ── */}
+      {isAdmin && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem' }}>
+
+          {/* Contas a vencer */}
+          <div style={cardBox}>
+            <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.88rem', marginBottom: '0.875rem' }}>
+              📅 Contas a Vencer nos Próximos 7 Dias
+            </div>
+            {loading ? <LembreteShimmer /> : despProximas.length === 0 ? (
+              <p style={{ color: '#94a3b8', fontSize: '0.82rem', margin: 0 }}>Nenhuma conta nos próximos 7 dias.</p>
+            ) : (
+              <div>
+                {despProximas.map((d, i) => {
+                  const dias = diffDias(d.data_vencimento)
+                  const isHj = dias === 0
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.55rem 0', borderBottom: i < despProximas.length - 1 ? '1px solid #f8fafc' : 'none' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: '600', fontSize: '0.82rem', color: isHj ? '#dc2626' : '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {isHj && '🔴 '}{d.descricao}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '1px' }}>
+                          {fDateBR(d.data_vencimento)}{dias === 0 ? ' — hoje' : dias === 1 ? ' — amanhã' : ` — em ${dias} dias`}
+                        </div>
+                      </div>
+                      <div style={{ fontWeight: '700', color: '#d97706', fontSize: '0.875rem', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {fBRL(d.valor)}
+                      </div>
+                    </div>
+                  )
+                })}
+                <div style={{ marginTop: '0.75rem', textAlign: 'right' }}>
+                  <button onClick={() => navigate('/resumo')}
+                    style={{ background: 'none', border: 'none', color: '#C0272D', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', padding: 0 }}>
+                    Ver todas →
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Audiências */}
+          <div style={cardBox}>
+            <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.88rem', marginBottom: '0.875rem' }}>
+              ⚖️ Próximas Audiências (7 Dias)
+            </div>
+            {loading ? <LembreteShimmer /> : audiencias.length === 0 ? (
+              <p style={{ color: '#94a3b8', fontSize: '0.82rem', margin: 0 }}>Nenhuma audiência nos próximos 7 dias.</p>
+            ) : (
+              <div>
+                {audiencias.map((a, i) => {
+                  const dias = diffDias(a.data_audiencia)
+                  const isHj = a.data_audiencia === hoje
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.55rem 0', borderBottom: i < audiencias.length - 1 ? '1px solid #f8fafc' : 'none', background: isHj ? '#fff5f5' : 'transparent', borderRadius: isHj ? '0.4rem' : 0, paddingLeft: isHj ? '0.5rem' : 0 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: '600', fontSize: '0.82rem', color: isHj ? '#C0272D' : '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {a.nome_pagador}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '1px' }}>
+                          {fDateBR(a.data_audiencia)}{dias === 0 ? ' — hoje' : dias === 1 ? ' — amanhã' : ` — em ${dias} dias`}
+                        </div>
+                      </div>
+                      {isHj && (
+                        <span style={{ background: '#C0272D', color: '#fff', borderRadius: '9999px', fontSize: '0.62rem', fontWeight: '800', padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          HOJE
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+                <div style={{ marginTop: '0.75rem', textAlign: 'right' }}>
+                  <button onClick={() => navigate('/cobrancas')}
+                    style={{ background: 'none', border: 'none', color: '#C0272D', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', padding: 0 }}>
+                    Ver todas →
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
         </div>
       )}
     </div>
