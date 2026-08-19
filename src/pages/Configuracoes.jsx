@@ -27,7 +27,7 @@ const inputCss = {
 
 const btnPrimary = {
   padding: '0.6rem 1.25rem',
-  background: '#1e5799',
+  background: '#C0272D',
   color: '#fff',
   border: 'none',
   borderRadius: '0.625rem',
@@ -711,8 +711,8 @@ export default function Configuracoes() {
     cursor: 'pointer',
     fontSize: '0.9rem',
     fontWeight: active ? '700' : '500',
-    color: active ? '#1e5799' : '#64748b',
-    borderBottom: active ? '2.5px solid #1e5799' : '2.5px solid transparent',
+    color: active ? '#C0272D' : '#64748b',
+    borderBottom: active ? '2.5px solid #C0272D' : '2.5px solid transparent',
     transition: 'all 0.15s',
   })
 
