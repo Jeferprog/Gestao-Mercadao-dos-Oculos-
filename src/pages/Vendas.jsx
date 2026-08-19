@@ -343,8 +343,11 @@ export default function Vendas() {
       showToast(editId ? 'Venda atualizada!' : 'Venda registrada!')
       if (form.nome_cliente?.trim()) {
         const n = form.nome_cliente.trim()
-        supabase.from('clientes').select('id').ilike('nome', n).limit(1)
-          .then(({ data }) => { if (!data?.length) supabase.from('clientes').insert({ nome: n }) })
+        const { data: exist } = await supabase.from('clientes').select('id').ilike('nome', n).limit(1)
+        if (!exist?.length) {
+          const { error: errCli } = await supabase.from('clientes').insert({ nome: n })
+          if (errCli) showToast('Aviso: não foi possível sincronizar com Clientes.', 'err')
+        }
       }
       setShowForm(false)
       carregarVendas()
