@@ -226,7 +226,7 @@ const SITUACAO_BOLETO_OPTS = ['Em aberto', 'Vencido', 'Acordo parcial', 'Liquida
 
 /* ════════════════════════════════ COMPONENTE PRINCIPAL ════════════════════════════════ */
 export default function Cobrancas() {
-  const { isAdmin } = useAuth()
+  const { isAdmin, profile } = useAuth()
   const fileRef = useRef()
 
   const [view,             setView]             = useState('lista')
@@ -269,10 +269,11 @@ export default function Cobrancas() {
       `)
       .order('ultima_atualizacao', { ascending: false })
     if (filtroFilial) q = q.eq('filial_id', filtroFilial)
+    else if (!isAdmin && profile?.filial_id) q = q.eq('filial_id', profile.filial_id)
     const { data } = await q
     setDevedores(data || [])
     setLoading(false)
-  }, [filtroFilial])
+  }, [filtroFilial, isAdmin, profile?.filial_id])
 
   useEffect(() => {
     supabase.from('filiais').select('*').order('nome').then(({ data }) => {
@@ -432,15 +433,6 @@ export default function Cobrancas() {
 
   /* ════════════════════ RENDER ════════════════════ */
 
-  if (!isAdmin) return (
-    <div className="pg" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-      <div style={{ textAlign: 'center', color: C.onSurfaceVariant }}>
-        <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🔒</div>
-        <p style={{ fontWeight: '700', color: C.onSurfaceVariant, fontFamily: F.body }}>Acesso restrito ao administrador.</p>
-      </div>
-    </div>
-  )
-
   return (
     <div className="pg">
 
@@ -532,7 +524,7 @@ export default function Cobrancas() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                     <thead>
                       <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
-                        {['Vencimento', 'Valor', 'Situação', 'Motivo', 'Data Liquidação', 'Valor Liquidado', ''].map(h => (
+                        {['Nosso Nº', 'Vencimento', 'Valor', 'Situação', 'Motivo', 'Data Liquidação', 'Valor Liquidado', ''].map(h => (
                           <th key={h} style={{ padding: '0.45rem 0.75rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: '600', color: C.onSurfaceVariant, textTransform: 'uppercase', whiteSpace: 'nowrap', fontFamily: F.body }}>{h}</th>
                         ))}
                       </tr>
@@ -546,6 +538,9 @@ export default function Cobrancas() {
                           const isSaving = savingBoleto.has(b.id)
                           return (
                             <tr key={b.id} style={{ borderBottom: `1px solid ${C.borderSubtle}`, background: emAberto ? 'transparent' : C.statusSuccessBg + '33' }}>
+                              <td style={{ padding: '0.5rem 0.75rem', color: C.onSurfaceVariant, whiteSpace: 'nowrap', fontFamily: F.mono, fontSize: '0.8rem' }}>
+                                {b.nosso_numero || <span style={{ color: C.outlineVariant }}>—</span>}
+                              </td>
                               <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600', color: C.onSurface, whiteSpace: 'nowrap', fontFamily: F.mono }}>
                                 {fDate(b.data_vencimento)}
                               </td>
@@ -588,7 +583,7 @@ export default function Cobrancas() {
                     {abertos(modalDev).length > 0 && (
                       <tfoot>
                         <tr style={{ borderTop: `2px solid ${C.borderSubtle}`, background: C.surfaceContainerLow }}>
-                          <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: C.onSurface, fontSize: '0.75rem', fontFamily: F.body }}>TOTAL EM ABERTO</td>
+                          <td colSpan={2} style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: C.onSurface, fontSize: '0.75rem', fontFamily: F.body }}>TOTAL EM ABERTO</td>
                           <td style={{ padding: '0.5rem 0.75rem', fontWeight: '800', color: C.statusDanger, whiteSpace: 'nowrap', fontFamily: F.mono }}>{fBRL(valorAberto(modalDev))}</td>
                           <td colSpan={5} />
                         </tr>
@@ -668,10 +663,12 @@ export default function Cobrancas() {
             onClick={() => setView('audiencias')}
             style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', border: '1.5px solid', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s', fontFamily: F.body, ...(view === 'audiencias' ? { background: C.onSurface, color: C.surfaceContainerLowest, borderColor: C.onSurface } : { background: C.surfaceContainerLowest, color: C.onSurfaceVariant, borderColor: C.borderSubtle }) }}
           >📅 Audiências {comAudiencia.length > 0 && `(${comAudiencia.length})`}</button>
-          <button
-            onClick={clickImportar} disabled={importando}
-            style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.85rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1, fontFamily: F.body }}
-          >{importando ? '⏳ Importando...' : '⬆️ Importar relatório'}</button>
+          {isAdmin && (
+            <button
+              onClick={clickImportar} disabled={importando}
+              style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.85rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1, fontFamily: F.body }}
+            >{importando ? '⏳ Importando...' : '⬆️ Importar relatório'}</button>
+          )}
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImport} style={{ display: 'none' }} />
         </div>
       </div>
