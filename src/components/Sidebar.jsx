@@ -71,6 +71,20 @@ const NAV_ITEMS = [
     ),
   },
   {
+    to: '/captacao',
+    label: 'Captação',
+    icon: (
+      <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+        <path d="M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0z" />
+        <circle cx="12" cy="12" r="3" />
+        <line x1="12" y1="2" x2="12" y2="5" />
+        <line x1="12" y1="19" x2="12" y2="22" />
+        <line x1="2" y1="12" x2="5" y2="12" />
+        <line x1="19" y1="12" x2="22" y2="12" />
+      </svg>
+    ),
+  },
+  {
     to: '/configuracoes',
     label: 'Configurações',
     icon: (
