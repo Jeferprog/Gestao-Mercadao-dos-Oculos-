@@ -90,7 +90,7 @@ async function parseFile(file) {
   let colMap = {}
   for (let i = 0; i < rows.length; i++) {
     const row = (rows[i] || []).map(c => (c != null ? String(c) : ''))
-    const temNosso  = row.some(c => c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').includes('nosso'))
+    const temNosso   = row.some(c => c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').includes('nosso'))
     const temPagador = row.some(c => /^pagador$/i.test(c.trim()))
     if (temNosso && temPagador) {
       headerIdx = i
@@ -106,33 +106,34 @@ async function parseFile(file) {
     const nomePagador = String(row[colMap.nome_pagador] ?? '').trim()
     if (!nomePagador) continue
     boletos.push({
-      carteira:        String(row[colMap.carteira]        ?? '').trim() || null,
-      numero_doc:      String(row[colMap.numero_doc]      ?? '').trim() || null,
-      nosso_numero:    String(row[colMap.nosso_numero]    ?? '').trim() || null,
-      txid:            String(row[colMap.txid]            ?? '').trim() || null,
-      nome_pagador:    nomePagador,
-      data_vencimento: parseDataBR(row[colMap.data_vencimento]),
-      data_liquidacao: parseDataBR(row[colMap.data_liquidacao]) || null,
-      valor:           parseBRL(row[colMap.valor]),
-      valor_liquidacao:parseBRL(row[colMap.valor_liquidacao]),
-      situacao_boleto: String(row[colMap.situacao_boleto] ?? '').trim() || null,
-      motivo:          String(row[colMap.motivo]          ?? '').trim() || null,
+      carteira:         String(row[colMap.carteira]        ?? '').trim() || null,
+      numero_doc:       String(row[colMap.numero_doc]      ?? '').trim() || null,
+      nosso_numero:     String(row[colMap.nosso_numero]    ?? '').trim() || null,
+      txid:             String(row[colMap.txid]            ?? '').trim() || null,
+      nome_pagador:     nomePagador,
+      data_vencimento:  parseDataBR(row[colMap.data_vencimento]),
+      data_liquidacao:  parseDataBR(row[colMap.data_liquidacao]) || null,
+      valor:            parseBRL(row[colMap.valor]),
+      valor_liquidacao: parseBRL(row[colMap.valor_liquidacao]),
+      situacao_boleto:  String(row[colMap.situacao_boleto] ?? '').trim() || null,
+      motivo:           String(row[colMap.motivo]          ?? '').trim() || null,
     })
   }
   if (boletos.length === 0) throw new Error('Nenhuma linha de boleto encontrada após o cabeçalho.')
   return boletos
 }
 
-/* ── importar boletos no Supabase ── */
-async function importarBoletos(boletos) {
+/* ── importar boletos no Supabase (com filial) ── */
+async function importarBoletos(boletos, filialId) {
   const hoje = todayISO()
 
   const uniqueNorm = [...new Set(boletos.map(b => normalizarNome(b.nome_pagador)).filter(Boolean))]
   if (uniqueNorm.length === 0) throw new Error('Nenhum pagador válido encontrado.')
 
-  // Buscar devedores já existentes que aparecem no arquivo
-  const { data: existentesDB, error: e1 } = await supabase
-    .from('cobrancas_devedores').select('id, nome_normalizado').in('nome_normalizado', uniqueNorm)
+  // Buscar devedores já existentes dentro da filial selecionada
+  let qExist = supabase.from('cobrancas_devedores').select('id, nome_normalizado').in('nome_normalizado', uniqueNorm)
+  if (filialId) qExist = qExist.eq('filial_id', filialId)
+  const { data: existentesDB, error: e1 } = await qExist
   if (e1) throw new Error(e1.message)
 
   const mapId = {}
@@ -147,10 +148,11 @@ async function importarBoletos(boletos) {
     const { data: inseridos, error: e2 } = await supabase
       .from('cobrancas_devedores')
       .insert(novosNorm.map((norm, i) => ({
-        nome_pagador:      novosNomes[i],
-        nome_normalizado:  norm,
-        status_cobranca:   'Novo',
-        primeiro_registro: hoje,
+        nome_pagador:       novosNomes[i],
+        nome_normalizado:   norm,
+        filial_id:          filialId || null,
+        status_cobranca:    'Novo',
+        primeiro_registro:  hoje,
         ultima_atualizacao: hoje,
       })))
       .select('id, nome_normalizado')
@@ -170,22 +172,24 @@ async function importarBoletos(boletos) {
       .update({ ultima_atualizacao: hoje }).in('id', idsExistentes)
   }
 
-  // Boletos: split por nosso_numero disponível
+  // Boletos: verificar existência por nosso_numero DENTRO da filial
   const nossoNums = boletos.map(b => b.nosso_numero).filter(Boolean)
   const setExistentes = new Set()
   if (nossoNums.length > 0) {
-    const { data: boletosDB } = await supabase
-      .from('cobrancas_boletos').select('nosso_numero').in('nosso_numero', nossoNums)
+    let qBol = supabase.from('cobrancas_boletos').select('nosso_numero').in('nosso_numero', nossoNums)
+    if (filialId) qBol = qBol.eq('filial_id', filialId)
+    const { data: boletosDB } = await qBol
     boletosDB?.forEach(b => { setExistentes.add(b.nosso_numero) })
   }
 
-  const paraInserir  = []
+  const paraInserir   = []
   const paraAtualizar = []
   boletos.forEach(b => {
     const devedorId = mapId[normalizarNome(b.nome_pagador)]
     if (!devedorId) return
     const payload = {
-      devedor_id: devedorId, carteira: b.carteira, numero_doc: b.numero_doc,
+      devedor_id: devedorId, filial_id: filialId || null,
+      carteira: b.carteira, numero_doc: b.numero_doc,
       nosso_numero: b.nosso_numero, txid: b.txid,
       data_vencimento: b.data_vencimento, data_liquidacao: b.data_liquidacao,
       valor: b.valor, valor_liquidacao: b.valor_liquidacao,
@@ -200,11 +204,13 @@ async function importarBoletos(boletos) {
     if (e3) throw new Error(e3.message)
   }
   for (const b of paraAtualizar) {
-    await supabase.from('cobrancas_boletos').update({
+    let q = supabase.from('cobrancas_boletos').update({
       data_vencimento: b.data_vencimento, data_liquidacao: b.data_liquidacao,
       valor: b.valor, valor_liquidacao: b.valor_liquidacao,
       situacao_boleto: b.situacao_boleto, motivo: b.motivo,
     }).eq('nosso_numero', b.nosso_numero)
+    if (filialId) q = q.eq('filial_id', filialId)
+    await q
   }
 
   return {
@@ -227,27 +233,41 @@ const inputCss = {
   background: '#f8fafc', color: '#1e293b', boxSizing: 'border-box',
 }
 const STATUS_OPTS = ['Novo', 'Em andamento', 'Negociado', 'Protestado', 'Quitado']
+const SITUACAO_BOLETO_OPTS = ['Em aberto', 'Vencido', 'Acordo parcial', 'Liquidado', 'Cancelado', 'Protestado']
 
 /* ════════════════════════════════ COMPONENTE PRINCIPAL ════════════════════════════════ */
 export default function Cobrancas() {
   const { isAdmin } = useAuth()
   const fileRef = useRef()
 
-  const [view,        setView]        = useState('lista')
-  const [devedores,   setDevedores]   = useState([])
-  const [filiais,     setFiliais]     = useState([])
-  const [filtroFilial, setFiltroFilial] = useState('')
-  const [loading,     setLoading]     = useState(true)
-  const [selectedId,  setSelectedId]  = useState(null)
-  const [editForm,    setEditForm]    = useState({})
-  const [salvando,    setSalvando]    = useState(false)
-  const [importando,  setImportando]  = useState(false)
-  const [importErr,   setImportErr]   = useState(null)
-  const [resultado,   setResultado]   = useState(null)
-  const [copied,      setCopied]      = useState(false)
-  const [filtros,     setFiltros]     = useState({
+  const [view,             setView]             = useState('lista')
+  const [devedores,        setDevedores]        = useState([])
+  const [filiais,          setFiliais]          = useState([])
+  const [filtroFilial,     setFiltroFilial]     = useState('')
+  const [loading,          setLoading]          = useState(true)
+  const [editForm,         setEditForm]         = useState({})
+  const [salvando,         setSalvando]         = useState(false)
+  const [importando,       setImportando]       = useState(false)
+  const [importErr,        setImportErr]        = useState(null)
+  const [resultado,        setResultado]        = useState(null)
+  const [copied,           setCopied]           = useState(false)
+
+  // Modal do devedor
+  const [modalDev,         setModalDev]         = useState(null)
+  const [boletoEdits,      setBoletoEdits]      = useState({})
+  const [savingBoleto,     setSavingBoleto]     = useState(new Set())
+  const [boletosToastId,   setBoletosToastId]   = useState(null)
+
+  // Importação por filial
+  const [showFilialModal,  setShowFilialModal]  = useState(false)
+  const [importFilialId,   setImportFilialId]   = useState('')
+
+  // Filtros
+  const [filtros, setFiltros] = useState({
     busca: '', status: '', somenteNovos: false, somentePC: false, somenteAudiencia: false,
   })
+  const [filtroVencInicio, setFiltroVencInicio] = useState('')
+  const [filtroVencFim,    setFiltroVencFim]    = useState('')
 
   /* ── carregamento ── */
   const carregar = useCallback(async () => {
@@ -269,9 +289,11 @@ export default function Cobrancas() {
     setLoading(false)
   }, [filtroFilial])
 
-  /* carrega filiais uma vez */
   useEffect(() => {
-    supabase.from('filiais').select('*').order('nome').then(({ data }) => setFiliais(data || []))
+    supabase.from('filiais').select('*').order('nome').then(({ data }) => {
+      setFiliais(data || [])
+      setImportFilialId(data?.[0]?.id || '')
+    })
   }, [])
 
   useEffect(() => { carregar() }, [carregar])
@@ -287,28 +309,85 @@ export default function Cobrancas() {
     if (filtros.somenteNovos && dev.status_cobranca !== 'Novo') return false
     if (filtros.somentePC && !dev.pequenas_causas) return false
     if (filtros.somenteAudiencia && !dev.data_audiencia) return false
+    if (filtroVencInicio || filtroVencFim) {
+      const match = (dev.cobrancas_boletos || []).some(b => {
+        if (!b.data_vencimento) return false
+        if (filtroVencInicio && b.data_vencimento < filtroVencInicio) return false
+        if (filtroVencFim    && b.data_vencimento > filtroVencFim)    return false
+        return true
+      })
+      if (!match) return false
+    }
     return true
   })
 
-  const selectedDev = devedores.find(d => d.id === selectedId)
-
-  /* ── selecionar devedor ── */
-  function selecionar(id) {
-    if (selectedId === id) { setSelectedId(null); setEditForm({}); return }
-    const dev = devedores.find(d => d.id === id)
-    setSelectedId(id)
-    setEditForm({
-      status_cobranca:    dev?.status_cobranca    || 'Novo',
-      telefone:           dev?.telefone           || '',
-      pequenas_causas:    dev?.pequenas_causas    || false,
-      data_audiencia:     dev?.data_audiencia     || '',
-      situacao_audiencia: dev?.situacao_audiencia || '',
-      observacoes:        dev?.observacoes        || '',
+  /* ── modal do devedor ── */
+  function abrirModal(dev) {
+    const edits = {}
+    ;(dev.cobrancas_boletos || []).forEach(b => {
+      edits[b.id] = { situacao_boleto: b.situacao_boleto || '', motivo: b.motivo || '', dirty: false }
     })
-    setTimeout(() => document.getElementById('detalhe-devedor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
+    setBoletoEdits(edits)
+    setEditForm({
+      status_cobranca:    dev.status_cobranca    || 'Novo',
+      telefone:           dev.telefone           || '',
+      pequenas_causas:    dev.pequenas_causas    || false,
+      data_audiencia:     dev.data_audiencia     || '',
+      situacao_audiencia: dev.situacao_audiencia || '',
+      observacoes:        dev.observacoes        || '',
+    })
+    setModalDev(dev)
+  }
+
+  function fecharModal() {
+    setModalDev(null)
+    setBoletoEdits({})
+    setEditForm({})
+  }
+
+  function updateBoletoEdit(boletoId, field, value) {
+    setBoletoEdits(prev => ({
+      ...prev,
+      [boletoId]: { ...prev[boletoId], [field]: value, dirty: true },
+    }))
+  }
+
+  async function salvarBoleto(boletoId) {
+    const edit = boletoEdits[boletoId]
+    if (!edit) return
+    setSavingBoleto(prev => new Set(prev).add(boletoId))
+    const { error } = await supabase.from('cobrancas_boletos').update({
+      situacao_boleto: edit.situacao_boleto || null,
+      motivo:          edit.motivo          || null,
+    }).eq('id', boletoId)
+    setSavingBoleto(prev => { const s = new Set(prev); s.delete(boletoId); return s })
+    if (!error) {
+      // atualiza modalDev e lista local
+      const patchBoletos = (bols) => (bols || []).map(b =>
+        b.id === boletoId ? { ...b, situacao_boleto: edit.situacao_boleto || null, motivo: edit.motivo || null } : b
+      )
+      setModalDev(prev => prev ? { ...prev, cobrancas_boletos: patchBoletos(prev.cobrancas_boletos) } : null)
+      setDevedores(prev => prev.map(d =>
+        d.id === modalDev?.id ? { ...d, cobrancas_boletos: patchBoletos(d.cobrancas_boletos) } : d
+      ))
+      setBoletoEdits(prev => ({ ...prev, [boletoId]: { ...prev[boletoId], dirty: false } }))
+    }
   }
 
   /* ── importar arquivo ── */
+  function clickImportar() {
+    if (filiais.length > 0) {
+      setShowFilialModal(true)
+    } else {
+      fileRef.current?.click()
+    }
+  }
+
+  function confirmarFilialImport() {
+    setShowFilialModal(false)
+    setTimeout(() => fileRef.current?.click(), 50)
+  }
+
   async function handleImport(e) {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -316,7 +395,7 @@ export default function Cobrancas() {
     setImportando(true); setImportErr(null); setResultado(null)
     try {
       const boletos = await parseFile(file)
-      const res = await importarBoletos(boletos)
+      const res = await importarBoletos(boletos, importFilialId || null)
       setResultado(res)
       await carregar()
     } catch (err) {
@@ -326,8 +405,9 @@ export default function Cobrancas() {
     }
   }
 
-  /* ── salvar edição ── */
+  /* ── salvar devedor ── */
   async function salvarDevedor() {
+    if (!modalDev) return
     setSalvando(true)
     await supabase.from('cobrancas_devedores').update({
       status_cobranca:    editForm.status_cobranca,
@@ -337,25 +417,32 @@ export default function Cobrancas() {
       situacao_audiencia: editForm.situacao_audiencia || null,
       observacoes:        editForm.observacoes || null,
       ultima_atualizacao: todayISO(),
-    }).eq('id', selectedId)
+    }).eq('id', modalDev.id)
 
-    // Sincronizar com a tabela de clientes
-    const nomeDev = selectedDev?.nome_pagador
+    const nomeDev = modalDev.nome_pagador
     if (nomeDev) {
       const { data: cli } = await supabase.from('clientes').select('id, telefone').ilike('nome', nomeDev).limit(1)
       if (cli?.length) {
-        // Atualiza telefone no cliente existente se ele ainda não tiver
         if (editForm.telefone && !cli[0].telefone) {
           await supabase.from('clientes').update({ telefone: editForm.telefone }).eq('id', cli[0].id)
         }
       } else {
-        // Cria novo cliente com nome e telefone
         await supabase.from('clientes').insert({ nome: nomeDev, telefone: editForm.telefone || null })
       }
     }
 
     await carregar()
     setSalvando(false)
+    // atualiza modalDev com novos dados
+    setModalDev(prev => prev ? {
+      ...prev,
+      status_cobranca:    editForm.status_cobranca,
+      telefone:           editForm.telefone || null,
+      pequenas_causas:    editForm.pequenas_causas,
+      data_audiencia:     editForm.data_audiencia || null,
+      situacao_audiencia: editForm.situacao_audiencia || null,
+      observacoes:        editForm.observacoes || null,
+    } : null)
   }
 
   /* ── copiar cobrança ── */
@@ -376,6 +463,9 @@ export default function Cobrancas() {
     .filter(d => d.data_audiencia)
     .sort((a, b) => a.data_audiencia.localeCompare(b.data_audiencia))
 
+  const filialMap = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
+  const temFiltrosVenc = filtroVencInicio || filtroVencFim
+
   /* ════════════════════ RENDER ════════════════════ */
 
   if (!isAdmin) return (
@@ -389,6 +479,217 @@ export default function Cobrancas() {
 
   return (
     <div className="pg">
+
+      {/* ── Modal selecionar filial para importação ── */}
+      {showFilialModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(15,45,74,0.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
+        }} onClick={() => setShowFilialModal(false)}>
+          <div style={{
+            background: '#fff', borderRadius: '1rem', padding: '1.75rem',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: '100%', maxWidth: '400px',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: '800', color: '#0f2d4a', fontSize: '1.05rem', marginBottom: '0.5rem' }}>
+              Importar relatório
+            </div>
+            <p style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
+              Selecione a filial à qual este relatório pertence. Devedores e boletos serão vinculados a ela.
+            </p>
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: '#475569', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Filial</label>
+              <select value={importFilialId} onChange={e => setImportFilialId(e.target.value)}
+                style={{ ...inputCss, width: '100%' }}>
+                <option value="">Sem filial</option>
+                {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: '0.625rem', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowFilialModal(false)}
+                style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', background: '#f1f5f9', color: '#475569', border: 'none', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={confirmarFilialImport}
+                style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: '#C0272D', color: '#fff', border: 'none', fontSize: '0.875rem', fontWeight: '700', cursor: 'pointer' }}>
+                Selecionar arquivo →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal do devedor ── */}
+      {modalDev && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(15,45,74,0.50)',
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '2rem 1rem',
+          overflowY: 'auto',
+        }} onClick={fecharModal}>
+          <div style={{
+            background: '#fff', borderRadius: '1.25rem', width: '100%', maxWidth: '900px',
+            boxShadow: '0 24px 80px rgba(0,0,0,0.28)', border: '2px solid #f1f5f9',
+            margin: 'auto',
+          }} onClick={e => e.stopPropagation()}>
+
+            {/* cabeçalho do modal */}
+            <div style={{ padding: '1.5rem 1.75rem', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
+              <div>
+                <div style={{ fontWeight: '800', color: '#0f2d4a', fontSize: '1.15rem' }}>{modalDev.nome_pagador}</div>
+                <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
+                  {abertos(modalDev).length} boleto{abertos(modalDev).length !== 1 ? 's' : ''} em aberto
+                  {' · '}Total: <strong style={{ color: '#C0272D' }}>{fBRL(valorAberto(modalDev))}</strong>
+                  {modalDev.filial_id && filialMap[modalDev.filial_id] && (
+                    <span style={{ marginLeft: '0.5rem', background: '#f1f5f9', borderRadius: '0.35rem', padding: '0.1rem 0.5rem', fontSize: '0.75rem', fontWeight: '600', color: '#475569' }}>
+                      {filialMap[modalDev.filial_id]}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                <button onClick={() => copiarCobranca(modalDev)}
+                  style={{ padding: '0.45rem 0.9rem', borderRadius: '0.5rem', background: copied ? '#16a34a' : '#f1f5f9', color: copied ? '#fff' : '#475569', border: 'none', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  {copied ? '✓ Copiado!' : '📋 Copiar cobrança'}
+                </button>
+                <button onClick={fecharModal}
+                  style={{ padding: '0.45rem 0.9rem', borderRadius: '0.5rem', background: 'none', border: '1.5px solid #e2e8f0', color: '#64748b', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer' }}>
+                  ✕ Fechar
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: '1.5rem 1.75rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+              {/* Boletos */}
+              <div>
+                <div style={{ fontWeight: '700', color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.625rem' }}>
+                  Boletos
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                        {['Vencimento', 'Valor', 'Situação', 'Motivo', 'Data Liquidação', 'Valor Liquidado', ''].map(h => (
+                          <th key={h} style={{ padding: '0.45rem 0.75rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...(modalDev.cobrancas_boletos || [])]
+                        .sort((a, b) => (a.data_vencimento || '').localeCompare(b.data_vencimento || ''))
+                        .map(b => {
+                          const emAberto = !b.data_liquidacao
+                          const edit = boletoEdits[b.id] || { situacao_boleto: b.situacao_boleto || '', motivo: b.motivo || '', dirty: false }
+                          const isSaving = savingBoleto.has(b.id)
+                          return (
+                            <tr key={b.id} style={{ borderBottom: '1px solid #f8fafc', background: emAberto ? 'transparent' : '#f8fffe' }}>
+                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600', color: '#0f2d4a', whiteSpace: 'nowrap' }}>
+                                {fDate(b.data_vencimento)}
+                              </td>
+                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: emAberto ? '#C0272D' : '#64748b', whiteSpace: 'nowrap' }}>
+                                {fBRL(b.valor)}
+                              </td>
+                              <td style={{ padding: '0.4rem 0.5rem', minWidth: '140px' }}>
+                                <select value={edit.situacao_boleto}
+                                  onChange={e => updateBoletoEdit(b.id, 'situacao_boleto', e.target.value)}
+                                  style={{ ...inputCss, padding: '0.3rem 0.5rem', fontSize: '0.78rem', width: '100%' }}>
+                                  <option value="">—</option>
+                                  {SITUACAO_BOLETO_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
+                                  {edit.situacao_boleto && !SITUACAO_BOLETO_OPTS.includes(edit.situacao_boleto) && (
+                                    <option value={edit.situacao_boleto}>{edit.situacao_boleto}</option>
+                                  )}
+                                </select>
+                              </td>
+                              <td style={{ padding: '0.4rem 0.5rem', minWidth: '160px' }}>
+                                <input value={edit.motivo}
+                                  onChange={e => updateBoletoEdit(b.id, 'motivo', e.target.value)}
+                                  placeholder="Motivo..."
+                                  style={{ ...inputCss, padding: '0.3rem 0.5rem', fontSize: '0.78rem', width: '100%' }} />
+                              </td>
+                              <td style={{ padding: '0.5rem 0.75rem', color: '#64748b', whiteSpace: 'nowrap' }}>{fDate(b.data_liquidacao)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600', color: '#16a34a', whiteSpace: 'nowrap' }}>
+                                {b.valor_liquidacao != null ? fBRL(b.valor_liquidacao) : <span style={{ color: '#cbd5e1' }}>—</span>}
+                              </td>
+                              <td style={{ padding: '0.4rem 0.5rem' }}>
+                                {edit.dirty && (
+                                  <button onClick={() => salvarBoleto(b.id)} disabled={isSaving}
+                                    style={{ padding: '0.3rem 0.65rem', background: '#C0272D', color: '#fff', border: 'none', borderRadius: '0.4rem', fontSize: '0.75rem', fontWeight: '700', cursor: isSaving ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: isSaving ? 0.7 : 1 }}>
+                                    {isSaving ? '…' : 'Salvar'}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                    </tbody>
+                    {abertos(modalDev).length > 0 && (
+                      <tfoot>
+                        <tr style={{ borderTop: '2px solid #f1f5f9', background: '#f8fafc' }}>
+                          <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.75rem' }}>TOTAL EM ABERTO</td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontWeight: '800', color: '#C0272D', whiteSpace: 'nowrap' }}>{fBRL(valorAberto(modalDev))}</td>
+                          <td colSpan={5} />
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </div>
+
+              {/* Formulário de cobrança */}
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1.25rem' }}>
+                <div style={{ fontWeight: '700', color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '1rem' }}>Dados da cobrança</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.875rem 1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Telefone</label>
+                    <input type="text" placeholder="(00) 00000-0000" value={editForm.telefone || ''}
+                      onChange={e => setEditForm(f => ({ ...f, telefone: e.target.value }))}
+                      style={{ ...inputCss, width: '100%' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</label>
+                    <select value={editForm.status_cobranca || 'Novo'}
+                      onChange={e => setEditForm(f => ({ ...f, status_cobranca: e.target.value }))}
+                      style={{ ...inputCss, width: '100%' }}>
+                      {STATUS_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Data da audiência</label>
+                    <input type="date" value={editForm.data_audiencia || ''}
+                      onChange={e => setEditForm(f => ({ ...f, data_audiencia: e.target.value }))}
+                      style={{ ...inputCss, width: '100%' }} />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', paddingTop: '1.35rem' }}>
+                    <input type="checkbox" id="pc-check-modal" checked={!!editForm.pequenas_causas}
+                      onChange={e => setEditForm(f => ({ ...f, pequenas_causas: e.target.checked }))}
+                      style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#C0272D' }} />
+                    <label htmlFor="pc-check-modal" style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>⚖️ Pequenas causas</label>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Situação da audiência</label>
+                    <input type="text" placeholder="Ex: Aguardando pauta, Realizada..." value={editForm.situacao_audiencia || ''}
+                      onChange={e => setEditForm(f => ({ ...f, situacao_audiencia: e.target.value }))}
+                      style={{ ...inputCss, width: '100%' }} />
+                  </div>
+                </div>
+                <div style={{ marginTop: '0.875rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Observações</label>
+                  <textarea rows={3} placeholder="Anotações sobre negociação, contatos, acordo..."
+                    value={editForm.observacoes || ''}
+                    onChange={e => setEditForm(f => ({ ...f, observacoes: e.target.value }))}
+                    style={{ ...inputCss, width: '100%', resize: 'vertical', fontFamily: 'inherit' }} />
+                </div>
+                <div style={{ marginTop: '1rem' }}>
+                  <button onClick={salvarDevedor} disabled={salvando}
+                    style={{ padding: '0.6rem 1.25rem', background: '#C0272D', color: '#fff', border: 'none', borderRadius: '0.6rem', fontSize: '0.875rem', fontWeight: '700', cursor: salvando ? 'not-allowed' : 'pointer', opacity: salvando ? 0.7 : 1 }}>
+                    {salvando ? 'Salvando…' : 'Salvar dados da cobrança'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Cabeçalho ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
         <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: 0, letterSpacing: '-0.3px' }}>
@@ -404,7 +705,7 @@ export default function Cobrancas() {
             style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', border: '1.5px solid', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s', ...(view === 'audiencias' ? { background: '#0f2d4a', color: '#fff', borderColor: '#0f2d4a' } : { background: '#fff', color: '#64748b', borderColor: '#e2e8f0' }) }}
           >📅 Audiências {comAudiencia.length > 0 && `(${comAudiencia.length})`}</button>
           <button
-            onClick={() => fileRef.current?.click()}
+            onClick={clickImportar}
             disabled={importando}
             style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: '#C0272D', color: '#fff', border: 'none', fontSize: '0.85rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1 }}
           >{importando ? '⏳ Importando...' : '⬆️ Importar relatório'}</button>
@@ -412,7 +713,7 @@ export default function Cobrancas() {
         </div>
       </div>
 
-      {/* ── Banner de importação ── */}
+      {/* ── Banners de importação ── */}
       {importErr && (
         <div style={{ ...card, borderLeft: '4px solid #dc2626', marginBottom: '1rem', background: '#fef2f2' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
@@ -424,13 +725,13 @@ export default function Cobrancas() {
           </div>
         </div>
       )}
-
       {resultado && (
         <div style={{ ...card, borderLeft: '4px solid #16a34a', marginBottom: '1rem', background: '#f0fdf4' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
             <div>
               <p style={{ fontWeight: '700', color: '#15803d', margin: '0 0 0.5rem' }}>
                 ✅ Importação concluída — {resultado.total} boleto{resultado.total !== 1 ? 's' : ''} processado{resultado.total !== 1 ? 's' : ''}
+                {resultado.filialNome && <span style={{ marginLeft: '0.5rem', fontWeight: '400' }}>· Filial: <strong>{resultado.filialNome}</strong></span>}
               </p>
               <div style={{ fontSize: '0.85rem', color: '#166534', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                 <span>📥 {resultado.inseridos} boleto{resultado.inseridos !== 1 ? 's' : ''} novo{resultado.inseridos !== 1 ? 's' : ''} inserido{resultado.inseridos !== 1 ? 's' : ''} · ♻️ {resultado.atualizados} atualizado{resultado.atualizados !== 1 ? 's' : ''}</span>
@@ -466,7 +767,7 @@ export default function Cobrancas() {
                 <option value="">Todos os status</option>
                 {STATUS_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
-              {isAdmin && filiais.length > 1 && (
+              {filiais.length > 1 && (
                 <select value={filtroFilial} onChange={e => setFiltroFilial(e.target.value)}
                   style={{ ...inputCss, minWidth: '160px' }}>
                   <option value="">Todas as filiais</option>
@@ -488,8 +789,8 @@ export default function Cobrancas() {
                   {label}
                 </label>
               ))}
-              {(filtros.busca || filtros.status || filtros.somenteNovos || filtros.somentePC || filtros.somenteAudiencia) && (
-                <button onClick={() => setFiltros({ busca: '', status: '', somenteNovos: false, somentePC: false, somenteAudiencia: false })}
+              {(filtros.busca || filtros.status || filtros.somenteNovos || filtros.somentePC || filtros.somenteAudiencia || temFiltrosVenc) && (
+                <button onClick={() => { setFiltros({ busca: '', status: '', somenteNovos: false, somentePC: false, somenteAudiencia: false }); setFiltroVencInicio(''); setFiltroVencFim('') }}
                   style={{ fontSize: '0.8rem', color: '#C0272D', background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600', padding: '0.3rem 0.5rem' }}>
                   ✕ Limpar
                 </button>
@@ -497,6 +798,29 @@ export default function Cobrancas() {
               <span style={{ fontSize: '0.8rem', color: '#94a3b8', marginLeft: 'auto' }}>
                 {loading ? '…' : `${listaFiltrada.length} devedor${listaFiltrada.length !== 1 ? 'es' : ''}`}
               </span>
+            </div>
+
+            {/* Filtro por vencimento */}
+            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #f1f5f9', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '0.625rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', alignSelf: 'center', whiteSpace: 'nowrap' }}>
+                Vencimento:
+              </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: '600', marginBottom: '0.2rem' }}>De</div>
+                <input type="date" value={filtroVencInicio} onChange={e => setFiltroVencInicio(e.target.value)}
+                  style={{ ...inputCss, padding: '0.4rem 0.6rem', fontSize: '0.82rem' }} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: '600', marginBottom: '0.2rem' }}>Até</div>
+                <input type="date" value={filtroVencFim} onChange={e => setFiltroVencFim(e.target.value)}
+                  style={{ ...inputCss, padding: '0.4rem 0.6rem', fontSize: '0.82rem' }} />
+              </div>
+              {temFiltrosVenc && (
+                <button onClick={() => { setFiltroVencInicio(''); setFiltroVencFim('') }}
+                  style={{ fontSize: '0.78rem', color: '#C0272D', background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600', padding: '0.3rem 0.5rem' }}>
+                  ✕ Limpar datas
+                </button>
+              )}
             </div>
           </div>
 
@@ -523,27 +847,31 @@ export default function Cobrancas() {
                   </thead>
                   <tbody>
                     {listaFiltrada.map(dev => {
-                      const isSel = selectedId === dev.id
                       const qtdAbertos = abertos(dev).length
                       const valAberto  = valorAberto(dev)
                       const sStyle     = statusStyle(dev.status_cobranca)
                       return (
                         <tr
                           key={dev.id}
-                          onClick={() => selecionar(dev.id)}
-                          style={{ borderBottom: '1px solid #f8fafc', cursor: 'pointer', borderLeft: `4px solid ${isSel ? '#C0272D' : 'transparent'}`, background: isSel ? '#fff5f5' : 'transparent', transition: 'background 0.12s' }}
-                          onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = '#fafafa' }}
-                          onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = 'transparent' }}
+                          onClick={() => abrirModal(dev)}
+                          style={{ borderBottom: '1px solid #f8fafc', cursor: 'pointer', transition: 'background 0.12s' }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         >
                           <td style={{ padding: '0.8rem 0.875rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                              <div style={{ width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0, background: isSel ? '#C0272D' : '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.82rem', fontWeight: '700', color: isSel ? '#fff' : '#64748b' }}>
+                              <div style={{ width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.82rem', fontWeight: '700', color: '#64748b' }}>
                                 {dev.nome_pagador.charAt(0)}
                               </div>
                               <div>
                                 <div style={{ fontWeight: '700', color: '#1e293b', fontSize: '0.875rem' }}>{dev.nome_pagador}</div>
                                 {dev.status_cobranca === 'Novo' && (
                                   <span style={{ fontSize: '0.68rem', fontWeight: '800', background: '#C0272D', color: '#fff', padding: '1px 6px', borderRadius: '9999px', letterSpacing: '0.5px' }}>NOVO</span>
+                                )}
+                                {dev.filial_id && filialMap[dev.filial_id] && (
+                                  <span style={{ fontSize: '0.68rem', fontWeight: '600', background: '#f1f5f9', color: '#64748b', padding: '1px 6px', borderRadius: '9999px', marginLeft: '4px' }}>
+                                    {filialMap[dev.filial_id]}
+                                  </span>
                                 )}
                               </div>
                             </div>
@@ -587,143 +915,6 @@ export default function Cobrancas() {
               </div>
             )}
           </div>
-
-          {/* ── Detalhe do devedor ── */}
-          {selectedId && selectedDev && (
-            <div id="detalhe-devedor" style={{ ...card, borderLeft: '4px solid #C0272D' }}>
-              {/* cabeçalho do detalhe */}
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-                <div>
-                  <div style={{ fontWeight: '800', color: '#0f2d4a', fontSize: '1.05rem' }}>{selectedDev.nome_pagador}</div>
-                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
-                    {abertos(selectedDev).length} boleto{abertos(selectedDev).length !== 1 ? 's' : ''} em aberto · Total: {fBRL(valorAberto(selectedDev))}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <button
-                    onClick={() => copiarCobranca(selectedDev)}
-                    style={{ padding: '0.45rem 0.9rem', borderRadius: '0.5rem', background: copied ? '#16a34a' : '#f1f5f9', color: copied ? '#fff' : '#475569', border: 'none', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}
-                  >{copied ? '✓ Copiado!' : '📋 Copiar cobrança'}</button>
-                  <button
-                    onClick={() => { setSelectedId(null); setEditForm({}) }}
-                    style={{ padding: '0.45rem 0.9rem', borderRadius: '0.5rem', background: 'none', border: '1.5px solid #e2e8f0', color: '#64748b', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer' }}
-                  >✕ Fechar</button>
-                </div>
-              </div>
-
-              {/* Boletos */}
-              <div style={{ marginBottom: '1.5rem' }}>
-                <div style={{ fontWeight: '700', color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.5rem' }}>Boletos</div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                        {['Vencimento', 'Valor', 'Situação', 'Motivo', 'Data Liquidação', 'Valor Liquidado'].map(h => (
-                          <th key={h} style={{ padding: '0.45rem 0.75rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...(selectedDev.cobrancas_boletos || [])]
-                        .sort((a, b) => (a.data_vencimento || '').localeCompare(b.data_vencimento || ''))
-                        .map(b => {
-                          const emAberto = !b.data_liquidacao
-                          return (
-                            <tr key={b.id} style={{ borderBottom: '1px solid #f8fafc', background: emAberto ? 'transparent' : '#f8fffe' }}>
-                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600', color: '#0f2d4a', whiteSpace: 'nowrap' }}>{fDate(b.data_vencimento)}</td>
-                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: emAberto ? '#C0272D' : '#64748b', whiteSpace: 'nowrap' }}>{fBRL(b.valor)}</td>
-                              <td style={{ padding: '0.5rem 0.75rem' }}>
-                                {b.situacao_boleto
-                                  ? <span style={{ background: emAberto ? '#fee2e2' : '#f0fdf4', color: emAberto ? '#991b1b' : '#166534', borderRadius: '0.35rem', padding: '0.15rem 0.5rem', fontSize: '0.75rem', fontWeight: '600' }}>{b.situacao_boleto}</span>
-                                  : <span style={{ color: '#cbd5e1' }}>—</span>}
-                              </td>
-                              <td style={{ padding: '0.5rem 0.75rem', color: '#64748b' }}>{b.motivo || <span style={{ color: '#cbd5e1' }}>—</span>}</td>
-                              <td style={{ padding: '0.5rem 0.75rem', color: '#64748b', whiteSpace: 'nowrap' }}>{fDate(b.data_liquidacao)}</td>
-                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600', color: '#16a34a', whiteSpace: 'nowrap' }}>
-                                {b.valor_liquidacao != null ? fBRL(b.valor_liquidacao) : <span style={{ color: '#cbd5e1' }}>—</span>}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                    </tbody>
-                    {abertos(selectedDev).length > 0 && (
-                      <tfoot>
-                        <tr style={{ borderTop: '2px solid #f1f5f9', background: '#f8fafc' }}>
-                          <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.75rem' }}>TOTAL EM ABERTO</td>
-                          <td style={{ padding: '0.5rem 0.75rem', fontWeight: '800', color: '#C0272D', whiteSpace: 'nowrap' }}>{fBRL(valorAberto(selectedDev))}</td>
-                          <td colSpan={4} />
-                        </tr>
-                      </tfoot>
-                    )}
-                  </table>
-                </div>
-              </div>
-
-              {/* Formulário de cobrança */}
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1.25rem' }}>
-                <div style={{ fontWeight: '700', color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '1rem' }}>Dados da cobrança</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.875rem 1rem' }}>
-                  {/* Telefone */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Telefone</label>
-                    <input type="text" placeholder="(00) 00000-0000" value={editForm.telefone || ''}
-                      onChange={e => setEditForm(f => ({ ...f, telefone: e.target.value }))}
-                      style={{ ...inputCss, width: '100%' }} />
-                  </div>
-
-                  {/* Status */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</label>
-                    <select value={editForm.status_cobranca || 'Novo'}
-                      onChange={e => setEditForm(f => ({ ...f, status_cobranca: e.target.value }))}
-                      style={{ ...inputCss, width: '100%' }}>
-                      {STATUS_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-
-                  {/* Data audiência */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Data da audiência</label>
-                    <input type="date" value={editForm.data_audiencia || ''}
-                      onChange={e => setEditForm(f => ({ ...f, data_audiencia: e.target.value }))}
-                      style={{ ...inputCss, width: '100%' }} />
-                  </div>
-
-                  {/* Pequenas causas */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', paddingTop: '1.35rem' }}>
-                    <input type="checkbox" id="pc-check" checked={!!editForm.pequenas_causas}
-                      onChange={e => setEditForm(f => ({ ...f, pequenas_causas: e.target.checked }))}
-                      style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#C0272D' }} />
-                    <label htmlFor="pc-check" style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>⚖️ Pequenas causas</label>
-                  </div>
-
-                  {/* Situação audiência */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Situação da audiência</label>
-                    <input type="text" placeholder="Ex: Aguardando pauta, Realizada..." value={editForm.situacao_audiencia || ''}
-                      onChange={e => setEditForm(f => ({ ...f, situacao_audiencia: e.target.value }))}
-                      style={{ ...inputCss, width: '100%' }} />
-                  </div>
-                </div>
-
-                {/* Observações */}
-                <div style={{ marginTop: '0.875rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Observações</label>
-                  <textarea rows={3} placeholder="Anotações sobre negociação, contatos, acordo..."
-                    value={editForm.observacoes || ''}
-                    onChange={e => setEditForm(f => ({ ...f, observacoes: e.target.value }))}
-                    style={{ ...inputCss, width: '100%', resize: 'vertical', fontFamily: 'inherit' }} />
-                </div>
-
-                <div style={{ marginTop: '1rem', display: 'flex', gap: '0.625rem' }}>
-                  <button
-                    onClick={salvarDevedor} disabled={salvando}
-                    style={{ padding: '0.6rem 1.25rem', background: '#C0272D', color: '#fff', border: 'none', borderRadius: '0.6rem', fontSize: '0.875rem', fontWeight: '700', cursor: salvando ? 'not-allowed' : 'pointer', opacity: salvando ? 0.7 : 1 }}
-                  >{salvando ? 'Salvando…' : 'Salvar'}</button>
-                </div>
-              </div>
-            </div>
-          )}
         </>
       )}
 
@@ -733,12 +924,11 @@ export default function Cobrancas() {
           <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.95rem', marginBottom: '1rem' }}>
             Audiências marcadas — {comAudiencia.length} devedor{comAudiencia.length !== 1 ? 'es' : ''}
           </div>
-
           {comAudiencia.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem 0' }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📅</div>
               <div style={{ fontWeight: '600' }}>Nenhuma audiência marcada.</div>
-              <div style={{ fontSize: '0.82rem', marginTop: '0.25rem' }}>Edite um devedor e preencha a data da audiência.</div>
+              <div style={{ fontSize: '0.82rem', marginTop: '0.25rem' }}>Clique em um devedor e preencha a data da audiência.</div>
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
@@ -754,7 +944,7 @@ export default function Cobrancas() {
                   {comAudiencia.map(dev => {
                     const hoje = todayISO()
                     const dias = diffDias(dev.data_audiencia, hoje)
-                    const isHoje   = dev.data_audiencia === hoje
+                    const isHoje    = dev.data_audiencia === hoje
                     const isProxima = dias > 0 && dias <= 7
                     const isPassada = dev.data_audiencia < hoje
                     const rowBg = isHoje ? '#fff5f5' : isProxima ? '#fffbeb' : 'transparent'
@@ -762,7 +952,7 @@ export default function Cobrancas() {
                     return (
                       <tr
                         key={dev.id}
-                        onClick={() => { setView('lista'); selecionar(dev.id) }}
+                        onClick={() => { setView('lista'); abrirModal(dev) }}
                         style={{ borderBottom: '1px solid #f8fafc', background: rowBg, cursor: 'pointer' }}
                         onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
                         onMouseLeave={e => e.currentTarget.style.opacity = '1'}
@@ -771,7 +961,7 @@ export default function Cobrancas() {
                           <div style={{ fontWeight: '800', color: isHoje ? '#C0272D' : isProxima ? '#d97706' : isPassada ? '#9ca3af' : '#0f2d4a', fontSize: '0.9rem' }}>
                             {isHoje ? '🔴 HOJE' : isProxima ? `🟡 ${fDate(dev.data_audiencia)}` : fDate(dev.data_audiencia)}
                           </div>
-                          {isHoje   && <div style={{ fontSize: '0.72rem', color: '#C0272D', fontWeight: '600' }}>Audiência hoje!</div>}
+                          {isHoje    && <div style={{ fontSize: '0.72rem', color: '#C0272D', fontWeight: '600' }}>Audiência hoje!</div>}
                           {isProxima && <div style={{ fontSize: '0.72rem', color: '#d97706' }}>em {dias} dia{dias > 1 ? 's' : ''}</div>}
                           {isPassada && <div style={{ fontSize: '0.72rem', color: '#9ca3af' }}>há {Math.abs(dias)} dia{Math.abs(dias) > 1 ? 's' : ''}</div>}
                         </td>

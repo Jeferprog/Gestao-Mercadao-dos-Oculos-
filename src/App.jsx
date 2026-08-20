@@ -8,6 +8,7 @@ import Resumo from './pages/Resumo'
 import Vendedores from './pages/Vendedores'
 import Cobrancas from './pages/Cobrancas'
 import Clientes from './pages/Clientes'
+import CaptacaoClientes from './pages/CaptacaoClientes'
 import Configuracoes from './pages/Configuracoes'
 
 function Loading() {
@@ -53,6 +54,7 @@ function AppRoutes() {
         <Route path="vendedores" element={<Vendedores />} />
         <Route path="cobrancas" element={<Cobrancas />} />
         <Route path="clientes" element={<Clientes />} />
+        <Route path="captacao" element={<CaptacaoClientes />} />
         <Route path="configuracoes" element={<Configuracoes />} />
       </Route>
     </Routes>
