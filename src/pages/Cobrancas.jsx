@@ -2,6 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { C, F, card as dsCard, inputCss as dsInputCss } from '../lib/ds'
+
+/* inputCss sem width — usado em células de tabela com larguras variadas */
+const { width: _w, ...inputCss } = dsInputCss
 
 /* ── helpers ── */
 function todayISO() { return new Date().toISOString().slice(0, 10) }
@@ -50,12 +54,12 @@ function diffDias(isoA, isoB) {
 
 function statusStyle(s) {
   return {
-    'Novo':         { bg: '#fee2e2', color: '#991b1b' },
-    'Em andamento': { bg: '#dbeafe', color: '#1e40af' },
-    'Negociado':    { bg: '#fef3c7', color: '#92400e' },
-    'Protestado':   { bg: '#f3e8ff', color: '#6b21a8' },
-    'Quitado':      { bg: '#dcfce7', color: '#166534' },
-  }[s] || { bg: '#f1f5f9', color: '#475569' }
+    'Novo':         { bg: C.statusDangerBg,  color: C.statusDanger  },
+    'Em andamento': { bg: C.statusInfoBg,    color: C.statusInfo    },
+    'Negociado':    { bg: C.statusWarningBg, color: C.statusWarning },
+    'Protestado':   { bg: '#f3e8ff',         color: '#6b21a8'       },
+    'Quitado':      { bg: C.statusSuccessBg, color: C.statusSuccess },
+  }[s] || { bg: C.surfaceContainerHigh, color: C.onSurfaceVariant }
 }
 
 /* ── detectar colunas pelo cabeçalho ── */
@@ -130,7 +134,6 @@ async function importarBoletos(boletos, filialId) {
   const uniqueNorm = [...new Set(boletos.map(b => normalizarNome(b.nome_pagador)).filter(Boolean))]
   if (uniqueNorm.length === 0) throw new Error('Nenhum pagador válido encontrado.')
 
-  // Buscar devedores já existentes dentro da filial selecionada
   let qExist = supabase.from('cobrancas_devedores').select('id, nome_normalizado').in('nome_normalizado', uniqueNorm)
   if (filialId) qExist = qExist.eq('filial_id', filialId)
   const { data: existentesDB, error: e1 } = await qExist
@@ -139,7 +142,6 @@ async function importarBoletos(boletos, filialId) {
   const mapId = {}
   existentesDB?.forEach(d => { mapId[d.nome_normalizado] = d.id })
 
-  // Inserir devedores novos
   const novosNorm  = uniqueNorm.filter(n => !mapId[n])
   const novosNomes = novosNorm.map(norm =>
     boletos.find(b => normalizarNome(b.nome_pagador) === norm)?.nome_pagador || norm
@@ -159,20 +161,17 @@ async function importarBoletos(boletos, filialId) {
     if (e2) throw new Error(e2.message)
     inseridos?.forEach(d => { mapId[d.nome_normalizado] = d.id })
 
-    // Sincronizar novos devedores com a tabela de clientes
     if (novosNomes.length > 0) {
       await supabase.from('clientes').insert(novosNomes.map(nome => ({ nome })))
     }
   }
 
-  // Atualizar ultima_atualizacao dos existentes
   const idsExistentes = existentesDB?.map(d => d.id) || []
   if (idsExistentes.length > 0) {
     await supabase.from('cobrancas_devedores')
       .update({ ultima_atualizacao: hoje }).in('id', idsExistentes)
   }
 
-  // Boletos: verificar existência por nosso_numero DENTRO da filial
   const nossoNums = boletos.map(b => b.nosso_numero).filter(Boolean)
   const setExistentes = new Set()
   if (nossoNums.length > 0) {
@@ -222,16 +221,6 @@ async function importarBoletos(boletos, filialId) {
   }
 }
 
-/* ── constantes de estilo ── */
-const card = {
-  background: '#fff', borderRadius: '1rem', padding: '1.5rem',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9',
-}
-const inputCss = {
-  padding: '0.6rem 0.875rem', border: '1.5px solid #e2e8f0',
-  borderRadius: '0.625rem', fontSize: '0.875rem', outline: 'none',
-  background: '#f8fafc', color: '#1e293b', boxSizing: 'border-box',
-}
 const STATUS_OPTS = ['Novo', 'Em andamento', 'Negociado', 'Protestado', 'Quitado']
 const SITUACAO_BOLETO_OPTS = ['Em aberto', 'Vencido', 'Acordo parcial', 'Liquidado', 'Cancelado', 'Protestado']
 
@@ -252,17 +241,13 @@ export default function Cobrancas() {
   const [resultado,        setResultado]        = useState(null)
   const [copied,           setCopied]           = useState(false)
 
-  // Modal do devedor
   const [modalDev,         setModalDev]         = useState(null)
   const [boletoEdits,      setBoletoEdits]      = useState({})
   const [savingBoleto,     setSavingBoleto]     = useState(new Set())
-  const [boletosToastId,   setBoletosToastId]   = useState(null)
 
-  // Importação por filial
   const [showFilialModal,  setShowFilialModal]  = useState(false)
   const [importFilialId,   setImportFilialId]   = useState('')
 
-  // Filtros
   const [filtros, setFiltros] = useState({
     busca: '', status: '', somenteNovos: false, somentePC: false, somenteAudiencia: false,
   })
@@ -339,17 +324,10 @@ export default function Cobrancas() {
     setModalDev(dev)
   }
 
-  function fecharModal() {
-    setModalDev(null)
-    setBoletoEdits({})
-    setEditForm({})
-  }
+  function fecharModal() { setModalDev(null); setBoletoEdits({}); setEditForm({}) }
 
   function updateBoletoEdit(boletoId, field, value) {
-    setBoletoEdits(prev => ({
-      ...prev,
-      [boletoId]: { ...prev[boletoId], [field]: value, dirty: true },
-    }))
+    setBoletoEdits(prev => ({ ...prev, [boletoId]: { ...prev[boletoId], [field]: value, dirty: true } }))
   }
 
   async function salvarBoleto(boletoId) {
@@ -362,7 +340,6 @@ export default function Cobrancas() {
     }).eq('id', boletoId)
     setSavingBoleto(prev => { const s = new Set(prev); s.delete(boletoId); return s })
     if (!error) {
-      // atualiza modalDev e lista local
       const patchBoletos = (bols) => (bols || []).map(b =>
         b.id === boletoId ? { ...b, situacao_boleto: edit.situacao_boleto || null, motivo: edit.motivo || null } : b
       )
@@ -376,17 +353,9 @@ export default function Cobrancas() {
 
   /* ── importar arquivo ── */
   function clickImportar() {
-    if (filiais.length > 0) {
-      setShowFilialModal(true)
-    } else {
-      fileRef.current?.click()
-    }
+    if (filiais.length > 0) { setShowFilialModal(true) } else { fileRef.current?.click() }
   }
-
-  function confirmarFilialImport() {
-    setShowFilialModal(false)
-    setTimeout(() => fileRef.current?.click(), 50)
-  }
+  function confirmarFilialImport() { setShowFilialModal(false); setTimeout(() => fileRef.current?.click(), 50) }
 
   async function handleImport(e) {
     const file = e.target.files?.[0]
@@ -433,7 +402,6 @@ export default function Cobrancas() {
 
     await carregar()
     setSalvando(false)
-    // atualiza modalDev com novos dados
     setModalDev(prev => prev ? {
       ...prev,
       status_cobranca:    editForm.status_cobranca,
@@ -447,8 +415,7 @@ export default function Cobrancas() {
 
   /* ── copiar cobrança ── */
   function copiarCobranca(dev) {
-    const lista = abertos(dev)
-      .sort((a, b) => (a.data_vencimento || '').localeCompare(b.data_vencimento || ''))
+    const lista = abertos(dev).sort((a, b) => (a.data_vencimento || '').localeCompare(b.data_vencimento || ''))
     const total = valorAberto(dev)
     const linhas = lista.map(b =>
       `• Venc. ${fDate(b.data_vencimento)} — ${fBRL(b.valor)}${b.situacao_boleto ? ` [${b.situacao_boleto}]` : ''}`
@@ -459,10 +426,7 @@ export default function Cobrancas() {
   }
 
   /* ── audiências ── */
-  const comAudiencia = [...devedores]
-    .filter(d => d.data_audiencia)
-    .sort((a, b) => a.data_audiencia.localeCompare(b.data_audiencia))
-
+  const comAudiencia = [...devedores].filter(d => d.data_audiencia).sort((a, b) => a.data_audiencia.localeCompare(b.data_audiencia))
   const filialMap = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
   const temFiltrosVenc = filtroVencInicio || filtroVencFim
 
@@ -470,9 +434,9 @@ export default function Cobrancas() {
 
   if (!isAdmin) return (
     <div className="pg" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-      <div style={{ textAlign: 'center', color: '#94a3b8' }}>
+      <div style={{ textAlign: 'center', color: C.onSurfaceVariant }}>
         <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🔒</div>
-        <p style={{ fontWeight: '700', color: '#64748b' }}>Acesso restrito ao administrador.</p>
+        <p style={{ fontWeight: '700', color: C.onSurfaceVariant, fontFamily: F.body }}>Acesso restrito ao administrador.</p>
       </div>
     </div>
   )
@@ -487,17 +451,17 @@ export default function Cobrancas() {
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
         }} onClick={() => setShowFilialModal(false)}>
           <div style={{
-            background: '#fff', borderRadius: '1rem', padding: '1.75rem',
+            background: C.surfaceContainerLowest, borderRadius: '1rem', padding: '1.75rem',
             boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: '100%', maxWidth: '400px',
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontWeight: '800', color: '#0f2d4a', fontSize: '1.05rem', marginBottom: '0.5rem' }}>
+            <div style={{ fontWeight: '800', color: C.onSurface, fontSize: '1.05rem', marginBottom: '0.5rem', fontFamily: F.headline }}>
               Importar relatório
             </div>
-            <p style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
+            <p style={{ color: C.onSurfaceVariant, fontSize: '0.875rem', marginBottom: '1.25rem', fontFamily: F.body }}>
               Selecione a filial à qual este relatório pertence. Devedores e boletos serão vinculados a ela.
             </p>
             <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: '#475569', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Filial</label>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: C.onSurfaceVariant, marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>Filial</label>
               <select value={importFilialId} onChange={e => setImportFilialId(e.target.value)}
                 style={{ ...inputCss, width: '100%' }}>
                 <option value="">Sem filial</option>
@@ -506,11 +470,11 @@ export default function Cobrancas() {
             </div>
             <div style={{ display: 'flex', gap: '0.625rem', justifyContent: 'flex-end' }}>
               <button onClick={() => setShowFilialModal(false)}
-                style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', background: '#f1f5f9', color: '#475569', border: 'none', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>
+                style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', background: C.surfaceContainerLow, color: C.onSurfaceVariant, border: 'none', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
                 Cancelar
               </button>
               <button onClick={confirmarFilialImport}
-                style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: '#C0272D', color: '#fff', border: 'none', fontSize: '0.875rem', fontWeight: '700', cursor: 'pointer' }}>
+                style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.875rem', fontWeight: '700', cursor: 'pointer', fontFamily: F.body }}>
                 Selecionar arquivo →
               </button>
             </div>
@@ -526,20 +490,20 @@ export default function Cobrancas() {
           overflowY: 'auto',
         }} onClick={fecharModal}>
           <div style={{
-            background: '#fff', borderRadius: '1.25rem', width: '100%', maxWidth: '900px',
-            boxShadow: '0 24px 80px rgba(0,0,0,0.28)', border: '2px solid #f1f5f9',
+            background: C.surfaceContainerLowest, borderRadius: '1.25rem', width: '100%', maxWidth: '900px',
+            boxShadow: '0 24px 80px rgba(0,0,0,0.28)', border: `2px solid ${C.borderSubtle}`,
             margin: 'auto',
           }} onClick={e => e.stopPropagation()}>
 
             {/* cabeçalho do modal */}
-            <div style={{ padding: '1.5rem 1.75rem', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
+            <div style={{ padding: '1.5rem 1.75rem', borderBottom: `1px solid ${C.borderSubtle}`, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
               <div>
-                <div style={{ fontWeight: '800', color: '#0f2d4a', fontSize: '1.15rem' }}>{modalDev.nome_pagador}</div>
-                <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
+                <div style={{ fontWeight: '800', color: C.onSurface, fontSize: '1.15rem', fontFamily: F.headline }}>{modalDev.nome_pagador}</div>
+                <div style={{ fontSize: '0.8rem', color: C.onSurfaceVariant, marginTop: '2px', fontFamily: F.body }}>
                   {abertos(modalDev).length} boleto{abertos(modalDev).length !== 1 ? 's' : ''} em aberto
-                  {' · '}Total: <strong style={{ color: '#C0272D' }}>{fBRL(valorAberto(modalDev))}</strong>
+                  {' · '}Total: <strong style={{ color: C.statusDanger, fontFamily: F.mono }}>{fBRL(valorAberto(modalDev))}</strong>
                   {modalDev.filial_id && filialMap[modalDev.filial_id] && (
-                    <span style={{ marginLeft: '0.5rem', background: '#f1f5f9', borderRadius: '0.35rem', padding: '0.1rem 0.5rem', fontSize: '0.75rem', fontWeight: '600', color: '#475569' }}>
+                    <span style={{ marginLeft: '0.5rem', background: C.surfaceContainerLow, borderRadius: '0.35rem', padding: '0.1rem 0.5rem', fontSize: '0.75rem', fontWeight: '600', color: C.onSurfaceVariant }}>
                       {filialMap[modalDev.filial_id]}
                     </span>
                   )}
@@ -547,11 +511,11 @@ export default function Cobrancas() {
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
                 <button onClick={() => copiarCobranca(modalDev)}
-                  style={{ padding: '0.45rem 0.9rem', borderRadius: '0.5rem', background: copied ? '#16a34a' : '#f1f5f9', color: copied ? '#fff' : '#475569', border: 'none', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }}>
+                  style={{ padding: '0.45rem 0.9rem', borderRadius: '0.5rem', background: copied ? C.statusSuccess : C.surfaceContainerLow, color: copied ? C.onPrimary : C.onSurfaceVariant, border: 'none', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s', fontFamily: F.body }}>
                   {copied ? '✓ Copiado!' : '📋 Copiar cobrança'}
                 </button>
                 <button onClick={fecharModal}
-                  style={{ padding: '0.45rem 0.9rem', borderRadius: '0.5rem', background: 'none', border: '1.5px solid #e2e8f0', color: '#64748b', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer' }}>
+                  style={{ padding: '0.45rem 0.9rem', borderRadius: '0.5rem', background: 'none', border: `1.5px solid ${C.borderSubtle}`, color: C.onSurfaceVariant, fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
                   ✕ Fechar
                 </button>
               </div>
@@ -561,15 +525,15 @@ export default function Cobrancas() {
 
               {/* Boletos */}
               <div>
-                <div style={{ fontWeight: '700', color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.625rem' }}>
+                <div style={{ fontWeight: '700', color: C.onSurfaceVariant, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.625rem', fontFamily: F.body }}>
                   Boletos
                 </div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                     <thead>
-                      <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                      <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
                         {['Vencimento', 'Valor', 'Situação', 'Motivo', 'Data Liquidação', 'Valor Liquidado', ''].map(h => (
-                          <th key={h} style={{ padding: '0.45rem 0.75rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                          <th key={h} style={{ padding: '0.45rem 0.75rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: '600', color: C.onSurfaceVariant, textTransform: 'uppercase', whiteSpace: 'nowrap', fontFamily: F.body }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -581,11 +545,11 @@ export default function Cobrancas() {
                           const edit = boletoEdits[b.id] || { situacao_boleto: b.situacao_boleto || '', motivo: b.motivo || '', dirty: false }
                           const isSaving = savingBoleto.has(b.id)
                           return (
-                            <tr key={b.id} style={{ borderBottom: '1px solid #f8fafc', background: emAberto ? 'transparent' : '#f8fffe' }}>
-                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600', color: '#0f2d4a', whiteSpace: 'nowrap' }}>
+                            <tr key={b.id} style={{ borderBottom: `1px solid ${C.borderSubtle}`, background: emAberto ? 'transparent' : C.statusSuccessBg + '33' }}>
+                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600', color: C.onSurface, whiteSpace: 'nowrap', fontFamily: F.mono }}>
                                 {fDate(b.data_vencimento)}
                               </td>
-                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: emAberto ? '#C0272D' : '#64748b', whiteSpace: 'nowrap' }}>
+                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: emAberto ? C.statusDanger : C.onSurfaceVariant, whiteSpace: 'nowrap', fontFamily: F.mono }}>
                                 {fBRL(b.valor)}
                               </td>
                               <td style={{ padding: '0.4rem 0.5rem', minWidth: '140px' }}>
@@ -605,14 +569,14 @@ export default function Cobrancas() {
                                   placeholder="Motivo..."
                                   style={{ ...inputCss, padding: '0.3rem 0.5rem', fontSize: '0.78rem', width: '100%' }} />
                               </td>
-                              <td style={{ padding: '0.5rem 0.75rem', color: '#64748b', whiteSpace: 'nowrap' }}>{fDate(b.data_liquidacao)}</td>
-                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600', color: '#16a34a', whiteSpace: 'nowrap' }}>
-                                {b.valor_liquidacao != null ? fBRL(b.valor_liquidacao) : <span style={{ color: '#cbd5e1' }}>—</span>}
+                              <td style={{ padding: '0.5rem 0.75rem', color: C.onSurfaceVariant, whiteSpace: 'nowrap', fontFamily: F.mono }}>{fDate(b.data_liquidacao)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600', color: C.statusSuccess, whiteSpace: 'nowrap', fontFamily: F.mono }}>
+                                {b.valor_liquidacao != null ? fBRL(b.valor_liquidacao) : <span style={{ color: C.outlineVariant }}>—</span>}
                               </td>
                               <td style={{ padding: '0.4rem 0.5rem' }}>
                                 {edit.dirty && (
                                   <button onClick={() => salvarBoleto(b.id)} disabled={isSaving}
-                                    style={{ padding: '0.3rem 0.65rem', background: '#C0272D', color: '#fff', border: 'none', borderRadius: '0.4rem', fontSize: '0.75rem', fontWeight: '700', cursor: isSaving ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: isSaving ? 0.7 : 1 }}>
+                                    style={{ padding: '0.3rem 0.65rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', borderRadius: '0.4rem', fontSize: '0.75rem', fontWeight: '700', cursor: isSaving ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: isSaving ? 0.7 : 1, fontFamily: F.body }}>
                                     {isSaving ? '…' : 'Salvar'}
                                   </button>
                                 )}
@@ -623,9 +587,9 @@ export default function Cobrancas() {
                     </tbody>
                     {abertos(modalDev).length > 0 && (
                       <tfoot>
-                        <tr style={{ borderTop: '2px solid #f1f5f9', background: '#f8fafc' }}>
-                          <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.75rem' }}>TOTAL EM ABERTO</td>
-                          <td style={{ padding: '0.5rem 0.75rem', fontWeight: '800', color: '#C0272D', whiteSpace: 'nowrap' }}>{fBRL(valorAberto(modalDev))}</td>
+                        <tr style={{ borderTop: `2px solid ${C.borderSubtle}`, background: C.surfaceContainerLow }}>
+                          <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: C.onSurface, fontSize: '0.75rem', fontFamily: F.body }}>TOTAL EM ABERTO</td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontWeight: '800', color: C.statusDanger, whiteSpace: 'nowrap', fontFamily: F.mono }}>{fBRL(valorAberto(modalDev))}</td>
                           <td colSpan={5} />
                         </tr>
                       </tfoot>
@@ -635,17 +599,17 @@ export default function Cobrancas() {
               </div>
 
               {/* Formulário de cobrança */}
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1.25rem' }}>
-                <div style={{ fontWeight: '700', color: '#475569', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '1rem' }}>Dados da cobrança</div>
+              <div style={{ borderTop: `1px solid ${C.borderSubtle}`, paddingTop: '1.25rem' }}>
+                <div style={{ fontWeight: '700', color: C.onSurfaceVariant, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '1rem', fontFamily: F.body }}>Dados da cobrança</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.875rem 1rem' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Telefone</label>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>Telefone</label>
                     <input type="text" placeholder="(00) 00000-0000" value={editForm.telefone || ''}
                       onChange={e => setEditForm(f => ({ ...f, telefone: e.target.value }))}
                       style={{ ...inputCss, width: '100%' }} />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</label>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>Status</label>
                     <select value={editForm.status_cobranca || 'Novo'}
                       onChange={e => setEditForm(f => ({ ...f, status_cobranca: e.target.value }))}
                       style={{ ...inputCss, width: '100%' }}>
@@ -653,7 +617,7 @@ export default function Cobrancas() {
                     </select>
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Data da audiência</label>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>Data da audiência</label>
                     <input type="date" value={editForm.data_audiencia || ''}
                       onChange={e => setEditForm(f => ({ ...f, data_audiencia: e.target.value }))}
                       style={{ ...inputCss, width: '100%' }} />
@@ -661,26 +625,26 @@ export default function Cobrancas() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', paddingTop: '1.35rem' }}>
                     <input type="checkbox" id="pc-check-modal" checked={!!editForm.pequenas_causas}
                       onChange={e => setEditForm(f => ({ ...f, pequenas_causas: e.target.checked }))}
-                      style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#C0272D' }} />
-                    <label htmlFor="pc-check-modal" style={{ fontSize: '0.875rem', fontWeight: '600', color: '#475569', cursor: 'pointer' }}>⚖️ Pequenas causas</label>
+                      style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: C.primaryContainer }} />
+                    <label htmlFor="pc-check-modal" style={{ fontSize: '0.875rem', fontWeight: '600', color: C.onSurfaceVariant, cursor: 'pointer', fontFamily: F.body }}>⚖️ Pequenas causas</label>
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Situação da audiência</label>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>Situação da audiência</label>
                     <input type="text" placeholder="Ex: Aguardando pauta, Realizada..." value={editForm.situacao_audiencia || ''}
                       onChange={e => setEditForm(f => ({ ...f, situacao_audiencia: e.target.value }))}
                       style={{ ...inputCss, width: '100%' }} />
                   </div>
                 </div>
                 <div style={{ marginTop: '0.875rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Observações</label>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>Observações</label>
                   <textarea rows={3} placeholder="Anotações sobre negociação, contatos, acordo..."
                     value={editForm.observacoes || ''}
                     onChange={e => setEditForm(f => ({ ...f, observacoes: e.target.value }))}
-                    style={{ ...inputCss, width: '100%', resize: 'vertical', fontFamily: 'inherit' }} />
+                    style={{ ...inputCss, width: '100%', resize: 'vertical', fontFamily: F.body }} />
                 </div>
                 <div style={{ marginTop: '1rem' }}>
                   <button onClick={salvarDevedor} disabled={salvando}
-                    style={{ padding: '0.6rem 1.25rem', background: '#C0272D', color: '#fff', border: 'none', borderRadius: '0.6rem', fontSize: '0.875rem', fontWeight: '700', cursor: salvando ? 'not-allowed' : 'pointer', opacity: salvando ? 0.7 : 1 }}>
+                    style={{ padding: '0.6rem 1.25rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', borderRadius: '0.6rem', fontSize: '0.875rem', fontWeight: '700', cursor: salvando ? 'not-allowed' : 'pointer', opacity: salvando ? 0.7 : 1, fontFamily: F.body }}>
                     {salvando ? 'Salvando…' : 'Salvar dados da cobrança'}
                   </button>
                 </div>
@@ -692,22 +656,21 @@ export default function Cobrancas() {
 
       {/* ── Cabeçalho ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: 0, letterSpacing: '-0.3px' }}>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: C.onSurface, margin: 0, letterSpacing: '-0.3px', fontFamily: F.headline }}>
           Cobranças
         </h1>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <button
             onClick={() => setView('lista')}
-            style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', border: '1.5px solid', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s', ...(view === 'lista' ? { background: '#0f2d4a', color: '#fff', borderColor: '#0f2d4a' } : { background: '#fff', color: '#64748b', borderColor: '#e2e8f0' }) }}
+            style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', border: '1.5px solid', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s', fontFamily: F.body, ...(view === 'lista' ? { background: C.onSurface, color: C.surfaceContainerLowest, borderColor: C.onSurface } : { background: C.surfaceContainerLowest, color: C.onSurfaceVariant, borderColor: C.borderSubtle }) }}
           >📋 Devedores</button>
           <button
             onClick={() => setView('audiencias')}
-            style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', border: '1.5px solid', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s', ...(view === 'audiencias' ? { background: '#0f2d4a', color: '#fff', borderColor: '#0f2d4a' } : { background: '#fff', color: '#64748b', borderColor: '#e2e8f0' }) }}
+            style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', border: '1.5px solid', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s', fontFamily: F.body, ...(view === 'audiencias' ? { background: C.onSurface, color: C.surfaceContainerLowest, borderColor: C.onSurface } : { background: C.surfaceContainerLowest, color: C.onSurfaceVariant, borderColor: C.borderSubtle }) }}
           >📅 Audiências {comAudiencia.length > 0 && `(${comAudiencia.length})`}</button>
           <button
-            onClick={clickImportar}
-            disabled={importando}
-            style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: '#C0272D', color: '#fff', border: 'none', fontSize: '0.85rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1 }}
+            onClick={clickImportar} disabled={importando}
+            style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.85rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1, fontFamily: F.body }}
           >{importando ? '⏳ Importando...' : '⬆️ Importar relatório'}</button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImport} style={{ display: 'none' }} />
         </div>
@@ -715,25 +678,25 @@ export default function Cobrancas() {
 
       {/* ── Banners de importação ── */}
       {importErr && (
-        <div style={{ ...card, borderLeft: '4px solid #dc2626', marginBottom: '1rem', background: '#fef2f2' }}>
+        <div style={{ ...dsCard, borderLeft: `4px solid ${C.statusDanger}`, marginBottom: '1rem', background: C.statusDangerBg }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
             <div>
-              <p style={{ fontWeight: '700', color: '#991b1b', margin: '0 0 0.25rem' }}>Erro na importação</p>
-              <p style={{ color: '#dc2626', margin: 0, fontSize: '0.875rem' }}>{importErr}</p>
+              <p style={{ fontWeight: '700', color: C.statusDanger, margin: '0 0 0.25rem', fontFamily: F.body }}>Erro na importação</p>
+              <p style={{ color: C.statusDanger, margin: 0, fontSize: '0.875rem', fontFamily: F.body }}>{importErr}</p>
             </div>
-            <button onClick={() => setImportErr(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: '1.25rem', lineHeight: 1, flexShrink: 0 }}>✕</button>
+            <button onClick={() => setImportErr(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.statusDanger, fontSize: '1.25rem', lineHeight: 1, flexShrink: 0 }}>✕</button>
           </div>
         </div>
       )}
       {resultado && (
-        <div style={{ ...card, borderLeft: '4px solid #16a34a', marginBottom: '1rem', background: '#f0fdf4' }}>
+        <div style={{ ...dsCard, borderLeft: `4px solid ${C.statusSuccess}`, marginBottom: '1rem', background: C.statusSuccessBg }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
             <div>
-              <p style={{ fontWeight: '700', color: '#15803d', margin: '0 0 0.5rem' }}>
+              <p style={{ fontWeight: '700', color: C.statusSuccess, margin: '0 0 0.5rem', fontFamily: F.body }}>
                 ✅ Importação concluída — {resultado.total} boleto{resultado.total !== 1 ? 's' : ''} processado{resultado.total !== 1 ? 's' : ''}
                 {resultado.filialNome && <span style={{ marginLeft: '0.5rem', fontWeight: '400' }}>· Filial: <strong>{resultado.filialNome}</strong></span>}
               </p>
-              <div style={{ fontSize: '0.85rem', color: '#166534', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+              <div style={{ fontSize: '0.85rem', color: C.statusSuccess, display: 'flex', flexDirection: 'column', gap: '0.2rem', fontFamily: F.body }}>
                 <span>📥 {resultado.inseridos} boleto{resultado.inseridos !== 1 ? 's' : ''} novo{resultado.inseridos !== 1 ? 's' : ''} inserido{resultado.inseridos !== 1 ? 's' : ''} · ♻️ {resultado.atualizados} atualizado{resultado.atualizados !== 1 ? 's' : ''}</span>
                 {resultado.novosDevedores.length > 0 && (
                   <span>🆕 {resultado.novosDevedores.length} devedor{resultado.novosDevedores.length > 1 ? 'es' : ''} novo{resultado.novosDevedores.length > 1 ? 's' : ''}: <strong>{resultado.novosDevedores.join(', ')}</strong></span>
@@ -743,7 +706,7 @@ export default function Cobrancas() {
                 )}
               </div>
             </div>
-            <button onClick={() => setResultado(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a', fontSize: '1.25rem', lineHeight: 1, flexShrink: 0 }}>✕</button>
+            <button onClick={() => setResultado(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.statusSuccess, fontSize: '1.25rem', lineHeight: 1, flexShrink: 0 }}>✕</button>
           </div>
         </div>
       )}
@@ -752,7 +715,7 @@ export default function Cobrancas() {
       {view === 'lista' && (
         <>
           {/* Filtros */}
-          <div style={{ ...card, marginBottom: '1rem', padding: '1rem 1.25rem' }}>
+          <div style={{ ...dsCard, marginBottom: '1rem', padding: '1rem 1.25rem' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.625rem', alignItems: 'center' }}>
               <input
                 type="search" placeholder="Buscar por nome…" value={filtros.busca}
@@ -779,7 +742,7 @@ export default function Cobrancas() {
                 { key: 'somentePC',        label: 'Pequenas causas' },
                 { key: 'somenteAudiencia', label: 'Com audiência' },
               ].map(({ key, label }) => (
-                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#475569', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: C.onSurfaceVariant, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', fontFamily: F.body }}>
                   <input type="checkbox" checked={filtros[key]}
                     onChange={e => setFiltros(f => {
                       const next = { ...f, [key]: e.target.checked }
@@ -791,33 +754,33 @@ export default function Cobrancas() {
               ))}
               {(filtros.busca || filtros.status || filtros.somenteNovos || filtros.somentePC || filtros.somenteAudiencia || temFiltrosVenc) && (
                 <button onClick={() => { setFiltros({ busca: '', status: '', somenteNovos: false, somentePC: false, somenteAudiencia: false }); setFiltroVencInicio(''); setFiltroVencFim('') }}
-                  style={{ fontSize: '0.8rem', color: '#C0272D', background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600', padding: '0.3rem 0.5rem' }}>
+                  style={{ fontSize: '0.8rem', color: C.statusDanger, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600', padding: '0.3rem 0.5rem', fontFamily: F.body }}>
                   ✕ Limpar
                 </button>
               )}
-              <span style={{ fontSize: '0.8rem', color: '#94a3b8', marginLeft: 'auto' }}>
+              <span style={{ fontSize: '0.8rem', color: C.onSurfaceVariant, marginLeft: 'auto', fontFamily: F.body }}>
                 {loading ? '…' : `${listaFiltrada.length} devedor${listaFiltrada.length !== 1 ? 'es' : ''}`}
               </span>
             </div>
 
             {/* Filtro por vencimento */}
-            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #f1f5f9', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '0.625rem' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', alignSelf: 'center', whiteSpace: 'nowrap' }}>
+            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: `1px solid ${C.borderSubtle}`, display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '0.625rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.5px', alignSelf: 'center', whiteSpace: 'nowrap', fontFamily: F.body }}>
                 Vencimento:
               </div>
               <div>
-                <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: '600', marginBottom: '0.2rem' }}>De</div>
+                <div style={{ fontSize: '0.7rem', color: C.onSurfaceVariant, fontWeight: '600', marginBottom: '0.2rem', fontFamily: F.body }}>De</div>
                 <input type="date" value={filtroVencInicio} onChange={e => setFiltroVencInicio(e.target.value)}
                   style={{ ...inputCss, padding: '0.4rem 0.6rem', fontSize: '0.82rem' }} />
               </div>
               <div>
-                <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: '600', marginBottom: '0.2rem' }}>Até</div>
+                <div style={{ fontSize: '0.7rem', color: C.onSurfaceVariant, fontWeight: '600', marginBottom: '0.2rem', fontFamily: F.body }}>Até</div>
                 <input type="date" value={filtroVencFim} onChange={e => setFiltroVencFim(e.target.value)}
                   style={{ ...inputCss, padding: '0.4rem 0.6rem', fontSize: '0.82rem' }} />
               </div>
               {temFiltrosVenc && (
                 <button onClick={() => { setFiltroVencInicio(''); setFiltroVencFim('') }}
-                  style={{ fontSize: '0.78rem', color: '#C0272D', background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600', padding: '0.3rem 0.5rem' }}>
+                  style={{ fontSize: '0.78rem', color: C.statusDanger, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600', padding: '0.3rem 0.5rem', fontFamily: F.body }}>
                   ✕ Limpar datas
                 </button>
               )}
@@ -825,13 +788,13 @@ export default function Cobrancas() {
           </div>
 
           {/* Tabela de devedores */}
-          <div style={{ ...card, marginBottom: '1rem' }}>
+          <div style={{ ...dsCard, marginBottom: '1rem' }}>
             {loading ? (
-              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem 0' }}>Carregando…</div>
+              <div style={{ textAlign: 'center', color: C.onSurfaceVariant, padding: '3rem 0', fontFamily: F.body }}>Carregando…</div>
             ) : listaFiltrada.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem 0' }}>
+              <div style={{ textAlign: 'center', color: C.onSurfaceVariant, padding: '3rem 0' }}>
                 <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📂</div>
-                <div style={{ fontWeight: '600' }}>
+                <div style={{ fontWeight: '600', fontFamily: F.body }}>
                   {devedores.length === 0 ? 'Nenhum devedor cadastrado. Importe um relatório para começar.' : 'Nenhum resultado com os filtros aplicados.'}
                 </div>
               </div>
@@ -839,9 +802,9 @@ export default function Cobrancas() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                   <thead>
-                    <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                    <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
                       {['Devedor', 'Telefone', 'Em aberto', 'Valor em aberto', 'Status', 'P. Causas', 'Audiência', 'Atualização'].map(h => (
-                        <th key={h} style={{ padding: '0.65rem 0.875rem', textAlign: 'left', fontSize: '0.72rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', whiteSpace: 'nowrap' }}>{h}</th>
+                        <th key={h} style={{ padding: '0.65rem 0.875rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: '600', color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap', fontFamily: F.body }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -854,57 +817,57 @@ export default function Cobrancas() {
                         <tr
                           key={dev.id}
                           onClick={() => abrirModal(dev)}
-                          style={{ borderBottom: '1px solid #f8fafc', cursor: 'pointer', transition: 'background 0.12s' }}
-                          onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
+                          style={{ borderBottom: `1px solid ${C.borderSubtle}`, cursor: 'pointer', transition: 'background 0.12s' }}
+                          onMouseEnter={e => e.currentTarget.style.background = C.surfaceContainerLow}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         >
                           <td style={{ padding: '0.8rem 0.875rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                              <div style={{ width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.82rem', fontWeight: '700', color: '#64748b' }}>
+                              <div style={{ width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0, background: C.surfaceContainerHigh, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.82rem', fontWeight: '700', color: C.onSurfaceVariant, fontFamily: F.headline }}>
                                 {dev.nome_pagador.charAt(0)}
                               </div>
                               <div>
-                                <div style={{ fontWeight: '700', color: '#1e293b', fontSize: '0.875rem' }}>{dev.nome_pagador}</div>
+                                <div style={{ fontWeight: '700', color: C.onSurface, fontSize: '0.875rem', fontFamily: F.body }}>{dev.nome_pagador}</div>
                                 {dev.status_cobranca === 'Novo' && (
-                                  <span style={{ fontSize: '0.68rem', fontWeight: '800', background: '#C0272D', color: '#fff', padding: '1px 6px', borderRadius: '9999px', letterSpacing: '0.5px' }}>NOVO</span>
+                                  <span style={{ fontSize: '0.68rem', fontWeight: '800', background: C.primaryContainer, color: C.onPrimary, padding: '1px 6px', borderRadius: '9999px', letterSpacing: '0.5px', fontFamily: F.body }}>NOVO</span>
                                 )}
                                 {dev.filial_id && filialMap[dev.filial_id] && (
-                                  <span style={{ fontSize: '0.68rem', fontWeight: '600', background: '#f1f5f9', color: '#64748b', padding: '1px 6px', borderRadius: '9999px', marginLeft: '4px' }}>
+                                  <span style={{ fontSize: '0.68rem', fontWeight: '600', background: C.surfaceContainerLow, color: C.onSurfaceVariant, padding: '1px 6px', borderRadius: '9999px', marginLeft: '4px', fontFamily: F.body }}>
                                     {filialMap[dev.filial_id]}
                                   </span>
                                 )}
                               </div>
                             </div>
                           </td>
-                          <td style={{ padding: '0.8rem 0.875rem', color: '#475569', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                          <td style={{ padding: '0.8rem 0.875rem', color: C.onSurfaceVariant, fontSize: '0.85rem', whiteSpace: 'nowrap', fontFamily: F.body }}>
                             {dev.telefone
-                              ? <a href={`tel:${dev.telefone}`} onClick={e => e.stopPropagation()} style={{ color: '#0f2d4a', textDecoration: 'none', fontWeight: '500' }}>{dev.telefone}</a>
-                              : <span style={{ color: '#e2e8f0' }}>—</span>}
+                              ? <a href={`tel:${dev.telefone}`} onClick={e => e.stopPropagation()} style={{ color: C.secondary, textDecoration: 'none', fontWeight: '500' }}>{dev.telefone}</a>
+                              : <span style={{ color: C.outlineVariant }}>—</span>}
                           </td>
-                          <td style={{ padding: '0.8rem 0.875rem', fontWeight: '700', color: qtdAbertos > 0 ? '#0f2d4a' : '#cbd5e1' }}>{qtdAbertos}</td>
-                          <td style={{ padding: '0.8rem 0.875rem', fontWeight: '700', color: valAberto > 0 ? '#C0272D' : '#cbd5e1', whiteSpace: 'nowrap' }}>{fBRL(valAberto)}</td>
+                          <td style={{ padding: '0.8rem 0.875rem', fontWeight: '700', color: qtdAbertos > 0 ? C.onSurface : C.outlineVariant, fontFamily: F.mono }}>{qtdAbertos}</td>
+                          <td style={{ padding: '0.8rem 0.875rem', fontWeight: '700', color: valAberto > 0 ? C.statusDanger : C.outlineVariant, whiteSpace: 'nowrap', fontFamily: F.mono }}>{fBRL(valAberto)}</td>
                           <td style={{ padding: '0.8rem 0.875rem' }}>
-                            <span style={{ background: sStyle.bg, color: sStyle.color, borderRadius: '0.4rem', padding: '0.2rem 0.6rem', fontSize: '0.78rem', fontWeight: '700' }}>
+                            <span style={{ background: sStyle.bg, color: sStyle.color, borderRadius: '0.4rem', padding: '0.2rem 0.6rem', fontSize: '0.78rem', fontWeight: '700', fontFamily: F.body }}>
                               {dev.status_cobranca || '—'}
                             </span>
                           </td>
                           <td style={{ padding: '0.8rem 0.875rem', textAlign: 'center', fontSize: '1rem' }}>
-                            {dev.pequenas_causas ? '⚖️' : <span style={{ color: '#e2e8f0' }}>—</span>}
+                            {dev.pequenas_causas ? '⚖️' : <span style={{ color: C.outlineVariant }}>—</span>}
                           </td>
                           <td style={{ padding: '0.8rem 0.875rem', whiteSpace: 'nowrap', fontSize: '0.82rem' }}>
                             {dev.data_audiencia ? (
                               <span style={{
-                                fontWeight: '600',
-                                color: dev.data_audiencia < todayISO() ? '#9ca3af' :
-                                       dev.data_audiencia === todayISO() ? '#C0272D' :
-                                       diffDias(dev.data_audiencia, todayISO()) <= 7 ? '#d97706' : '#475569'
+                                fontWeight: '600', fontFamily: F.body,
+                                color: dev.data_audiencia < todayISO() ? C.onSurfaceVariant :
+                                       dev.data_audiencia === todayISO() ? C.statusDanger :
+                                       diffDias(dev.data_audiencia, todayISO()) <= 7 ? C.statusWarning : C.onSurface
                               }}>
                                 {dev.data_audiencia === todayISO() ? '🔴 ' : diffDias(dev.data_audiencia, todayISO()) <= 7 && dev.data_audiencia > todayISO() ? '🟡 ' : ''}
                                 {fDate(dev.data_audiencia)}
                               </span>
-                            ) : <span style={{ color: '#e2e8f0' }}>—</span>}
+                            ) : <span style={{ color: C.outlineVariant }}>—</span>}
                           </td>
-                          <td style={{ padding: '0.8rem 0.875rem', color: '#94a3b8', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                          <td style={{ padding: '0.8rem 0.875rem', color: C.onSurfaceVariant, fontSize: '0.8rem', whiteSpace: 'nowrap', fontFamily: F.mono }}>
                             {fDate(dev.ultima_atualizacao)}
                           </td>
                         </tr>
@@ -920,23 +883,23 @@ export default function Cobrancas() {
 
       {/* ════════ VIEW: AUDIÊNCIAS ════════ */}
       {view === 'audiencias' && (
-        <div style={card}>
-          <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.95rem', marginBottom: '1rem' }}>
+        <div style={dsCard}>
+          <div style={{ fontWeight: '700', color: C.onSurface, fontSize: '0.95rem', marginBottom: '1rem', fontFamily: F.headline }}>
             Audiências marcadas — {comAudiencia.length} devedor{comAudiencia.length !== 1 ? 'es' : ''}
           </div>
           {comAudiencia.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem 0' }}>
+            <div style={{ textAlign: 'center', color: C.onSurfaceVariant, padding: '2.5rem 0' }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📅</div>
-              <div style={{ fontWeight: '600' }}>Nenhuma audiência marcada.</div>
-              <div style={{ fontSize: '0.82rem', marginTop: '0.25rem' }}>Clique em um devedor e preencha a data da audiência.</div>
+              <div style={{ fontWeight: '600', fontFamily: F.body }}>Nenhuma audiência marcada.</div>
+              <div style={{ fontSize: '0.82rem', marginTop: '0.25rem', fontFamily: F.body }}>Clique em um devedor e preencha a data da audiência.</div>
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                 <thead>
-                  <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                  <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
                     {['Data', 'Devedor', 'Situação da audiência', 'Status cobrança', 'Em aberto'].map(h => (
-                      <th key={h} style={{ padding: '0.55rem 0.875rem', textAlign: 'left', fontSize: '0.72rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.4px', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '0.55rem 0.875rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: '600', color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap', fontFamily: F.body }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -947,32 +910,32 @@ export default function Cobrancas() {
                     const isHoje    = dev.data_audiencia === hoje
                     const isProxima = dias > 0 && dias <= 7
                     const isPassada = dev.data_audiencia < hoje
-                    const rowBg = isHoje ? '#fff5f5' : isProxima ? '#fffbeb' : 'transparent'
+                    const rowBg = isHoje ? C.statusDangerBg : isProxima ? C.statusWarningBg : 'transparent'
                     const sStyle = statusStyle(dev.status_cobranca)
                     return (
                       <tr
                         key={dev.id}
                         onClick={() => { setView('lista'); abrirModal(dev) }}
-                        style={{ borderBottom: '1px solid #f8fafc', background: rowBg, cursor: 'pointer' }}
+                        style={{ borderBottom: `1px solid ${C.borderSubtle}`, background: rowBg, cursor: 'pointer' }}
                         onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
                         onMouseLeave={e => e.currentTarget.style.opacity = '1'}
                       >
                         <td style={{ padding: '0.7rem 0.875rem', whiteSpace: 'nowrap' }}>
-                          <div style={{ fontWeight: '800', color: isHoje ? '#C0272D' : isProxima ? '#d97706' : isPassada ? '#9ca3af' : '#0f2d4a', fontSize: '0.9rem' }}>
+                          <div style={{ fontWeight: '800', color: isHoje ? C.statusDanger : isProxima ? C.statusWarning : isPassada ? C.onSurfaceVariant : C.onSurface, fontSize: '0.9rem', fontFamily: F.body }}>
                             {isHoje ? '🔴 HOJE' : isProxima ? `🟡 ${fDate(dev.data_audiencia)}` : fDate(dev.data_audiencia)}
                           </div>
-                          {isHoje    && <div style={{ fontSize: '0.72rem', color: '#C0272D', fontWeight: '600' }}>Audiência hoje!</div>}
-                          {isProxima && <div style={{ fontSize: '0.72rem', color: '#d97706' }}>em {dias} dia{dias > 1 ? 's' : ''}</div>}
-                          {isPassada && <div style={{ fontSize: '0.72rem', color: '#9ca3af' }}>há {Math.abs(dias)} dia{Math.abs(dias) > 1 ? 's' : ''}</div>}
+                          {isHoje    && <div style={{ fontSize: '0.72rem', color: C.statusDanger, fontWeight: '600', fontFamily: F.body }}>Audiência hoje!</div>}
+                          {isProxima && <div style={{ fontSize: '0.72rem', color: C.statusWarning, fontFamily: F.body }}>em {dias} dia{dias > 1 ? 's' : ''}</div>}
+                          {isPassada && <div style={{ fontSize: '0.72rem', color: C.onSurfaceVariant, fontFamily: F.body }}>há {Math.abs(dias)} dia{Math.abs(dias) > 1 ? 's' : ''}</div>}
                         </td>
-                        <td style={{ padding: '0.7rem 0.875rem', fontWeight: '700', color: '#1e293b' }}>{dev.nome_pagador}</td>
-                        <td style={{ padding: '0.7rem 0.875rem', color: '#475569', fontSize: '0.82rem' }}>{dev.situacao_audiencia || <span style={{ color: '#cbd5e1' }}>—</span>}</td>
+                        <td style={{ padding: '0.7rem 0.875rem', fontWeight: '700', color: C.onSurface, fontFamily: F.body }}>{dev.nome_pagador}</td>
+                        <td style={{ padding: '0.7rem 0.875rem', color: C.onSurfaceVariant, fontSize: '0.82rem', fontFamily: F.body }}>{dev.situacao_audiencia || <span style={{ color: C.outlineVariant }}>—</span>}</td>
                         <td style={{ padding: '0.7rem 0.875rem' }}>
-                          <span style={{ background: sStyle.bg, color: sStyle.color, borderRadius: '0.4rem', padding: '0.2rem 0.55rem', fontSize: '0.75rem', fontWeight: '700' }}>
+                          <span style={{ background: sStyle.bg, color: sStyle.color, borderRadius: '0.4rem', padding: '0.2rem 0.55rem', fontSize: '0.75rem', fontWeight: '700', fontFamily: F.body }}>
                             {dev.status_cobranca}
                           </span>
                         </td>
-                        <td style={{ padding: '0.7rem 0.875rem', fontWeight: '700', color: '#C0272D', whiteSpace: 'nowrap' }}>
+                        <td style={{ padding: '0.7rem 0.875rem', fontWeight: '700', color: C.statusDanger, whiteSpace: 'nowrap', fontFamily: F.mono }}>
                           {fBRL(valorAberto(dev))}
                         </td>
                       </tr>

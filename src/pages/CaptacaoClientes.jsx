@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 
 /* ── helpers ── */
 function todayISO() { return new Date().toISOString().slice(0, 10) }
@@ -14,30 +15,10 @@ function fDateBR(iso) {
   return `${d}/${m}/${y}`
 }
 
-/* ── estilos ── */
-const card = {
-  background: '#fff', borderRadius: '1rem', padding: '1.5rem',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9',
-}
-const inputCss = {
-  width: '100%', padding: '0.65rem 0.875rem', border: '1.5px solid #e2e8f0',
-  borderRadius: '0.625rem', fontSize: '0.9rem', outline: 'none',
-  boxSizing: 'border-box', color: '#1e293b', background: '#f8fafc',
-}
-const btnPrimary = {
-  padding: '0.6rem 1.25rem', background: '#C0272D', color: '#fff',
-  border: 'none', borderRadius: '0.625rem', fontSize: '0.875rem',
-  fontWeight: '600', cursor: 'pointer',
-}
-const btnSecondary = {
-  padding: '0.6rem 1.25rem', background: '#f1f5f9', color: '#475569',
-  border: '1.5px solid #e2e8f0', borderRadius: '0.625rem',
-  fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer',
-}
 const Label = ({ children }) => (
   <label style={{
-    display: 'block', fontSize: '0.8rem', fontWeight: '600',
-    color: '#475569', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px',
+    display: 'block', fontSize: '0.8rem', fontWeight: '600', fontFamily: F.body,
+    color: C.onSurfaceVariant, marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px',
   }}>{children}</label>
 )
 
@@ -185,9 +166,9 @@ export default function CaptacaoClientes() {
       {toast && (
         <div style={{
           position: 'fixed', top: '1.25rem', right: '1.25rem', zIndex: 9999,
-          padding: '0.75rem 1.25rem', borderRadius: '0.75rem', fontSize: '0.875rem',
-          fontWeight: '600', color: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-          background: toast.tipo === 'err' ? '#dc2626' : '#16a34a', maxWidth: '320px',
+          padding: '0.75rem 1.25rem', borderRadius: '0.5rem', fontSize: '0.875rem',
+          fontFamily: F.body, fontWeight: '600', color: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+          background: toast.tipo === 'err' ? C.statusDanger : C.statusSuccess, maxWidth: '320px',
         }}>
           {toast.msg}
         </div>
@@ -196,10 +177,10 @@ export default function CaptacaoClientes() {
       {/* Cabeçalho */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: 0, letterSpacing: '-0.3px' }}>
+          <h1 style={{ fontSize: '1.4rem', fontWeight: '800', fontFamily: F.headline, color: C.onSurface, margin: 0, letterSpacing: '-0.3px' }}>
             Captação de Clientes
           </h1>
-          <p style={{ margin: '0.25rem 0 0', fontSize: '0.82rem', color: '#94a3b8' }}>
+          <p style={{ margin: '0.25rem 0 0', fontSize: '0.82rem', fontFamily: F.body, color: C.onSurfaceVariant }}>
             Registro de consultas e atendimentos
           </p>
         </div>
@@ -212,8 +193,8 @@ export default function CaptacaoClientes() {
 
       {/* Formulário */}
       {showForm && (
-        <div style={{ ...card, marginBottom: '1.5rem', borderLeft: '4px solid #C0272D' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: '700', color: '#0f2d4a', margin: '0 0 1.25rem' }}>
+        <div style={{ ...dsCard, marginBottom: '1.5rem', borderLeft: `4px solid ${C.primaryContainer}` }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: '700', fontFamily: F.headline, color: C.onSurface, margin: '0 0 1.25rem' }}>
             {editId ? 'Editar Registro' : 'Novo Registro'}
           </h2>
           <form onSubmit={salvar} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -254,14 +235,14 @@ export default function CaptacaoClientes() {
                     {vendedores.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
                   </select>
                 ) : (
-                  <input style={{ ...inputCss, background: '#f1f5f9', color: '#64748b' }}
+                  <input style={{ ...inputCss, background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'default' }}
                     value={vendedorMap[form.vendedor_id] || profile?.nome || ''}
                     readOnly />
                 )}
               </div>
 
               {/* Filial */}
-              {(isAdmin || filiais.length > 1) && (
+              {(isAdmin || filiais.length > 1) && filiais.length > 0 && (
                 <div>
                   <Label>Filial</Label>
                   {isAdmin ? (
@@ -272,7 +253,7 @@ export default function CaptacaoClientes() {
                       {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
                     </select>
                   ) : (
-                    <input style={{ ...inputCss, background: '#f1f5f9', color: '#64748b' }}
+                    <input style={{ ...inputCss, background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'default' }}
                       value={filialMap[form.filial_id] || '—'}
                       readOnly />
                   )}
@@ -291,7 +272,7 @@ export default function CaptacaoClientes() {
       )}
 
       {/* Filtros */}
-      <div style={{ ...card, marginBottom: '1rem', padding: '1rem 1.5rem' }}>
+      <div style={{ ...dsCard, marginBottom: '1rem', padding: '1rem 1.5rem' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '0.75rem' }}>
           <div>
             <Label>De</Label>
@@ -318,18 +299,18 @@ export default function CaptacaoClientes() {
           <button onClick={carregar} style={{ ...btnPrimary, alignSelf: 'flex-end' }}>Filtrar</button>
           <button onClick={() => { setFiltroInicio(firstOfMonthISO()); setFiltroFim(todayISO()); setFiltroFilial('') }}
             style={{ ...btnSecondary, alignSelf: 'flex-end' }}>Limpar</button>
-          <span style={{ fontSize: '0.8rem', color: '#94a3b8', alignSelf: 'flex-end', marginLeft: 'auto' }}>
+          <span style={{ fontSize: '0.8rem', fontFamily: F.body, color: C.onSurfaceVariant, alignSelf: 'flex-end', marginLeft: 'auto' }}>
             {loading ? '…' : `${registros.length} registro${registros.length !== 1 ? 's' : ''}`}
           </span>
         </div>
       </div>
 
       {/* Tabela */}
-      <div style={card}>
+      <div style={dsCard}>
         {loading ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem 0' }}>Carregando...</div>
+          <div style={{ textAlign: 'center', color: C.onSurfaceVariant, fontFamily: F.body, padding: '3rem 0' }}>Carregando...</div>
         ) : registros.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem 0' }}>
+          <div style={{ textAlign: 'center', color: C.onSurfaceVariant, fontFamily: F.body, padding: '3rem 0' }}>
             <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🎯</div>
             <div style={{ fontWeight: '600' }}>Nenhum registro no período</div>
             <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>Clique em "+ Novo Registro" para começar</div>
@@ -338,42 +319,42 @@ export default function CaptacaoClientes() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
-                <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
                   {[
                     'Data da Consulta', 'Nome do Cliente', 'Nº O.S.', 'Vendedor',
                     ...(filiais.length > 1 ? ['Filial'] : []),
                     'Ações',
                   ].map(h => (
                     <th key={h} style={{
-                      padding: '0.6rem 0.875rem', textAlign: 'left', fontSize: '0.72rem',
-                      fontWeight: '700', color: '#64748b', textTransform: 'uppercase',
-                      letterSpacing: '0.4px', whiteSpace: 'nowrap',
+                      padding: '0.6rem 0.875rem', textAlign: 'left', fontSize: '0.7rem',
+                      fontFamily: F.body, fontWeight: '600', color: C.onSurfaceVariant,
+                      textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap',
                     }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {registros.map(r => (
-                  <tr key={r.id} style={{ borderBottom: '1px solid #f8fafc' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
+                  <tr key={r.id} style={{ borderBottom: `1px solid ${C.borderSubtle}` }}
+                    onMouseEnter={e => e.currentTarget.style.background = C.surfaceContainerLow}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <td style={{ padding: '0.75rem 0.875rem', color: '#475569', whiteSpace: 'nowrap', fontWeight: '600' }}>
+                    <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.body, color: C.onSurfaceVariant, whiteSpace: 'nowrap', fontWeight: '600' }}>
                       {fDateBR(r.data_consulta)}
                     </td>
-                    <td style={{ padding: '0.75rem 0.875rem', color: '#1e293b', fontWeight: '600' }}>
+                    <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.body, color: C.onSurface, fontWeight: '600' }}>
                       {r.nome_cliente}
                     </td>
-                    <td style={{ padding: '0.75rem 0.875rem', color: '#475569' }}>
+                    <td style={{ padding: '0.75rem 0.875rem' }}>
                       {r.numero_os
-                        ? <span style={{ background: '#eff6ff', color: '#1d4ed8', borderRadius: '0.4rem', padding: '0.15rem 0.5rem', fontSize: '0.78rem', fontWeight: '600' }}>#{r.numero_os}</span>
-                        : <span style={{ color: '#cbd5e1' }}>—</span>}
+                        ? <span style={{ background: C.statusInfoBg, color: C.statusInfo, borderRadius: '0.375rem', padding: '0.15rem 0.5rem', fontSize: '0.78rem', fontFamily: F.mono, fontWeight: '600' }}>#{r.numero_os}</span>
+                        : <span style={{ color: C.borderSubtle }}>—</span>}
                     </td>
-                    <td style={{ padding: '0.75rem 0.875rem', color: '#475569' }}>
-                      {vendedorMap[r.vendedor_id] || <span style={{ color: '#cbd5e1' }}>—</span>}
+                    <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.body, color: C.onSurfaceVariant }}>
+                      {vendedorMap[r.vendedor_id] || <span style={{ color: C.borderSubtle }}>—</span>}
                     </td>
                     {filiais.length > 1 && (
-                      <td style={{ padding: '0.75rem 0.875rem', color: '#475569', fontSize: '0.82rem' }}>
-                        {filialMap[r.filial_id] || <span style={{ color: '#cbd5e1' }}>—</span>}
+                      <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.body, color: C.onSurfaceVariant, fontSize: '0.82rem' }}>
+                        {filialMap[r.filial_id] || <span style={{ color: C.borderSubtle }}>—</span>}
                       </td>
                     )}
                     <td style={{ padding: '0.75rem 0.875rem' }}>
@@ -381,15 +362,15 @@ export default function CaptacaoClientes() {
                         <div style={{ display: 'flex', gap: '0.4rem' }}>
                           <button onClick={() => abrirEdicao(r)}
                             style={{
-                              padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
-                              borderRadius: '0.4rem', border: '1.5px solid #e2e8f0',
-                              background: '#f8fafc', color: '#475569', cursor: 'pointer',
+                              padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600',
+                              borderRadius: '0.375rem', border: `1.5px solid ${C.borderSubtle}`,
+                              background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'pointer',
                             }}>Editar</button>
                           <button onClick={() => excluir(r.id)}
                             style={{
-                              padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
-                              borderRadius: '0.4rem', border: '1.5px solid #fecaca',
-                              background: '#fef2f2', color: '#dc2626', cursor: 'pointer',
+                              padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600',
+                              borderRadius: '0.375rem', border: `1.5px solid ${C.outlineVariant}`,
+                              background: C.statusDangerBg, color: C.statusDanger, cursor: 'pointer',
                             }}>Excluir</button>
                         </div>
                       )}
@@ -398,9 +379,9 @@ export default function CaptacaoClientes() {
                 ))}
               </tbody>
               <tfoot>
-                <tr style={{ borderTop: '2px solid #f1f5f9', background: '#f8fafc' }}>
+                <tr style={{ borderTop: `2px solid ${C.borderSubtle}`, background: C.tableHeader }}>
                   <td colSpan={2 + (filiais.length > 1 ? 1 : 0) + 2}
-                    style={{ padding: '0.65rem 0.875rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.82rem' }}>
+                    style={{ padding: '0.65rem 0.875rem', fontFamily: F.body, fontWeight: '700', color: C.onSurface, fontSize: '0.82rem' }}>
                     TOTAL — {registros.length} consulta{registros.length !== 1 ? 's' : ''}
                   </td>
                   <td colSpan={2} />

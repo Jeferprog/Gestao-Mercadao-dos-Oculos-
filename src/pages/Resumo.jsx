@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 
 /* ── helpers ── */
 function fBRL(v) {
@@ -23,49 +24,10 @@ function lastOfMonth() {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
 }
 
-/* ── estilos ── */
-const card = {
-  background: '#fff',
-  borderRadius: '1rem',
-  padding: '1.5rem',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-  border: '1px solid #f1f5f9',
-}
-const inputCss = {
-  width: '100%',
-  padding: '0.65rem 0.875rem',
-  border: '1.5px solid #e2e8f0',
-  borderRadius: '0.625rem',
-  fontSize: '0.9rem',
-  outline: 'none',
-  boxSizing: 'border-box',
-  color: '#1e293b',
-  background: '#f8fafc',
-}
-const btnPrimary = {
-  padding: '0.6rem 1.25rem',
-  background: '#C0272D',
-  color: '#fff',
-  border: 'none',
-  borderRadius: '0.625rem',
-  fontSize: '0.875rem',
-  fontWeight: '600',
-  cursor: 'pointer',
-}
-const btnSecondary = {
-  padding: '0.6rem 1.25rem',
-  background: '#f1f5f9',
-  color: '#475569',
-  border: '1.5px solid #e2e8f0',
-  borderRadius: '0.625rem',
-  fontSize: '0.875rem',
-  fontWeight: '600',
-  cursor: 'pointer',
-}
 const Label = ({ children }) => (
   <label style={{
-    display: 'block', fontSize: '0.8rem', fontWeight: '600',
-    color: '#475569', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px',
+    display: 'block', fontSize: '0.8rem', fontWeight: '600', fontFamily: F.body,
+    color: C.onSurfaceVariant, marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px',
   }}>{children}</label>
 )
 
@@ -86,14 +48,14 @@ const FORM_INIT = {
 function SummaryCard({ label, value, color, alert }) {
   return (
     <div style={{
-      ...card,
-      border: alert ? '1px solid #fecaca' : '1px solid #f1f5f9',
+      ...dsCard,
+      border: alert ? `1px solid ${C.outlineVariant}` : `1px solid ${C.borderSubtle}`,
       padding: '1.25rem 1.5rem',
     }}>
-      <div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.5rem' }}>
+      <div style={{ fontSize: '0.72rem', fontWeight: '700', fontFamily: F.body, color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.5rem' }}>
         {label}
       </div>
-      <div style={{ fontSize: '1.25rem', fontWeight: '800', color }}>
+      <div style={{ fontSize: '1.25rem', fontFamily: F.headline, fontWeight: '800', color }}>
         {value}
       </div>
     </div>
@@ -167,9 +129,9 @@ export default function Resumo() {
   }
 
   function getStatusBadge(d) {
-    if (d.pago) return { label: 'Paga', bg: '#f0fdf4', color: '#16a34a' }
-    if (isAtrasada(d)) return { label: 'Atrasada', bg: '#fef2f2', color: '#dc2626' }
-    return { label: 'Em aberto', bg: '#fffbeb', color: '#d97706' }
+    if (d.pago) return { label: 'Paga', bg: C.statusSuccessBg, color: C.statusSuccess }
+    if (isAtrasada(d)) return { label: 'Atrasada', bg: C.statusDangerBg, color: C.statusDanger }
+    return { label: 'Em aberto', bg: C.statusWarningBg, color: C.statusWarning }
   }
 
   const filteredDespesas = despesas.filter(d => {
@@ -294,12 +256,12 @@ export default function Resumo() {
     return (
       <div style={{ padding: '2rem' }}>
         <div style={{
-          background: '#fef2f2', border: '1px solid #fecaca',
-          borderRadius: '1rem', padding: '2rem', textAlign: 'center',
+          background: C.statusDangerBg, border: `1px solid ${C.outlineVariant}`,
+          borderRadius: '0.5rem', padding: '2rem', textAlign: 'center',
         }}>
           <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🔒</div>
-          <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem', color: '#dc2626' }}>Acesso Restrito</h2>
-          <p style={{ margin: 0, color: '#ef4444', fontSize: '0.875rem' }}>
+          <h2 style={{ margin: '0 0 0.5rem', fontFamily: F.headline, fontSize: '1.1rem', color: C.statusDanger }}>Acesso Restrito</h2>
+          <p style={{ margin: 0, fontFamily: F.body, color: C.statusDanger, fontSize: '0.875rem' }}>
             Apenas administradores podem acessar Contas a Pagar.
           </p>
         </div>
@@ -313,9 +275,9 @@ export default function Resumo() {
       {toast && (
         <div style={{
           position: 'fixed', top: '1.25rem', right: '1.25rem', zIndex: 9999,
-          padding: '0.75rem 1.25rem', borderRadius: '0.75rem', fontSize: '0.875rem',
-          fontWeight: '600', color: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-          background: toast.tipo === 'err' ? '#dc2626' : '#16a34a', maxWidth: '320px',
+          padding: '0.75rem 1.25rem', borderRadius: '0.5rem', fontSize: '0.875rem',
+          fontFamily: F.body, fontWeight: '600', color: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+          background: toast.tipo === 'err' ? C.statusDanger : C.statusSuccess, maxWidth: '320px',
         }}>
           {toast.msg}
         </div>
@@ -323,7 +285,7 @@ export default function Resumo() {
 
       {/* Cabeçalho */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: 0, letterSpacing: '-0.3px' }}>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: '800', fontFamily: F.headline, color: C.onSurface, margin: 0, letterSpacing: '-0.3px' }}>
           Contas a Pagar
         </h1>
         {!showForm && (
@@ -333,8 +295,8 @@ export default function Resumo() {
 
       {/* Formulário Nova / Editar */}
       {showForm && (
-        <div style={{ ...card, marginBottom: '1.5rem', borderLeft: '4px solid #C0272D' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: '700', color: '#0f2d4a', margin: '0 0 1.25rem' }}>
+        <div style={{ ...dsCard, marginBottom: '1.5rem', borderLeft: `4px solid ${C.primaryContainer}` }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: '700', fontFamily: F.headline, color: C.onSurface, margin: '0 0 1.25rem' }}>
             {editId ? 'Editar Conta' : 'Nova Conta'}
           </h2>
           <form onSubmit={salvar} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -388,9 +350,9 @@ export default function Resumo() {
                   const pago = e.target.checked
                   setForm(p => ({ ...p, pago, data_pagamento: p.data_pagamento || hoje }))
                 }}
-                style={{ width: '1rem', height: '1rem', cursor: 'pointer', accentColor: '#C0272D' }}
+                style={{ width: '1rem', height: '1rem', cursor: 'pointer', accentColor: C.primaryContainer }}
               />
-              <label htmlFor="cbPago" style={{ fontSize: '0.9rem', fontWeight: '600', color: '#1e293b', cursor: 'pointer' }}>
+              <label htmlFor="cbPago" style={{ fontSize: '0.9rem', fontFamily: F.body, fontWeight: '600', color: C.onSurface, cursor: 'pointer' }}>
                 Conta paga
               </label>
             </div>
@@ -399,8 +361,8 @@ export default function Resumo() {
             {form.pago && (
               <div style={{
                 display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
-                gap: '1rem', padding: '1rem', background: '#f0fdf4',
-                borderRadius: '0.75rem', border: '1px solid #bbf7d0',
+                gap: '1rem', padding: '1rem', background: C.statusSuccessBg,
+                borderRadius: '0.5rem', border: `1px solid ${C.statusSuccess}30`,
               }}>
                 <div>
                   <Label>Data de Pagamento</Label>
@@ -440,7 +402,7 @@ export default function Resumo() {
       )}
 
       {/* Filtros de período + status + categoria */}
-      <div style={{ ...card, marginBottom: '1rem' }}>
+      <div style={{ ...dsCard, marginBottom: '1rem' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end' }}>
           <div>
             <Label>De</Label>
@@ -489,16 +451,16 @@ export default function Resumo() {
 
       {/* Cards de resumo */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.875rem', marginBottom: '1rem' }}>
-        <SummaryCard label="Total Lançado" value={fBRL(totLancado)} color="#0f2d4a" />
-        <SummaryCard label="Em Aberto" value={fBRL(totAberto)} color="#d97706" />
-        <SummaryCard label="Total Pago" value={fBRL(totPago)} color="#16a34a" />
-        <SummaryCard label="Atrasado" value={fBRL(totAtrasado)} color="#dc2626" alert={totAtrasado > 0} />
+        <SummaryCard label="Total Lançado" value={fBRL(totLancado)} color={C.onSurface} />
+        <SummaryCard label="Em Aberto" value={fBRL(totAberto)} color={C.statusWarning} />
+        <SummaryCard label="Total Pago" value={fBRL(totPago)} color={C.statusSuccess} />
+        <SummaryCard label="Atrasado" value={fBRL(totAtrasado)} color={C.statusDanger} alert={totAtrasado > 0} />
       </div>
 
       {/* Breakdown por categoria */}
       {catEntries.length > 0 && (
-        <div style={{ ...card, marginBottom: '1rem' }}>
-          <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.9rem', marginBottom: '1rem' }}>
+        <div style={{ ...dsCard, marginBottom: '1rem' }}>
+          <div style={{ fontWeight: '700', fontFamily: F.headline, color: C.onSurface, fontSize: '0.9rem', marginBottom: '1rem' }}>
             Por Categoria — {fDateBR(dataInicio)} a {fDateBR(dataFim)}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
@@ -507,13 +469,13 @@ export default function Resumo() {
               return (
                 <div key={cat}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                    <span style={{ fontSize: '0.82rem', color: '#475569', fontWeight: '600' }}>{cat}</span>
-                    <span style={{ fontSize: '0.82rem', color: '#1e293b', fontWeight: '700' }}>
-                      {fBRL(total)} <span style={{ color: '#94a3b8', fontWeight: '400' }}>({pct}%)</span>
+                    <span style={{ fontSize: '0.82rem', fontFamily: F.body, color: C.onSurfaceVariant, fontWeight: '600' }}>{cat}</span>
+                    <span style={{ fontSize: '0.82rem', fontFamily: F.mono, color: C.onSurface, fontWeight: '700' }}>
+                      {fBRL(total)} <span style={{ color: C.onSurfaceVariant, fontWeight: '400', fontFamily: F.body }}>({pct}%)</span>
                     </span>
                   </div>
-                  <div style={{ background: '#f1f5f9', borderRadius: '999px', height: '6px', overflow: 'hidden' }}>
-                    <div style={{ width: `${pct}%`, background: '#C0272D', height: '100%', borderRadius: '999px', transition: 'width 0.4s ease' }} />
+                  <div style={{ background: C.surfaceContainerHigh, borderRadius: '999px', height: '6px', overflow: 'hidden' }}>
+                    <div style={{ width: `${pct}%`, background: C.primaryContainer, height: '100%', borderRadius: '999px', transition: 'width 0.4s ease' }} />
                   </div>
                 </div>
               )
@@ -523,12 +485,12 @@ export default function Resumo() {
       )}
 
       {/* Tabela */}
-      <div style={{ ...card }}>
+      <div style={{ ...dsCard }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.95rem' }}>
+          <div style={{ fontWeight: '700', fontFamily: F.headline, color: C.onSurface, fontSize: '0.95rem' }}>
             Contas
             {filteredDespesas.length > 0 && (
-              <span style={{ marginLeft: '0.5rem', color: '#64748b', fontWeight: '400', fontSize: '0.85rem' }}>
+              <span style={{ marginLeft: '0.5rem', color: C.onSurfaceVariant, fontFamily: F.body, fontWeight: '400', fontSize: '0.85rem' }}>
                 — {filteredDespesas.length} {filteredDespesas.length === 1 ? 'registro' : 'registros'}
               </span>
             )}
@@ -536,9 +498,9 @@ export default function Resumo() {
         </div>
 
         {loading ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem 0' }}>Carregando...</div>
+          <div style={{ textAlign: 'center', color: C.onSurfaceVariant, fontFamily: F.body, padding: '2.5rem 0' }}>Carregando...</div>
         ) : filteredDespesas.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem 0' }}>
+          <div style={{ textAlign: 'center', color: C.onSurfaceVariant, fontFamily: F.body, padding: '3rem 0' }}>
             <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>💳</div>
             <div style={{ fontWeight: '600' }}>Nenhuma conta encontrada</div>
             <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>Ajuste os filtros ou clique em "+ Nova Conta"</div>
@@ -547,12 +509,12 @@ export default function Resumo() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
-                <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
                   {['Descrição', 'Categoria', 'Fornecedor', 'Vencimento', 'Valor', 'Status', 'Ações'].map(h => (
                     <th key={h} style={{
-                      padding: '0.6rem 0.75rem', textAlign: 'left', fontSize: '0.75rem',
-                      fontWeight: '700', color: '#64748b', textTransform: 'uppercase',
-                      letterSpacing: '0.4px', whiteSpace: 'nowrap',
+                      padding: '0.6rem 0.75rem', textAlign: 'left', fontSize: '0.7rem',
+                      fontFamily: F.body, fontWeight: '600', color: C.onSurfaceVariant,
+                      textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap',
                     }}>{h}</th>
                   ))}
                 </tr>
@@ -563,40 +525,40 @@ export default function Resumo() {
                   const badge = getStatusBadge(d)
                   return (
                     <tr key={d.id}
-                      style={{ borderBottom: '1px solid #f8fafc', background: atrasada ? '#fff9f9' : 'transparent' }}
-                      onMouseEnter={e => e.currentTarget.style.background = atrasada ? '#fff0f0' : '#fafafa'}
-                      onMouseLeave={e => e.currentTarget.style.background = atrasada ? '#fff9f9' : 'transparent'}>
-                      <td style={{ padding: '0.65rem 0.75rem', fontWeight: '600', color: '#1e293b', maxWidth: '220px' }}>
+                      style={{ borderBottom: `1px solid ${C.borderSubtle}`, background: atrasada ? C.statusDangerBg + '66' : 'transparent' }}
+                      onMouseEnter={e => e.currentTarget.style.background = atrasada ? C.statusDangerBg : C.surfaceContainerLow}
+                      onMouseLeave={e => e.currentTarget.style.background = atrasada ? C.statusDangerBg + '66' : 'transparent'}>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.body, fontWeight: '600', color: C.onSurface, maxWidth: '220px' }}>
                         {d.descricao}
                         {d.observacoes && (
-                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: '400', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>
+                          <div style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontWeight: '400', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>
                             {d.observacoes}
                           </div>
                         )}
                       </td>
                       <td style={{ padding: '0.65rem 0.75rem' }}>
                         {d.categoria
-                          ? <span style={{ background: '#f1f5f9', borderRadius: '0.4rem', padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontWeight: '600', color: '#475569' }}>{d.categoria}</span>
-                          : <span style={{ color: '#cbd5e1' }}>—</span>
+                          ? <span style={{ background: C.surfaceContainerHigh, borderRadius: '0.375rem', padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600', color: C.onSurfaceVariant }}>{d.categoria}</span>
+                          : <span style={{ color: C.borderSubtle }}>—</span>
                         }
                       </td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: '#64748b', fontSize: '0.85rem' }}>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.body, color: C.onSurfaceVariant, fontSize: '0.85rem' }}>
                         {d.fornecedor || '—'}
                       </td>
-                      <td style={{ padding: '0.65rem 0.75rem', whiteSpace: 'nowrap', fontWeight: atrasada ? '700' : '400', color: atrasada ? '#dc2626' : '#475569' }}>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.body, whiteSpace: 'nowrap', fontWeight: atrasada ? '700' : '400', color: atrasada ? C.statusDanger : C.onSurfaceVariant }}>
                         {fDateBR(d.data_vencimento)}
                       </td>
-                      <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.mono, fontWeight: '700', color: C.onSurface, whiteSpace: 'nowrap' }}>
                         {fBRL(d.valor)}
                       </td>
                       <td style={{ padding: '0.65rem 0.75rem' }}>
                         <span style={{
                           background: badge.bg, color: badge.color,
-                          borderRadius: '0.4rem', padding: '0.2rem 0.6rem',
-                          fontSize: '0.78rem', fontWeight: '700',
+                          borderRadius: '0.375rem', padding: '0.2rem 0.6rem',
+                          fontSize: '0.78rem', fontFamily: F.body, fontWeight: '700',
                         }}>{badge.label}</span>
                         {d.pago && d.data_pagamento && (
-                          <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '2px' }}>
+                          <div style={{ fontSize: '0.72rem', fontFamily: F.body, color: C.onSurfaceVariant, marginTop: '2px' }}>
                             {fDateBR(d.data_pagamento)}
                           </div>
                         )}
@@ -606,22 +568,22 @@ export default function Resumo() {
                           {!d.pago && (
                             <button onClick={() => marcarPaga(d)}
                               style={{
-                                padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
-                                borderRadius: '0.4rem', border: '1.5px solid #bbf7d0',
-                                background: '#f0fdf4', color: '#16a34a', cursor: 'pointer',
+                                padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600',
+                                borderRadius: '0.375rem', border: `1.5px solid ${C.statusSuccess}40`,
+                                background: C.statusSuccessBg, color: C.statusSuccess, cursor: 'pointer',
                               }}>Pagar</button>
                           )}
                           <button onClick={() => abrirEdicao(d)}
                             style={{
-                              padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
-                              borderRadius: '0.4rem', border: '1.5px solid #e2e8f0',
-                              background: '#f8fafc', color: '#475569', cursor: 'pointer',
+                              padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600',
+                              borderRadius: '0.375rem', border: `1.5px solid ${C.borderSubtle}`,
+                              background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'pointer',
                             }}>Editar</button>
                           <button onClick={() => excluir(d.id)}
                             style={{
-                              padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
-                              borderRadius: '0.4rem', border: '1.5px solid #fecaca',
-                              background: '#fef2f2', color: '#dc2626', cursor: 'pointer',
+                              padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600',
+                              borderRadius: '0.375rem', border: `1.5px solid ${C.outlineVariant}`,
+                              background: C.statusDangerBg, color: C.statusDanger, cursor: 'pointer',
                             }}>Excluir</button>
                         </div>
                       </td>

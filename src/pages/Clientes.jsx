@@ -1,30 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 
-const card = {
-  background: '#fff', borderRadius: '1rem', padding: '1.5rem',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9',
-}
-const inputCss = {
-  width: '100%', padding: '0.65rem 0.875rem', border: '1.5px solid #e2e8f0',
-  borderRadius: '0.625rem', fontSize: '0.9rem', outline: 'none',
-  boxSizing: 'border-box', color: '#1e293b', background: '#f8fafc',
-}
-const btnPrimary = {
-  padding: '0.6rem 1.25rem', background: '#C0272D', color: '#fff',
-  border: 'none', borderRadius: '0.625rem', fontSize: '0.875rem',
-  fontWeight: '600', cursor: 'pointer',
-}
-const btnSecondary = {
-  padding: '0.6rem 1.25rem', background: '#f1f5f9', color: '#475569',
-  border: '1.5px solid #e2e8f0', borderRadius: '0.625rem', fontSize: '0.875rem',
-  fontWeight: '600', cursor: 'pointer',
-}
 const Label = ({ children }) => (
   <label style={{
     display: 'block', fontSize: '0.8rem', fontWeight: '600',
-    color: '#475569', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px',
+    color: C.onSurfaceVariant, marginBottom: '0.4rem', textTransform: 'uppercase',
+    letterSpacing: '0.5px', fontFamily: F.body,
   }}>{children}</label>
 )
 
@@ -120,14 +103,15 @@ export default function Clientes() {
         <div style={{
           position: 'fixed', top: '1.25rem', right: '1.25rem', zIndex: 9999,
           padding: '0.75rem 1.25rem', borderRadius: '0.75rem', fontSize: '0.875rem',
-          fontWeight: '600', color: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-          background: toast.tipo === 'err' ? '#dc2626' : '#16a34a', maxWidth: '320px',
+          fontWeight: '600', color: C.onPrimary, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+          background: toast.tipo === 'err' ? C.statusDanger : C.statusSuccess,
+          maxWidth: '320px', fontFamily: F.body,
         }}>{toast.msg}</div>
       )}
 
       {/* Cabeçalho */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: 0, letterSpacing: '-0.3px' }}>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: C.onSurface, margin: 0, letterSpacing: '-0.3px', fontFamily: F.headline }}>
           Cadastro de Clientes
         </h1>
         {!showForm && (
@@ -137,8 +121,8 @@ export default function Clientes() {
 
       {/* Formulário */}
       {showForm && (
-        <div style={{ ...card, marginBottom: '1.5rem', borderLeft: '4px solid #C0272D' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: '700', color: '#0f2d4a', margin: '0 0 1.25rem' }}>
+        <div style={{ ...dsCard, marginBottom: '1.5rem', borderLeft: `4px solid ${C.primaryContainer}` }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: '700', color: C.onSurface, margin: '0 0 1.25rem', fontFamily: F.headline }}>
             {editId ? 'Editar Cliente' : 'Novo Cliente'}
           </h2>
           <form onSubmit={salvar} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -179,7 +163,7 @@ export default function Clientes() {
       )}
 
       {/* Busca */}
-      <div style={{ ...card, marginBottom: '1rem', padding: '1rem 1.25rem' }}>
+      <div style={{ ...dsCard, marginBottom: '1rem', padding: '1rem 1.25rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
           <input
             type="search" placeholder="Buscar por nome, CPF ou telefone…"
@@ -187,7 +171,7 @@ export default function Clientes() {
             style={{ ...inputCss, maxWidth: '360px' }}
           />
           {!loading && (
-            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+            <span style={{ fontSize: '0.8rem', color: C.onSurfaceVariant, fontFamily: F.body }}>
               {listaFiltrada.length} cliente{listaFiltrada.length !== 1 ? 's' : ''}
             </span>
           )}
@@ -195,13 +179,13 @@ export default function Clientes() {
       </div>
 
       {/* Tabela */}
-      <div style={card}>
+      <div style={dsCard}>
         {loading ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem 0' }}>Carregando...</div>
+          <div style={{ textAlign: 'center', color: C.onSurfaceVariant, padding: '2.5rem 0', fontFamily: F.body }}>Carregando...</div>
         ) : listaFiltrada.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem 0' }}>
+          <div style={{ textAlign: 'center', color: C.onSurfaceVariant, padding: '3rem 0' }}>
             <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>👥</div>
-            <div style={{ fontWeight: '600' }}>
+            <div style={{ fontWeight: '600', fontFamily: F.body }}>
               {clientes.length === 0
                 ? 'Nenhum cliente cadastrado. Clique em "+ Novo Cliente" para começar.'
                 : 'Nenhum resultado para a busca.'}
@@ -211,44 +195,44 @@ export default function Clientes() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
-                <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
                   {['Nome', 'CPF', 'Telefone', 'Endereço', 'Ações'].map(h => (
                     <th key={h} style={{
-                      padding: '0.6rem 0.75rem', textAlign: 'left', fontSize: '0.75rem',
-                      fontWeight: '700', color: '#64748b', textTransform: 'uppercase',
-                      letterSpacing: '0.4px', whiteSpace: 'nowrap',
+                      padding: '0.6rem 0.875rem', textAlign: 'left', fontSize: '0.7rem',
+                      fontWeight: '600', color: C.onSurfaceVariant, textTransform: 'uppercase',
+                      letterSpacing: '0.06em', whiteSpace: 'nowrap', fontFamily: F.body,
                     }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {listaFiltrada.map(c => (
-                  <tr key={c.id} style={{ borderBottom: '1px solid #f8fafc' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
+                  <tr key={c.id} style={{ borderBottom: `1px solid ${C.borderSubtle}` }}
+                    onMouseEnter={e => e.currentTarget.style.background = C.surfaceContainerLow}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <td style={{ padding: '0.7rem 0.75rem', fontWeight: '600', color: '#1e293b' }}>
-                      {c.nome || <span style={{ color: '#cbd5e1' }}>—</span>}
+                    <td style={{ padding: '0.7rem 0.875rem', fontWeight: '600', color: C.onSurface, fontFamily: F.body }}>
+                      {c.nome || <span style={{ color: C.outlineVariant }}>—</span>}
                     </td>
-                    <td style={{ padding: '0.7rem 0.75rem', color: '#475569', fontFamily: 'monospace', fontSize: '0.85rem' }}>
-                      {c.cpf || <span style={{ color: '#cbd5e1' }}>—</span>}
+                    <td style={{ padding: '0.7rem 0.875rem', color: C.onSurfaceVariant, fontFamily: F.mono, fontSize: '0.85rem' }}>
+                      {c.cpf || <span style={{ color: C.outlineVariant }}>—</span>}
                     </td>
-                    <td style={{ padding: '0.7rem 0.75rem' }}>
+                    <td style={{ padding: '0.7rem 0.875rem' }}>
                       {c.telefone
-                        ? <a href={`tel:${c.telefone}`} style={{ color: '#0f2d4a', textDecoration: 'none', fontWeight: '500' }}>{c.telefone}</a>
-                        : <span style={{ color: '#cbd5e1' }}>—</span>}
+                        ? <a href={`tel:${c.telefone}`} style={{ color: C.secondary, textDecoration: 'none', fontWeight: '500', fontFamily: F.body }}>{c.telefone}</a>
+                        : <span style={{ color: C.outlineVariant }}>—</span>}
                     </td>
-                    <td style={{ padding: '0.7rem 0.75rem', color: '#64748b', fontSize: '0.82rem', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {c.endereco || <span style={{ color: '#cbd5e1' }}>—</span>}
+                    <td style={{ padding: '0.7rem 0.875rem', color: C.onSurfaceVariant, fontSize: '0.82rem', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: F.body }}>
+                      {c.endereco || <span style={{ color: C.outlineVariant }}>—</span>}
                     </td>
-                    <td style={{ padding: '0.7rem 0.75rem' }}>
+                    <td style={{ padding: '0.7rem 0.875rem' }}>
                       <div style={{ display: 'flex', gap: '0.4rem' }}>
                         <button onClick={() => abrirEdicao(c)}
-                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600', borderRadius: '0.4rem', border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#475569', cursor: 'pointer' }}>
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600', borderRadius: '0.4rem', border: `1.5px solid ${C.borderSubtle}`, background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'pointer', fontFamily: F.body }}>
                           Editar
                         </button>
                         {isAdmin && (
                           <button onClick={() => excluir(c.id)}
-                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600', borderRadius: '0.4rem', border: '1.5px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}>
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600', borderRadius: '0.4rem', border: `1.5px solid ${C.outlineVariant}`, background: C.statusDangerBg, color: C.statusDanger, cursor: 'pointer', fontFamily: F.body }}>
                             Excluir
                           </button>
                         )}
