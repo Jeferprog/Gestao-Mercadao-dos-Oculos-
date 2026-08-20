@@ -384,20 +384,17 @@ export default function Vendas() {
     }
   }
 
-  /* próximo O.S. por filial — usa exclusivamente a sequência da filial */
+  /* próximo O.S. por filial — respeita os_numero_inicial como piso mínimo */
   async function getProximoOs(filialId) {
     if (filialId) {
-      const { data: maxRow } = await supabase
-        .from('vendas')
-        .select('os_numero')
-        .eq('filial_id', filialId)
-        .not('os_numero', 'is', null)
-        .order('os_numero', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (maxRow) return maxRow.os_numero + 1
-      const { data: fil } = await supabase.from('filiais').select('os_numero_inicial').eq('id', filialId).maybeSingle()
-      return fil?.os_numero_inicial || 1
+      const [{ data: fil }, { data: maxRow }] = await Promise.all([
+        supabase.from('filiais').select('os_numero_inicial').eq('id', filialId).maybeSingle(),
+        supabase.from('vendas').select('os_numero').eq('filial_id', filialId)
+          .not('os_numero', 'is', null).order('os_numero', { ascending: false }).limit(1).maybeSingle(),
+      ])
+      const inicial = fil?.os_numero_inicial || 1
+      if (maxRow) return Math.max(maxRow.os_numero + 1, inicial)
+      return inicial
     }
     return 1
   }
