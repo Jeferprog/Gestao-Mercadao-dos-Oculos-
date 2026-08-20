@@ -192,8 +192,8 @@ export default function Dashboard() {
       const fim   = lastOfMonth()
       const em7   = em7DiasISO()
 
-      let qHoje = supabase.from('vendas').select('valor_final').eq('data_venda', hoje)
-      let qMes  = supabase.from('vendas').select('data_venda, valor_final').gte('data_venda', inicio).lte('data_venda', fim)
+      let qHoje = supabase.from('vendas').select('valor_final').eq('data_venda', hoje).eq('efetivada', true)
+      let qMes  = supabase.from('vendas').select('data_venda, valor_final').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true)
       if (!isAdmin) {
         qHoje = qHoje.eq('vendedor_id', profile.id)
         qMes  = qMes.eq('vendedor_id', profile.id)
