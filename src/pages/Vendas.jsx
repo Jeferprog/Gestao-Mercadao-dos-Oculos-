@@ -48,7 +48,7 @@ const FORM_INIT = {
 }
 
 /* ── FormVenda ── */
-function FormVenda({ form, onChange, vendedores, filiais, formasPagamento, isAdmin, onSubmit, onCancel, saving, editando }) {
+function FormVenda({ form, onChange, onFilialChange, vendedores, filiais, formasPagamento, isAdmin, onSubmit, onCancel, saving, editando }) {
   function handleBrutoDesc(field, val) {
     const next = { ...form, [field]: val }
     const bruto = parseFloat(String(next.valor_bruto).replace(',', '.')) || 0
@@ -121,7 +121,7 @@ function FormVenda({ form, onChange, vendedores, filiais, formasPagamento, isAdm
             <Label>Filial</Label>
             <select style={inputCss}
               value={form.filial_id}
-              onChange={e => onChange({ ...form, filial_id: e.target.value })}>
+              onChange={e => onFilialChange(e.target.value)}>
               <option value="">Sem filial</option>
               {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
             </select>
@@ -368,28 +368,26 @@ export default function Vendas() {
     carregarVendas()
   }, [carregarDias, carregarVendas])
 
-  /* próximo O.S. por filial */
+  /* recalcula O.S. ao trocar filial no formulário (somente venda nova de Grau) */
+  async function handleFilialChange(newFilialId) {
+    const nextOs = form.tipo_venda === 'Grau' ? await getProximoOs(newFilialId) : ''
+    setForm(f => ({ ...f, filial_id: newFilialId, os_numero: nextOs }))
+  }
+
+  /* próximo O.S. por filial — usa exclusivamente a sequência da filial */
   async function getProximoOs(filialId) {
-    let q = supabase
-      .from('vendas')
-      .select('os_numero')
-      .not('os_numero', 'is', null)
-      .order('os_numero', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (filialId) q = supabase.from('vendas').select('os_numero').eq('filial_id', filialId).not('os_numero', 'is', null).order('os_numero', { ascending: false }).limit(1).maybeSingle()
-
-    const { data: maxRow } = await q
-    if (maxRow) return maxRow.os_numero + 1
-
     if (filialId) {
+      const { data: maxRow } = await supabase
+        .from('vendas')
+        .select('os_numero')
+        .eq('filial_id', filialId)
+        .not('os_numero', 'is', null)
+        .order('os_numero', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (maxRow) return maxRow.os_numero + 1
       const { data: fil } = await supabase.from('filiais').select('os_numero_inicial').eq('id', filialId).maybeSingle()
-      if (fil) return fil.os_numero_inicial || 1
-    }
-    const { data: cfgRows } = await supabase.from('configuracoes').select('*')
-    if (cfgRows) {
-      const map = Object.fromEntries(cfgRows.map(r => [r.chave, r.valor]))
-      return parseInt(map.os_numero_inicial) || 1
+      return fil?.os_numero_inicial || 1
     }
     return 1
   }
@@ -634,6 +632,7 @@ export default function Vendas() {
             <FormVenda
               form={form}
               onChange={setForm}
+              onFilialChange={handleFilialChange}
               vendedores={vendedores}
               filiais={filiais}
               formasPagamento={formasPagamento}

@@ -68,7 +68,6 @@ function Modal({ title, onClose, children }) {
 
 /* ── Aba: Sistema ── */
 function TabSistema({ showToast }) {
-  const [osNumero, setOsNumero] = useState('')
   const [formas, setFormas] = useState([])
   const [novaForma, setNovaForma] = useState('')
   const [categorias, setCategorias] = useState([])
@@ -80,7 +79,6 @@ function TabSistema({ showToast }) {
     const { data } = await supabase.from('configuracoes').select('*')
     if (data) {
       const map = Object.fromEntries(data.map(r => [r.chave, r.valor]))
-      setOsNumero(map.os_numero_inicial || '1')
       setFormas((map.formas_pagamento || '').split(',').filter(Boolean))
       setCategorias((map.categorias_despesa || '').split(',').filter(Boolean))
     }
@@ -88,17 +86,6 @@ function TabSistema({ showToast }) {
   }, [])
 
   useEffect(() => { loadConfig() }, [loadConfig])
-
-  async function salvarOs() {
-    if (!osNumero || parseInt(osNumero) < 1) return
-    setSaving(true)
-    const { error } = await supabase
-      .from('configuracoes')
-      .update({ valor: String(parseInt(osNumero)) })
-      .eq('chave', 'os_numero_inicial')
-    showToast(error ? 'Erro ao salvar número inicial.' : 'Número inicial salvo!')
-    setSaving(false)
-  }
 
   async function salvarFormas() {
     if (formas.length === 0) return
@@ -138,27 +125,6 @@ function TabSistema({ showToast }) {
 
   return (
     <>
-      {/* Número Inicial da O.S. */}
-      <div style={cardMb}>
-        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>
-          Número Inicial da Ordem de Serviço (Global)
-        </h3>
-        <p style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5', fontFamily: F.body }}>
-          Fallback global quando não há filial configurada.
-          Para controle por filial, use a aba Filiais.
-        </p>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem' }}>
-          <div>
-            <Label>Número inicial</Label>
-            <input type="number" value={osNumero} onChange={e => setOsNumero(e.target.value)}
-              min="1" style={{ ...inputCss, width: '120px' }} />
-          </div>
-          <button onClick={salvarOs} disabled={saving} style={btnPrimary}>
-            {saving ? 'Salvando...' : 'Salvar'}
-          </button>
-        </div>
-      </div>
-
       {/* Formas de Pagamento */}
       <div style={cardMb}>
         <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>
