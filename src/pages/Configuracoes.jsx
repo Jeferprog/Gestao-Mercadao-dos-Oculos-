@@ -1,128 +1,62 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 
-/* ─────────────────────────────────────────── helpers de estilo ── */
-
-const card = {
-  background: '#fff',
-  borderRadius: '1rem',
-  padding: '1.75rem',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-  border: '1px solid #f1f5f9',
-  marginBottom: '1.5rem',
-}
-
-const inputCss = {
-  width: '100%',
-  padding: '0.65rem 0.875rem',
-  border: '1.5px solid #e2e8f0',
-  borderRadius: '0.625rem',
-  fontSize: '0.9rem',
-  outline: 'none',
-  boxSizing: 'border-box',
-  color: '#1e293b',
-  background: '#f8fafc',
-}
-
-const btnPrimary = {
-  padding: '0.6rem 1.25rem',
-  background: '#C0272D',
-  color: '#fff',
-  border: 'none',
-  borderRadius: '0.625rem',
-  fontSize: '0.875rem',
-  fontWeight: '600',
-  cursor: 'pointer',
-}
-
-const btnSecondary = {
-  padding: '0.6rem 1.25rem',
-  background: '#f1f5f9',
-  color: '#475569',
-  border: '1.5px solid #e2e8f0',
-  borderRadius: '0.625rem',
-  fontSize: '0.875rem',
-  fontWeight: '600',
-  cursor: 'pointer',
-}
+/* card with marginBottom preserved from original */
+const cardMb = { ...dsCard, marginBottom: '1.5rem' }
 
 function Label({ children }) {
   return (
     <label style={{
-      display: 'block',
-      fontSize: '0.8rem',
-      fontWeight: '600',
-      color: '#475569',
-      marginBottom: '0.4rem',
-      textTransform: 'uppercase',
-      letterSpacing: '0.5px',
+      display: 'block', fontSize: '0.8rem', fontWeight: '600',
+      color: C.onSurfaceVariant, marginBottom: '0.4rem',
+      textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body,
     }}>
       {children}
     </label>
   )
 }
 
-/* ─────────────────────────────────────────── Toast ── */
-
+/* ── Toast ── */
 function Toast({ msg }) {
   if (!msg) return null
   const isError = msg.toLowerCase().includes('erro')
   return (
     <div style={{
-      position: 'fixed',
-      bottom: '1.5rem',
-      right: '1.5rem',
+      position: 'fixed', bottom: '1.5rem', right: '1.5rem',
       padding: '0.875rem 1.25rem',
-      background: isError ? '#dc2626' : '#16a34a',
-      color: '#fff',
-      borderRadius: '0.75rem',
-      boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
-      fontSize: '0.875rem',
-      fontWeight: '600',
-      zIndex: 1000,
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem',
-      maxWidth: '340px',
+      background: isError ? C.statusDanger : C.statusSuccess,
+      color: C.onPrimary, borderRadius: '0.75rem',
+      boxShadow: '0 10px 25px rgba(0,0,0,0.2)', fontSize: '0.875rem',
+      fontWeight: '600', fontFamily: F.body, zIndex: 1000,
+      display: 'flex', alignItems: 'center', gap: '0.5rem', maxWidth: '340px',
     }}>
       {isError ? '❌' : '✅'} {msg}
     </div>
   )
 }
 
-/* ─────────────────────────────────────────── Modal ── */
-
+/* ── Modal ── */
 function Modal({ title, onClose, children }) {
   return (
     <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(15,45,74,0.55)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 500,
-      padding: '1rem',
+      position: 'fixed', inset: 0, background: 'rgba(15,45,74,0.55)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      zIndex: 500, padding: '1rem',
     }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div style={{
-        background: '#fff',
-        borderRadius: '1.25rem',
-        padding: 'clamp(1rem, 5vw, 2rem)',
-        width: '100%',
-        maxWidth: '480px',
-        maxHeight: '90dvh',
-        overflowY: 'auto',
+        background: C.surfaceContainerLowest, borderRadius: '1.25rem',
+        padding: 'clamp(1rem, 5vw, 2rem)', width: '100%', maxWidth: '480px',
+        maxHeight: '90dvh', overflowY: 'auto',
         boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: '#0f2d4a' }}>{title}</h3>
-          <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: '1.25rem', lineHeight: 1 }}
-          >
+          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>{title}</h3>
+          <button onClick={onClose}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.onSurfaceVariant, fontSize: '1.25rem', lineHeight: 1 }}>
             ×
           </button>
         </div>
@@ -132,8 +66,7 @@ function Modal({ title, onClose, children }) {
   )
 }
 
-/* ─────────────────────────────────────────── Aba: Sistema ── */
-
+/* ── Aba: Sistema ── */
 function TabSistema({ showToast }) {
   const [osNumero, setOsNumero] = useState('')
   const [formas, setFormas] = useState([])
@@ -180,15 +113,9 @@ function TabSistema({ showToast }) {
 
   function addForma() {
     const f = novaForma.trim()
-    if (f && !formas.includes(f)) {
-      setFormas(prev => [...prev, f])
-      setNovaForma('')
-    }
+    if (f && !formas.includes(f)) { setFormas(prev => [...prev, f]); setNovaForma('') }
   }
-
-  function removeForma(f) {
-    setFormas(prev => prev.filter(x => x !== f))
-  }
+  function removeForma(f) { setFormas(prev => prev.filter(x => x !== f)) }
 
   async function salvarCategorias() {
     if (categorias.length === 0) return
@@ -203,39 +130,28 @@ function TabSistema({ showToast }) {
 
   function addCategoria() {
     const c = novaCategoria.trim()
-    if (c && !categorias.includes(c)) {
-      setCategorias(prev => [...prev, c])
-      setNovaCategoria('')
-    }
+    if (c && !categorias.includes(c)) { setCategorias(prev => [...prev, c]); setNovaCategoria('') }
   }
+  function removeCategoria(c) { setCategorias(prev => prev.filter(x => x !== c)) }
 
-  function removeCategoria(c) {
-    setCategorias(prev => prev.filter(x => x !== c))
-  }
-
-  if (loading) return <p style={{ color: '#94a3b8' }}>Carregando configurações...</p>
+  if (loading) return <p style={{ color: C.onSurfaceVariant, fontFamily: F.body }}>Carregando configurações...</p>
 
   return (
     <>
       {/* Número Inicial da O.S. */}
-      <div style={card}>
-        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: '#1e293b' }}>
+      <div style={cardMb}>
+        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>
           Número Inicial da Ordem de Serviço (Global)
         </h3>
-        <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5' }}>
+        <p style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5', fontFamily: F.body }}>
           Fallback global quando não há filial configurada.
           Para controle por filial, use a aba Filiais.
         </p>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem' }}>
           <div>
             <Label>Número inicial</Label>
-            <input
-              type="number"
-              value={osNumero}
-              onChange={e => setOsNumero(e.target.value)}
-              min="1"
-              style={{ ...inputCss, width: '120px' }}
-            />
+            <input type="number" value={osNumero} onChange={e => setOsNumero(e.target.value)}
+              min="1" style={{ ...inputCss, width: '120px' }} />
           </div>
           <button onClick={salvarOs} disabled={saving} style={btnPrimary}>
             {saving ? 'Salvando...' : 'Salvar'}
@@ -244,82 +160,74 @@ function TabSistema({ showToast }) {
       </div>
 
       {/* Formas de Pagamento */}
-      <div style={card}>
-        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: '#1e293b' }}>
+      <div style={cardMb}>
+        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>
           Formas de Pagamento
         </h3>
-        <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5' }}>
+        <p style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5', fontFamily: F.body }}>
           Gerencie as opções disponíveis no cadastro de vendas.
         </p>
-
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem', minHeight: '36px' }}>
           {formas.map(f => (
             <span key={f} style={{
               display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
-              background: '#eff6ff', color: '#1d4ed8',
+              background: C.statusInfoBg, color: C.statusInfo,
               padding: '0.3rem 0.75rem', borderRadius: '999px',
-              fontSize: '0.82rem', fontWeight: '500',
+              fontSize: '0.82rem', fontWeight: '500', fontFamily: F.body,
             }}>
               {f}
-              <button
-                onClick={() => removeForma(f)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#93c5fd', fontSize: '1rem', lineHeight: 1, padding: 0 }}
-                title={`Remover ${f}`}
-              >×</button>
+              <button onClick={() => removeForma(f)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.statusInfo, fontSize: '1rem', lineHeight: 1, padding: 0, opacity: 0.6 }}
+                title={`Remover ${f}`}>×</button>
             </span>
           ))}
           {formas.length === 0 && (
-            <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>Nenhuma forma cadastrada.</span>
+            <span style={{ color: C.outlineVariant, fontSize: '0.85rem', fontFamily: F.body }}>Nenhuma forma cadastrada.</span>
           )}
         </div>
-
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
           <input type="text" value={novaForma} onChange={e => setNovaForma(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addForma())}
             placeholder="Ex: Transferência" style={{ ...inputCss, flex: 1 }} />
           <button onClick={addForma} style={btnSecondary}>+ Adicionar</button>
         </div>
-
         <button onClick={salvarFormas} disabled={saving || formas.length === 0} style={btnPrimary}>
           {saving ? 'Salvando...' : 'Salvar Formas de Pagamento'}
         </button>
       </div>
 
       {/* Categorias de Despesa */}
-      <div style={card}>
-        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: '#1e293b' }}>
+      <div style={cardMb}>
+        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>
           Categorias de Despesa
         </h3>
-        <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5' }}>
+        <p style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5', fontFamily: F.body }}>
           Gerencie as categorias disponíveis no módulo de Contas a Pagar.
         </p>
-
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem', minHeight: '36px' }}>
           {categorias.map(c => (
             <span key={c} style={{
               display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
-              background: '#fef2f2', color: '#991b1b',
+              background: C.statusDangerBg, color: C.statusDanger,
               padding: '0.3rem 0.75rem', borderRadius: '999px',
-              fontSize: '0.82rem', fontWeight: '500',
+              fontSize: '0.82rem', fontWeight: '500', fontFamily: F.body,
             }}>
               {c}
               <button onClick={() => removeCategoria(c)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', fontSize: '1rem', lineHeight: 1, padding: 0 }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.statusDanger, fontSize: '1rem', lineHeight: 1, padding: 0, opacity: 0.6 }}
                 title={`Remover ${c}`}>×</button>
             </span>
           ))}
           {categorias.length === 0 && (
-            <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>Nenhuma categoria cadastrada.</span>
+            <span style={{ color: C.outlineVariant, fontSize: '0.85rem', fontFamily: F.body }}>Nenhuma categoria cadastrada.</span>
           )}
         </div>
-
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
           <input type="text" value={novaCategoria} onChange={e => setNovaCategoria(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCategoria())}
             placeholder="Ex: Manutenção" style={{ ...inputCss, flex: 1 }} />
           <button onClick={addCategoria} style={btnSecondary}>+ Adicionar</button>
         </div>
-
         <button onClick={salvarCategorias} disabled={saving || categorias.length === 0} style={btnPrimary}>
           {saving ? 'Salvando...' : 'Salvar Categorias'}
         </button>
@@ -328,14 +236,13 @@ function TabSistema({ showToast }) {
   )
 }
 
-/* ─────────────────────────────────────────── Aba: Filiais ── */
-
+/* ── Aba: Filiais ── */
 const FILIAL_INIT = { nome: '', os_numero_inicial: '1' }
 
 function TabFiliais({ showToast }) {
   const [filiais, setFiliais] = useState([])
   const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState(null) // null | 'add' | { type:'edit', data }
+  const [modal, setModal] = useState(null)
   const [form, setForm] = useState(FILIAL_INIT)
   const [saving, setSaving] = useState(false)
 
@@ -347,11 +254,7 @@ function TabFiliais({ showToast }) {
 
   useEffect(() => { loadFiliais() }, [loadFiliais])
 
-  function openAdd() {
-    setForm(FILIAL_INIT)
-    setModal('add')
-  }
-
+  function openAdd() { setForm(FILIAL_INIT); setModal('add') }
   function openEdit(f) {
     setForm({ nome: f.nome, os_numero_inicial: String(f.os_numero_inicial || 1) })
     setModal({ type: 'edit', data: f })
@@ -360,10 +263,7 @@ function TabFiliais({ showToast }) {
   async function handleSave() {
     if (!form.nome.trim()) return showToast('Erro: informe o nome da filial.')
     setSaving(true)
-    const payload = {
-      nome: form.nome.trim(),
-      os_numero_inicial: parseInt(form.os_numero_inicial) || 1,
-    }
+    const payload = { nome: form.nome.trim(), os_numero_inicial: parseInt(form.os_numero_inicial) || 1 }
     let error
     if (modal === 'add') {
       ;({ error } = await supabase.from('filiais').insert(payload))
@@ -391,29 +291,29 @@ function TabFiliais({ showToast }) {
     }
   }
 
-  if (loading) return <p style={{ color: '#94a3b8' }}>Carregando filiais...</p>
+  if (loading) return <p style={{ color: C.onSurfaceVariant, fontFamily: F.body }}>Carregando filiais...</p>
 
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <p style={{ margin: 0, color: '#64748b', fontSize: '0.875rem' }}>
+        <p style={{ margin: 0, color: C.onSurfaceVariant, fontSize: '0.875rem', fontFamily: F.body }}>
           {filiais.length} {filiais.length === 1 ? 'filial cadastrada' : 'filiais cadastradas'}
         </p>
         <button onClick={openAdd} style={btnPrimary}>+ Nova Filial</button>
       </div>
 
       <div style={{
-        background: '#fff', borderRadius: '1rem', border: '1px solid #f1f5f9',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden',
+        background: C.surfaceContainerLowest, borderRadius: '0.5rem',
+        border: `1px solid ${C.borderSubtle}`, overflow: 'hidden',
       }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+            <tr style={{ background: C.tableHeader, borderBottom: `1px solid ${C.borderSubtle}` }}>
               {['Nome', 'N.º O.S. Inicial', 'Ações'].map(col => (
                 <th key={col} style={{
                   textAlign: 'left', padding: '0.875rem 1rem',
-                  fontSize: '0.75rem', fontWeight: '700', color: '#64748b',
-                  textTransform: 'uppercase', letterSpacing: '0.5px',
+                  fontSize: '0.7rem', fontWeight: '600', color: C.onSurfaceVariant,
+                  textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: F.body,
                 }}>{col}</th>
               ))}
             </tr>
@@ -421,27 +321,27 @@ function TabFiliais({ showToast }) {
           <tbody>
             {filiais.length === 0 && (
               <tr>
-                <td colSpan={3} style={{ padding: '2.5rem', textAlign: 'center', color: '#cbd5e1', fontSize: '0.9rem' }}>
+                <td colSpan={3} style={{ padding: '2.5rem', textAlign: 'center', color: C.outlineVariant, fontSize: '0.9rem', fontFamily: F.body }}>
                   Nenhuma filial cadastrada. Clique em "+ Nova Filial" para começar.
                 </td>
               </tr>
             )}
             {filiais.map((f, i) => (
               <tr key={f.id}
-                style={{ borderBottom: i < filiais.length - 1 ? '1px solid #f8fafc' : 'none' }}
-                onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                style={{ borderBottom: i < filiais.length - 1 ? `1px solid ${C.borderSubtle}` : 'none' }}
+                onMouseEnter={e => e.currentTarget.style.background = C.surfaceContainerLow}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
-                <td style={{ padding: '0.875rem 1rem', fontWeight: '600', color: '#1e293b' }}>{f.nome}</td>
-                <td style={{ padding: '0.875rem 1rem', color: '#64748b' }}>{f.os_numero_inicial}</td>
+                <td style={{ padding: '0.875rem 1rem', fontWeight: '600', color: C.onSurface, fontFamily: F.body }}>{f.nome}</td>
+                <td style={{ padding: '0.875rem 1rem', color: C.onSurfaceVariant, fontFamily: F.mono }}>{f.os_numero_inicial}</td>
                 <td style={{ padding: '0.875rem 1rem' }}>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button onClick={() => openEdit(f)}
-                      style={{ padding: '0.3rem 0.75rem', background: 'none', border: '1.5px solid #e2e8f0', borderRadius: '0.5rem', color: '#475569', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>
+                      style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${C.borderSubtle}`, borderRadius: '0.5rem', color: C.onSurfaceVariant, fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
                       Editar
                     </button>
                     <button onClick={() => excluir(f)}
-                      style={{ padding: '0.3rem 0.75rem', background: 'none', border: '1.5px solid #fecaca', borderRadius: '0.5rem', color: '#dc2626', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>
+                      style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${C.outlineVariant}`, borderRadius: '0.5rem', color: C.statusDanger, fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
                       Excluir
                     </button>
                   </div>
@@ -452,7 +352,7 @@ function TabFiliais({ showToast }) {
         </table>
       </div>
 
-      <div style={{ marginTop: '1rem', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '0.75rem', padding: '0.875rem 1.25rem', fontSize: '0.8rem', color: '#0369a1', lineHeight: '1.5' }}>
+      <div style={{ marginTop: '1rem', background: C.statusInfoBg, border: `1px solid ${C.secondaryContainer}`, borderRadius: '0.75rem', padding: '0.875rem 1.25rem', fontSize: '0.8rem', color: C.statusInfo, lineHeight: '1.5', fontFamily: F.body }}>
         ℹ️ O <strong>N.º O.S. Inicial</strong> define a partir de qual número as ordens de serviço de <strong>Óculos de Grau</strong> são geradas para cada filial.
         Vendas do tipo <strong>Solar</strong> não recebem número de O.S.
       </div>
@@ -472,7 +372,7 @@ function TabFiliais({ showToast }) {
               <input type="number" min="1" style={{ ...inputCss, width: '130px' }}
                 value={form.os_numero_inicial}
                 onChange={e => setForm(p => ({ ...p, os_numero_inicial: e.target.value }))} />
-              <p style={{ margin: '0.3rem 0 0', color: '#94a3b8', fontSize: '0.75rem' }}>
+              <p style={{ margin: '0.3rem 0 0', color: C.onSurfaceVariant, fontSize: '0.75rem', fontFamily: F.body }}>
                 O próximo número será sempre o maior já registrado nesta filial + 1 (ou este valor se não houver nenhum).
               </p>
             </div>
@@ -489,10 +389,8 @@ function TabFiliais({ showToast }) {
   )
 }
 
-/* ─────────────────────────────────────────── Aba: Vendedores ── */
-
+/* ── Aba: Vendedores ── */
 const PAPEL_LABEL = { admin: 'Administrador', vendedor: 'Vendedor' }
-
 const FORM_INITIAL = { nome: '', email: '', senha: '', papel: 'vendedor', comissao_percentual: '0', filial_id: '' }
 
 function TabVendedores({ showToast }) {
@@ -516,109 +414,47 @@ function TabVendedores({ showToast }) {
 
   useEffect(() => { loadVendedores() }, [loadVendedores])
 
-  function openAdd() {
-    setForm(FORM_INITIAL)
-    setModalError('')
-    setModal('add')
-  }
-
+  function openAdd() { setForm(FORM_INITIAL); setModalError(''); setModal('add') }
   function openEdit(v) {
-    setForm({
-      id: v.id,
-      nome: v.nome,
-      email: v.email || '',
-      senha: '',
-      papel: v.papel,
-      comissao_percentual: String(v.comissao_percentual ?? 0),
-      filial_id: v.filial_id || '',
-    })
+    setForm({ id: v.id, nome: v.nome, email: v.email || '', senha: '', papel: v.papel, comissao_percentual: String(v.comissao_percentual ?? 0), filial_id: v.filial_id || '' })
     setModalError('')
     setModal({ type: 'edit', data: v })
   }
-
-  function fecharModal() {
-    setModal(null)
-    setModalError('')
-  }
-
-  function setField(key, value) {
-    setForm(prev => ({ ...prev, [key]: value }))
-  }
+  function fecharModal() { setModal(null); setModalError('') }
+  function setField(key, value) { setForm(prev => ({ ...prev, [key]: value })) }
 
   async function handleAdd() {
     if (!form.nome.trim() || !form.email.trim() || !form.senha) {
-      setModalError('Preencha nome, e-mail e senha.')
-      return
+      setModalError('Preencha nome, e-mail e senha.'); return
     }
-    if (form.senha.length < 6) {
-      setModalError('A senha deve ter pelo menos 6 caracteres.')
-      return
-    }
-    setSaving(true)
-    setModalError('')
-
+    if (form.senha.length < 6) { setModalError('A senha deve ter pelo menos 6 caracteres.'); return }
+    setSaving(true); setModalError('')
     const { data, error } = await supabase.auth.signUp({
-      email: form.email.trim(),
-      password: form.senha,
-      options: {
-        data: {
-          nome: form.nome.trim(),
-          papel: form.papel,
-        },
-      },
+      email: form.email.trim(), password: form.senha,
+      options: { data: { nome: form.nome.trim(), papel: form.papel } },
     })
-
-    if (error) {
-      setModalError('Erro ao criar usuário: ' + error.message)
-      setSaving(false)
-      return
-    }
-
+    if (error) { setModalError('Erro ao criar usuário: ' + error.message); setSaving(false); return }
     if (data.user) {
-      await supabase
-        .from('profiles')
-        .update({
-          nome: form.nome.trim(),
-          papel: form.papel,
-          comissao_percentual: parseFloat(form.comissao_percentual) || 0,
-          filial_id: form.filial_id || null,
-        })
-        .eq('id', data.user.id)
+      await supabase.from('profiles').update({
+        nome: form.nome.trim(), papel: form.papel,
+        comissao_percentual: parseFloat(form.comissao_percentual) || 0,
+        filial_id: form.filial_id || null,
+      }).eq('id', data.user.id)
     }
-
-    setSaving(false)
-    fecharModal()
-    await loadVendedores()
+    setSaving(false); fecharModal(); await loadVendedores()
     showToast('Vendedor criado! Um e-mail de confirmação foi enviado.')
   }
 
   async function handleEdit() {
-    if (!form.nome.trim()) {
-      setModalError('O nome não pode estar vazio.')
-      return
-    }
-    setSaving(true)
-    setModalError('')
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        nome: form.nome.trim(),
-        papel: form.papel,
-        comissao_percentual: parseFloat(form.comissao_percentual) || 0,
-        filial_id: form.filial_id || null,
-      })
-      .eq('id', form.id)
-
-    if (error) {
-      setModalError('Erro ao atualizar: ' + error.message)
-      setSaving(false)
-      return
-    }
-
-    setSaving(false)
-    fecharModal()
-    await loadVendedores()
+    if (!form.nome.trim()) { setModalError('O nome não pode estar vazio.'); return }
+    setSaving(true); setModalError('')
+    const { error } = await supabase.from('profiles').update({
+      nome: form.nome.trim(), papel: form.papel,
+      comissao_percentual: parseFloat(form.comissao_percentual) || 0,
+      filial_id: form.filial_id || null,
+    }).eq('id', form.id)
+    if (error) { setModalError('Erro ao atualizar: ' + error.message); setSaving(false); return }
+    setSaving(false); fecharModal(); await loadVendedores()
     showToast('Vendedor atualizado com sucesso!')
   }
 
@@ -630,32 +466,30 @@ function TabVendedores({ showToast }) {
 
   const filialMap = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
 
-  if (loading) return <p style={{ color: '#94a3b8' }}>Carregando vendedores...</p>
+  if (loading) return <p style={{ color: C.onSurfaceVariant, fontFamily: F.body }}>Carregando vendedores...</p>
 
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <p style={{ margin: 0, color: '#64748b', fontSize: '0.875rem' }}>
+        <p style={{ margin: 0, color: C.onSurfaceVariant, fontSize: '0.875rem', fontFamily: F.body }}>
           {vendedores.length} {vendedores.length === 1 ? 'pessoa cadastrada' : 'pessoas cadastradas'}
         </p>
-        <button onClick={openAdd} style={btnPrimary}>
-          + Adicionar Vendedor
-        </button>
+        <button onClick={openAdd} style={btnPrimary}>+ Adicionar Vendedor</button>
       </div>
 
       <div style={{
-        background: '#fff', borderRadius: '1rem', border: '1px solid #f1f5f9',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden',
+        background: C.surfaceContainerLowest, borderRadius: '0.5rem',
+        border: `1px solid ${C.borderSubtle}`, overflow: 'hidden',
       }}>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+              <tr style={{ background: C.tableHeader, borderBottom: `1px solid ${C.borderSubtle}` }}>
                 {['Nome', 'E-mail', 'Papel', 'Filial', 'Comissão', 'Status', 'Ações'].map(col => (
                   <th key={col} style={{
                     textAlign: 'left', padding: '0.875rem 1rem',
-                    fontSize: '0.75rem', fontWeight: '700', color: '#64748b',
-                    textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap',
+                    fontSize: '0.7rem', fontWeight: '600', color: C.onSurfaceVariant,
+                    textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap', fontFamily: F.body,
                   }}>{col}</th>
                 ))}
               </tr>
@@ -663,41 +497,41 @@ function TabVendedores({ showToast }) {
             <tbody>
               {vendedores.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ padding: '2.5rem', textAlign: 'center', color: '#cbd5e1', fontSize: '0.9rem' }}>
+                  <td colSpan={7} style={{ padding: '2.5rem', textAlign: 'center', color: C.outlineVariant, fontSize: '0.9rem', fontFamily: F.body }}>
                     Nenhum vendedor cadastrado ainda.
                   </td>
                 </tr>
               )}
               {vendedores.map((v, i) => (
                 <tr key={v.id}
-                  style={{ borderBottom: i < vendedores.length - 1 ? '1px solid #f8fafc' : 'none', transition: 'background 0.1s' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                  style={{ borderBottom: i < vendedores.length - 1 ? `1px solid ${C.borderSubtle}` : 'none', transition: 'background 0.1s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.surfaceContainerLow}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  <td style={{ padding: '0.875rem 1rem', fontWeight: '600', color: '#1e293b', fontSize: '0.875rem' }}>{v.nome}</td>
-                  <td style={{ padding: '0.875rem 1rem', color: '#64748b', fontSize: '0.875rem' }}>{v.email || '—'}</td>
+                  <td style={{ padding: '0.875rem 1rem', fontWeight: '600', color: C.onSurface, fontSize: '0.875rem', fontFamily: F.body }}>{v.nome}</td>
+                  <td style={{ padding: '0.875rem 1rem', color: C.onSurfaceVariant, fontSize: '0.875rem', fontFamily: F.body }}>{v.email || '—'}</td>
                   <td style={{ padding: '0.875rem 1rem' }}>
                     <span style={{
                       display: 'inline-block', padding: '0.2rem 0.625rem', borderRadius: '999px',
-                      fontSize: '0.75rem', fontWeight: '600',
-                      background: v.papel === 'admin' ? '#faf5ff' : '#eff6ff',
-                      color: v.papel === 'admin' ? '#7c3aed' : '#1d4ed8',
+                      fontSize: '0.75rem', fontWeight: '600', fontFamily: F.body,
+                      background: v.papel === 'admin' ? '#faf5ff' : C.statusInfoBg,
+                      color: v.papel === 'admin' ? '#7c3aed' : C.statusInfo,
                     }}>
                       {PAPEL_LABEL[v.papel] || v.papel}
                     </span>
                   </td>
-                  <td style={{ padding: '0.875rem 1rem', color: '#64748b', fontSize: '0.875rem' }}>
+                  <td style={{ padding: '0.875rem 1rem', color: C.onSurfaceVariant, fontSize: '0.875rem', fontFamily: F.body }}>
                     {filialMap[v.filial_id] || '—'}
                   </td>
-                  <td style={{ padding: '0.875rem 1rem', color: '#64748b', fontSize: '0.875rem' }}>
+                  <td style={{ padding: '0.875rem 1rem', color: C.onSurfaceVariant, fontSize: '0.875rem', fontFamily: F.mono }}>
                     {v.comissao_percentual ?? 0}%
                   </td>
                   <td style={{ padding: '0.875rem 1rem' }}>
                     <span style={{
                       display: 'inline-block', padding: '0.2rem 0.625rem', borderRadius: '999px',
-                      fontSize: '0.75rem', fontWeight: '600',
-                      background: v.ativo ? '#f0fdf4' : '#f8fafc',
-                      color: v.ativo ? '#16a34a' : '#94a3b8',
+                      fontSize: '0.75rem', fontWeight: '600', fontFamily: F.body,
+                      background: v.ativo ? C.statusSuccessBg : C.surfaceContainerLow,
+                      color: v.ativo ? C.statusSuccess : C.onSurfaceVariant,
                     }}>
                       {v.ativo ? 'Ativo' : 'Inativo'}
                     </span>
@@ -705,11 +539,11 @@ function TabVendedores({ showToast }) {
                   <td style={{ padding: '0.875rem 1rem' }}>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button onClick={() => openEdit(v)}
-                        style={{ padding: '0.3rem 0.75rem', background: 'none', border: '1.5px solid #e2e8f0', borderRadius: '0.5rem', color: '#475569', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>
+                        style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${C.borderSubtle}`, borderRadius: '0.5rem', color: C.onSurfaceVariant, fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
                         Editar
                       </button>
                       <button onClick={() => toggleAtivo(v)}
-                        style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${v.ativo ? '#fecaca' : '#bbf7d0'}`, borderRadius: '0.5rem', color: v.ativo ? '#dc2626' : '#16a34a', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>
+                        style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${v.ativo ? C.outlineVariant : C.statusSuccessBg}`, borderRadius: '0.5rem', color: v.ativo ? C.statusDanger : C.statusSuccess, fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
                         {v.ativo ? 'Desativar' : 'Ativar'}
                       </button>
                     </div>
@@ -721,7 +555,7 @@ function TabVendedores({ showToast }) {
         </div>
       </div>
 
-      <div style={{ marginTop: '1rem', background: '#fefce8', border: '1px solid #fde68a', borderRadius: '0.75rem', padding: '0.875rem 1.25rem', fontSize: '0.8rem', color: '#854d0e', lineHeight: '1.5' }}>
+      <div style={{ marginTop: '1rem', background: C.statusWarningBg, border: `1px solid ${C.outlineVariant}`, borderRadius: '0.75rem', padding: '0.875rem 1.25rem', fontSize: '0.8rem', color: C.statusWarning, lineHeight: '1.5', fontFamily: F.body }}>
         ⚠️ <strong>Atenção:</strong> Ao adicionar um novo vendedor, ele receberá um e-mail de confirmação para ativar a conta.
       </div>
 
@@ -736,7 +570,6 @@ function TabVendedores({ showToast }) {
               <input type="text" value={form.nome} onChange={e => setField('nome', e.target.value)}
                 style={inputCss} placeholder="João da Silva" autoFocus />
             </div>
-
             {modal === 'add' && (
               <>
                 <div>
@@ -748,13 +581,12 @@ function TabVendedores({ showToast }) {
                   <Label>Senha inicial *</Label>
                   <input type="password" value={form.senha} onChange={e => setField('senha', e.target.value)}
                     style={inputCss} placeholder="Mínimo 6 caracteres" />
-                  <p style={{ margin: '0.3rem 0 0', color: '#94a3b8', fontSize: '0.75rem' }}>
+                  <p style={{ margin: '0.3rem 0 0', color: C.onSurfaceVariant, fontSize: '0.75rem', fontFamily: F.body }}>
                     O vendedor poderá trocar a senha depois de confirmar o e-mail.
                   </p>
                 </div>
               </>
             )}
-
             <div>
               <Label>Papel</Label>
               <select value={form.papel} onChange={e => setField('papel', e.target.value)} style={inputCss}>
@@ -762,7 +594,6 @@ function TabVendedores({ showToast }) {
                 <option value="admin">Administrador</option>
               </select>
             </div>
-
             <div>
               <Label>Filial</Label>
               <select value={form.filial_id} onChange={e => setField('filial_id', e.target.value)} style={inputCss}>
@@ -770,20 +601,17 @@ function TabVendedores({ showToast }) {
                 {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
               </select>
             </div>
-
             <div>
               <Label>Comissão (%)</Label>
               <input type="number" value={form.comissao_percentual}
                 onChange={e => setField('comissao_percentual', e.target.value)}
                 style={{ ...inputCss, width: '130px' }} min="0" max="100" step="0.5" />
             </div>
-
             {modalError && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '0.5rem', padding: '0.625rem 0.875rem', color: '#dc2626', fontSize: '0.82rem' }}>
+              <div style={{ background: C.statusDangerBg, border: `1px solid ${C.outlineVariant}`, borderRadius: '0.5rem', padding: '0.625rem 0.875rem', color: C.statusDanger, fontSize: '0.82rem', fontFamily: F.body }}>
                 {modalError}
               </div>
             )}
-
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
               <button onClick={fecharModal} style={{ ...btnSecondary, flex: 1 }}>Cancelar</button>
               <button onClick={modal === 'add' ? handleAdd : handleEdit} disabled={saving}
@@ -798,8 +626,7 @@ function TabVendedores({ showToast }) {
   )
 }
 
-/* ─────────────────────────────────────────── Página principal ── */
-
+/* ── Página principal ── */
 export default function Configuracoes() {
   const { isAdmin, loading } = useAuth()
   const [activeTab, setActiveTab] = useState('sistema')
@@ -816,12 +643,12 @@ export default function Configuracoes() {
     return (
       <div style={{ padding: '2rem' }}>
         <div style={{
-          background: '#fef2f2', border: '1px solid #fecaca',
-          borderRadius: '1rem', padding: '2rem', textAlign: 'center', color: '#dc2626',
+          background: C.statusDangerBg, border: `1px solid ${C.outlineVariant}`,
+          borderRadius: '1rem', padding: '2rem', textAlign: 'center', color: C.statusDanger,
         }}>
           <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🔒</div>
-          <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem' }}>Acesso Restrito</h2>
-          <p style={{ margin: 0, color: '#ef4444', fontSize: '0.875rem' }}>
+          <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem', fontFamily: F.headline }}>Acesso Restrito</h2>
+          <p style={{ margin: 0, color: C.statusDanger, fontSize: '0.875rem', fontFamily: F.body }}>
             Apenas administradores podem acessar as Configurações.
           </p>
         </div>
@@ -830,25 +657,22 @@ export default function Configuracoes() {
   }
 
   const tabStyle = (active) => ({
-    padding: '0.75rem 1.5rem',
-    border: 'none',
-    background: 'none',
-    cursor: 'pointer',
-    fontSize: '0.9rem',
+    padding: '0.75rem 1.5rem', border: 'none', background: 'none', cursor: 'pointer',
+    fontSize: '0.9rem', fontFamily: F.body,
     fontWeight: active ? '700' : '500',
-    color: active ? '#C0272D' : '#64748b',
-    borderBottom: active ? '2.5px solid #C0272D' : '2.5px solid transparent',
+    color: active ? C.primaryContainer : C.onSurfaceVariant,
+    borderBottom: active ? `2.5px solid ${C.primaryContainer}` : '2.5px solid transparent',
     transition: 'all 0.15s',
   })
 
   return (
     <div className="pg">
-      <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: '0 0 1.5rem', letterSpacing: '-0.3px' }}>
+      <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: C.onSurface, margin: '0 0 1.5rem', letterSpacing: '-0.3px', fontFamily: F.headline }}>
         Configurações
       </h1>
 
       {/* Tabs */}
-      <div style={{ borderBottom: '1px solid #e2e8f0', marginBottom: '1.75rem', display: 'flex' }}>
+      <div style={{ borderBottom: `1px solid ${C.borderSubtle}`, marginBottom: '1.75rem', display: 'flex' }}>
         <button onClick={() => setActiveTab('sistema')} style={tabStyle(activeTab === 'sistema')}>
           ⚙️ Sistema
         </button>

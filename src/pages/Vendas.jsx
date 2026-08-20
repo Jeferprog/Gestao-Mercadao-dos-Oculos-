@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 
 /* ── helpers ── */
 function fBRL(v) {
@@ -19,49 +20,10 @@ function firstOfMonthISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-/* ── estilos ── */
-const card = {
-  background: '#fff',
-  borderRadius: '1rem',
-  padding: '1.5rem',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-  border: '1px solid #f1f5f9',
-}
-const inputCss = {
-  width: '100%',
-  padding: '0.65rem 0.875rem',
-  border: '1.5px solid #e2e8f0',
-  borderRadius: '0.625rem',
-  fontSize: '0.9rem',
-  outline: 'none',
-  boxSizing: 'border-box',
-  color: '#1e293b',
-  background: '#f8fafc',
-}
-const btnPrimary = {
-  padding: '0.6rem 1.25rem',
-  background: '#C0272D',
-  color: '#fff',
-  border: 'none',
-  borderRadius: '0.625rem',
-  fontSize: '0.875rem',
-  fontWeight: '600',
-  cursor: 'pointer',
-}
-const btnSecondary = {
-  padding: '0.6rem 1.25rem',
-  background: '#f1f5f9',
-  color: '#475569',
-  border: '1.5px solid #e2e8f0',
-  borderRadius: '0.625rem',
-  fontSize: '0.875rem',
-  fontWeight: '600',
-  cursor: 'pointer',
-}
 const Label = ({ children }) => (
   <label style={{
-    display: 'block', fontSize: '0.8rem', fontWeight: '600',
-    color: '#475569', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px',
+    display: 'block', fontSize: '0.8rem', fontWeight: '600', fontFamily: F.body,
+    color: C.onSurfaceVariant, marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px',
   }}>{children}</label>
 )
 
@@ -124,7 +86,7 @@ function FormVenda({ form, onChange, vendedores, filiais, formasPagamento, isAdm
         {isGrau && (
           <div>
             <Label>Nº O.S.</Label>
-            <input style={{ ...inputCss, background: '#f1f5f9', color: '#94a3b8' }}
+            <input style={{ ...inputCss, background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'default' }}
               value={form.os_numero} readOnly />
           </div>
         )}
@@ -167,7 +129,7 @@ function FormVenda({ form, onChange, vendedores, filiais, formasPagamento, isAdm
         ) : filiais.length > 1 && (
           <div>
             <Label>Filial</Label>
-            <input style={{ ...inputCss, background: '#f1f5f9', color: '#64748b' }}
+            <input style={{ ...inputCss, background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'default' }}
               value={filiais.find(f => f.id === form.filial_id)?.nome || '—'}
               readOnly />
           </div>
@@ -189,7 +151,7 @@ function FormVenda({ form, onChange, vendedores, filiais, formasPagamento, isAdm
         ) : (
           <div>
             <Label>Vendedor</Label>
-            <input style={{ ...inputCss, background: '#f1f5f9', color: '#64748b' }}
+            <input style={{ ...inputCss, background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'default' }}
               value={vendedores.find(v => v.id === form.vendedor_id)?.nome || ''}
               readOnly />
           </div>
@@ -210,7 +172,7 @@ function FormVenda({ form, onChange, vendedores, filiais, formasPagamento, isAdm
             value={form.desconto}
             onChange={e => handleBrutoDesc('desconto', e.target.value)} />
           {desc > bruto && bruto > 0 && (
-            <span style={{ color: '#dc2626', fontSize: '0.78rem' }}>Desconto maior que o valor bruto</span>
+            <span style={{ color: C.error, fontSize: '0.78rem', fontFamily: F.body }}>Desconto maior que o valor bruto</span>
           )}
         </div>
 
@@ -239,8 +201,8 @@ function FormVenda({ form, onChange, vendedores, filiais, formasPagamento, isAdm
 
       {/* Bloco Entrada e Saldo */}
       {isEntradaSaldo && (
-        <div style={{ background: '#fff8f8', border: '1.5px solid #fecaca', borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#C0272D', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        <div style={{ background: C.statusDangerBg, border: `1.5px solid ${C.outlineVariant}`, borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: '700', fontFamily: F.body, color: C.statusDanger, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             Entrada e Saldo
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -276,12 +238,12 @@ function FormVenda({ form, onChange, vendedores, filiais, formasPagamento, isAdm
             </div>
           </div>
           {!entradaSaldoOk && entV + salV > 0 && (
-            <div style={{ color: '#dc2626', fontSize: '0.82rem', fontWeight: '600' }}>
+            <div style={{ color: C.error, fontFamily: F.body, fontSize: '0.82rem', fontWeight: '600' }}>
               ⚠ Entrada ({fBRL(entV)}) + Saldo ({fBRL(salV)}) = {fBRL(entV + salV)} — deve ser igual ao Valor Final ({fBRL(final)})
             </div>
           )}
           {entradaSaldoOk && entV + salV > 0 && (
-            <div style={{ color: '#16a34a', fontSize: '0.82rem', fontWeight: '600' }}>
+            <div style={{ color: C.statusSuccess, fontFamily: F.body, fontSize: '0.82rem', fontWeight: '600' }}>
               ✓ Soma confere com o Valor Final ({fBRL(final)})
             </div>
           )}
@@ -294,8 +256,8 @@ function FormVenda({ form, onChange, vendedores, filiais, formasPagamento, isAdm
           <input type="checkbox"
             checked={!form.efetivada}
             onChange={e => onChange({ ...form, efetivada: !e.target.checked, motivo_nao_efetivada: e.target.checked ? form.motivo_nao_efetivada : '' })}
-            style={{ width: '1rem', height: '1rem', accentColor: '#C0272D' }} />
-          <span style={{ fontSize: '0.88rem', fontWeight: '600', color: '#C0272D' }}>Venda não efetivada</span>
+            style={{ width: '1rem', height: '1rem', accentColor: C.statusDanger }} />
+          <span style={{ fontSize: '0.88rem', fontFamily: F.body, fontWeight: '600', color: C.statusDanger }}>Venda não efetivada</span>
         </label>
         {!form.efetivada && (
           <div>
@@ -559,7 +521,6 @@ export default function Vendas() {
       conferido: novoValor,
       conferido_em: novoValor ? new Date().toISOString() : null,
     }
-    // optimistic update
     setVendas(prev => prev.map(x => x.id === v.id ? { ...x, ...payload } : x))
     const { error } = await supabase.from('vendas').update(payload).eq('id', v.id)
     if (error) {
@@ -588,12 +549,10 @@ export default function Vendas() {
 
   const hoje = todayISO()
 
-  /* label do cabeçalho da tabela */
   const tituloTabela = viewMode === 'dia'
     ? fDateBR(dataSel)
     : `${fDateBR(periodoInicio)} a ${fDateBR(periodoFim)}`
 
-  /* número de colunas fixas antes de Valor Bruto (para colSpan do tfoot) */
   const colsFixas = 6 + (filiais.length > 1 ? 1 : 0) + (isAdmin ? 1 : 0)
 
   return (
@@ -602,51 +561,105 @@ export default function Vendas() {
       {toast && (
         <div style={{
           position: 'fixed', top: '1.25rem', right: '1.25rem', zIndex: 9999,
-          padding: '0.75rem 1.25rem', borderRadius: '0.75rem', fontSize: '0.875rem',
-          fontWeight: '600', color: '#fff', boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-          background: toast.tipo === 'err' ? '#dc2626' : '#16a34a',
+          padding: '0.75rem 1.25rem', borderRadius: '0.5rem', fontSize: '0.875rem',
+          fontFamily: F.body, fontWeight: '600', color: '#fff',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+          background: toast.tipo === 'err' ? C.statusDanger : C.statusSuccess,
           maxWidth: '320px',
         }}>
           {toast.msg}
         </div>
       )}
 
-      {/* Cabeçalho */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: 0, letterSpacing: '-0.3px' }}>
-          Vendas Diárias
-        </h1>
-        {!showForm && (
-          <button style={btnPrimary} onClick={abrirNovaVenda}>
-            + Nova Venda
-          </button>
-        )}
-      </div>
-
-      {/* Formulário */}
+      {/* Slide-over backdrop */}
       {showForm && (
-        <div style={{ ...card, marginBottom: '1.5rem', borderLeft: '4px solid #C0272D' }}>
-          <h2 style={{ fontSize: '1rem', fontWeight: '700', color: '#0f2d4a', margin: '0 0 1.25rem' }}>
-            {editId ? 'Editar Venda' : 'Nova Venda'}
-          </h2>
-          <FormVenda
-            form={form}
-            onChange={setForm}
-            vendedores={vendedores}
-            filiais={filiais}
-            formasPagamento={formasPagamento}
-            isAdmin={isAdmin}
-            onSubmit={salvar}
-            onCancel={() => setShowForm(false)}
-            saving={saving}
-            editando={!!editId}
-          />
+        <div
+          onClick={() => setShowForm(false)}
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.45)',
+            zIndex: 199,
+            backdropFilter: 'blur(2px)',
+          }}
+        />
+      )}
+
+      {/* Slide-over panel */}
+      {showForm && (
+        <div style={{
+          position: 'fixed', top: 0, right: 0,
+          height: '100%',
+          width: 'min(640px, 100vw)',
+          zIndex: 200,
+          background: C.surfaceContainerLowest,
+          boxShadow: '-4px 0 32px rgba(0,0,0,0.18)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}>
+          {/* Panel header */}
+          <div style={{
+            padding: '1rem 1.5rem',
+            borderBottom: `1px solid ${C.borderSubtle}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+            background: C.surfaceContainerLowest,
+          }}>
+            <h2 style={{ margin: 0, fontSize: '1rem', fontFamily: F.headline, fontWeight: '700', color: C.onSurface }}>
+              {editId ? 'Editar Venda' : 'Nova Venda'}
+            </h2>
+            <button
+              onClick={() => setShowForm(false)}
+              aria-label="Fechar"
+              style={{
+                background: C.surfaceContainerHigh,
+                border: 'none',
+                borderRadius: '0.375rem',
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: C.onSurfaceVariant,
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>close</span>
+            </button>
+          </div>
+          {/* Panel body (scrollable) */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
+            <FormVenda
+              form={form}
+              onChange={setForm}
+              vendedores={vendedores}
+              filiais={filiais}
+              formasPagamento={formasPagamento}
+              isAdmin={isAdmin}
+              onSubmit={salvar}
+              onCancel={() => setShowForm(false)}
+              saving={saving}
+              editando={!!editId}
+            />
+          </div>
         </div>
       )}
 
+      {/* Cabeçalho */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: '800', fontFamily: F.headline, color: C.onSurface, margin: 0, letterSpacing: '-0.3px' }}>
+          Vendas Diárias
+        </h1>
+        <button style={btnPrimary} onClick={abrirNovaVenda}>
+          + Nova Venda
+        </button>
+      </div>
+
       {/* Filtro de filial (admin + múltiplas filiais) */}
       {isAdmin && filiais.length > 1 && (
-        <div style={{ ...card, marginBottom: '1rem', padding: '1rem 1.5rem' }}>
+        <div style={{ ...dsCard, marginBottom: '1rem', padding: '1rem 1.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
             <div>
               <Label>Filial</Label>
@@ -662,16 +675,16 @@ export default function Vendas() {
       )}
 
       {/* Seletor de Data / Período */}
-      <div style={{ ...card, marginBottom: '1rem' }}>
+      <div style={{ ...dsCard, marginBottom: '1rem' }}>
         {/* Toggle modo */}
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.875rem' }}>
           {['dia', 'periodo'].map(m => (
             <button key={m} onClick={() => setViewMode(m)}
               style={{
                 padding: '0.35rem 0.9rem', borderRadius: '2rem', border: 'none',
-                fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer',
-                background: viewMode === m ? '#C0272D' : '#f1f5f9',
-                color: viewMode === m ? '#fff' : '#475569',
+                fontSize: '0.8rem', fontFamily: F.body, fontWeight: '700', cursor: 'pointer',
+                background: viewMode === m ? C.primaryContainer : C.surfaceContainerHigh,
+                color: viewMode === m ? '#fff' : C.onSurfaceVariant,
               }}>
               {m === 'dia' ? 'Por dia' : 'Por período'}
             </button>
@@ -696,9 +709,9 @@ export default function Vendas() {
               <button onClick={() => setDataSel(hoje)}
                 style={{
                   ...btnSecondary, padding: '0.5rem 0.875rem',
-                  background: dataSel === hoje ? '#C0272D' : '#f1f5f9',
-                  color: dataSel === hoje ? '#fff' : '#475569',
-                  border: dataSel === hoje ? 'none' : '1.5px solid #e2e8f0',
+                  background: dataSel === hoje ? C.primaryContainer : C.surfaceContainerHigh,
+                  color: dataSel === hoje ? '#fff' : C.onSurfaceVariant,
+                  border: dataSel === hoje ? 'none' : `1.5px solid ${C.secondary}`,
                 }}>
                 Hoje
               </button>
@@ -707,7 +720,7 @@ export default function Vendas() {
             {/* Pills — dias com movimento */}
             {diasComVendas.length > 0 && (
               <div style={{ marginTop: '0.875rem' }}>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: '600', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <div style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body, fontWeight: '600', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Dias com movimento
                 </div>
                 <div style={{ display: 'flex', gap: '0.4rem', overflowX: 'auto', paddingBottom: '4px' }}>
@@ -715,9 +728,9 @@ export default function Vendas() {
                     <button key={d} onClick={() => setDataSel(d)}
                       style={{
                         flexShrink: 0, padding: '0.3rem 0.7rem', borderRadius: '2rem',
-                        border: 'none', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer',
-                        background: d === dataSel ? '#C0272D' : '#f1f5f9',
-                        color: d === dataSel ? '#fff' : '#475569',
+                        border: 'none', fontSize: '0.8rem', fontFamily: F.body, fontWeight: '600', cursor: 'pointer',
+                        background: d === dataSel ? C.primaryContainer : C.surfaceContainerHigh,
+                        color: d === dataSel ? '#fff' : C.onSurfaceVariant,
                       }}>
                       {fDateBR(d)}
                     </button>
@@ -746,15 +759,15 @@ export default function Vendas() {
       </div>
 
       {/* Tabela */}
-      <div style={{ ...card }}>
+      <div style={{ ...dsCard }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.95rem' }}>
+          <div style={{ fontWeight: '700', fontFamily: F.headline, color: C.onSurface, fontSize: '0.95rem' }}>
             {tituloTabela}
             {vendas.length > 0 && (
-              <span style={{ marginLeft: '0.5rem', color: '#64748b', fontWeight: '400', fontSize: '0.85rem' }}>
+              <span style={{ marginLeft: '0.5rem', color: C.onSurfaceVariant, fontFamily: F.body, fontWeight: '400', fontSize: '0.85rem' }}>
                 — {vendas.length} venda{vendas.length !== 1 ? 's' : ''}
                 {vendas.some(v => v.efetivada === false) && (
-                  <span style={{ color: '#dc2626' }}>
+                  <span style={{ color: C.statusDanger }}>
                     {' '}({vendas.filter(v => v.efetivada === false).length} não efetivada{vendas.filter(v => v.efetivada === false).length !== 1 ? 's' : ''})
                   </span>
                 )}
@@ -764,9 +777,9 @@ export default function Vendas() {
         </div>
 
         {loading ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem 0' }}>Carregando...</div>
+          <div style={{ textAlign: 'center', color: C.onSurfaceVariant, fontFamily: F.body, padding: '2.5rem 0' }}>Carregando...</div>
         ) : vendas.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem 0' }}>
+          <div style={{ textAlign: 'center', color: C.onSurfaceVariant, fontFamily: F.body, padding: '3rem 0' }}>
             <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📋</div>
             <div style={{ fontWeight: '600' }}>Nenhuma venda {viewMode === 'dia' ? 'neste dia' : 'neste período'}</div>
             <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>Clique em "+ Nova Venda" para registrar</div>
@@ -775,7 +788,7 @@ export default function Vendas() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
-                <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
                   {[
                     'Tipo', 'O.S.', 'N. Fiscal', 'Cliente', 'Data', 'Vendedor',
                     ...(filiais.length > 1 ? ['Filial'] : []),
@@ -783,9 +796,9 @@ export default function Vendas() {
                     'Valor Bruto', 'Desconto', 'Valor Final', 'Pagamento', 'Ações',
                   ].map(h => (
                     <th key={h} style={{
-                      padding: '0.6rem 0.75rem', textAlign: 'left', fontSize: '0.75rem',
-                      fontWeight: '700', color: '#64748b', textTransform: 'uppercase',
-                      letterSpacing: '0.4px', whiteSpace: 'nowrap',
+                      padding: '0.6rem 0.75rem', textAlign: 'left', fontSize: '0.7rem',
+                      fontFamily: F.body, fontWeight: '600', color: C.onSurfaceVariant,
+                      textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap',
                     }}>{h}</th>
                   ))}
                 </tr>
@@ -793,40 +806,37 @@ export default function Vendas() {
               <tbody>
                 {vendas.map(v => {
                   const naoEfetivada = v.efetivada === false
-                  const rowStyle = {
-                    borderBottom: '1px solid #f8fafc',
-                    opacity: naoEfetivada ? 0.55 : 1,
-                  }
                   return (
-                    <tr key={v.id} style={rowStyle}
-                      onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
+                    <tr key={v.id}
+                      style={{ borderBottom: `1px solid ${C.borderSubtle}`, opacity: naoEfetivada ? 0.55 : 1 }}
+                      onMouseEnter={e => e.currentTarget.style.background = C.surfaceContainerLow}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                       <td style={{ padding: '0.65rem 0.75rem' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                           <span style={{
-                            background: v.tipo_venda === 'Solar' ? '#fef3c7' : '#eff6ff',
-                            color: v.tipo_venda === 'Solar' ? '#92400e' : '#1d4ed8',
-                            borderRadius: '0.4rem', padding: '0.2rem 0.55rem',
-                            fontSize: '0.75rem', fontWeight: '600', display: 'inline-block',
+                            background: v.tipo_venda === 'Solar' ? C.statusWarningBg : C.statusInfoBg,
+                            color: v.tipo_venda === 'Solar' ? C.statusWarning : C.statusInfo,
+                            borderRadius: '0.375rem', padding: '0.2rem 0.55rem',
+                            fontSize: '0.75rem', fontFamily: F.body, fontWeight: '600', display: 'inline-block',
                           }}>{v.tipo_venda || 'Grau'}</span>
                           {naoEfetivada && (
                             <span style={{
-                              background: '#fee2e2', color: '#991b1b',
-                              borderRadius: '0.4rem', padding: '0.15rem 0.45rem',
-                              fontSize: '0.7rem', fontWeight: '700', display: 'inline-block',
+                              background: C.statusDangerBg, color: C.statusDanger,
+                              borderRadius: '0.375rem', padding: '0.15rem 0.45rem',
+                              fontSize: '0.7rem', fontFamily: F.body, fontWeight: '700', display: 'inline-block',
                             }}>Não efetivada</span>
                           )}
                         </div>
                       </td>
-                      <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a' }}>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.mono, fontWeight: '700', color: C.statusInfo }}>
                         {v.os_numero ? `#${v.os_numero}` : '—'}
                       </td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>{v.nota_fiscal || '—'}</td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>{v.nome_cliente || '—'}</td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>{fDateBR(v.data_venda)}</td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>{vendedorMap[v.vendedor_id] || '—'}</td>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.body, color: C.onSurfaceVariant }}>{v.nota_fiscal || '—'}</td>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.body, color: C.onSurfaceVariant }}>{v.nome_cliente || '—'}</td>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.body, color: C.onSurfaceVariant, whiteSpace: 'nowrap' }}>{fDateBR(v.data_venda)}</td>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.body, color: C.onSurfaceVariant }}>{vendedorMap[v.vendedor_id] || '—'}</td>
                       {filiais.length > 1 && (
-                        <td style={{ padding: '0.65rem 0.75rem', color: '#475569', fontSize: '0.82rem' }}>
+                        <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.body, color: C.onSurfaceVariant, fontSize: '0.82rem' }}>
                           {filialMap[v.filial_id] || '—'}
                         </td>
                       )}
@@ -836,36 +846,36 @@ export default function Vendas() {
                             onClick={() => toggleConferido(v)}
                             title={v.conferido ? `Conferido em ${v.conferido_em ? new Date(v.conferido_em).toLocaleString('pt-BR') : ''}` : 'Marcar como conferido'}
                             style={{
-                              width: '2rem', height: '2rem', borderRadius: '0.4rem', border: 'none',
+                              width: '2rem', height: '2rem', borderRadius: '0.375rem', border: 'none',
                               fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              background: v.conferido ? '#dcfce7' : '#f1f5f9',
-                              color: v.conferido ? '#16a34a' : '#94a3b8',
+                              background: v.conferido ? C.statusSuccessBg : C.surfaceContainerHigh,
+                              color: v.conferido ? C.statusSuccess : C.onSurfaceVariant,
                             }}>
                             {v.conferido ? '✓' : '○'}
                           </button>
                         </td>
                       )}
-                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>{fBRL(v.valor_bruto)}</td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: v.desconto > 0 ? '#dc2626' : '#94a3b8', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.mono, color: C.onSurface, whiteSpace: 'nowrap' }}>{fBRL(v.valor_bruto)}</td>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.mono, color: v.desconto > 0 ? C.statusDanger : C.onSurfaceVariant, whiteSpace: 'nowrap' }}>
                         {v.desconto > 0 ? `- ${fBRL(v.desconto)}` : '—'}
                       </td>
-                      <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: naoEfetivada ? '#94a3b8' : '#16a34a', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.mono, fontWeight: '700', color: naoEfetivada ? C.onSurfaceVariant : C.statusSuccess, whiteSpace: 'nowrap' }}>
                         {fBRL(v.valor_final)}
                       </td>
-                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>
+                      <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.body, color: C.onSurfaceVariant }}>
                         {v.forma_pagamento === 'Entrada e Saldo' ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                            <span style={{ background: '#fff8f8', borderRadius: '0.4rem', padding: '0.15rem 0.45rem', fontSize: '0.73rem', fontWeight: '600', color: '#C0272D', display: 'inline-block' }}>
+                            <span style={{ background: C.statusDangerBg, borderRadius: '0.375rem', padding: '0.15rem 0.45rem', fontSize: '0.73rem', fontWeight: '600', color: C.statusDanger, display: 'inline-block' }}>
                               Entrada {fBRL(v.entrada_valor)} — {v.entrada_forma}
                             </span>
-                            <span style={{ background: '#f8f8ff', borderRadius: '0.4rem', padding: '0.15rem 0.45rem', fontSize: '0.73rem', fontWeight: '600', color: '#4f46e5', display: 'inline-block' }}>
+                            <span style={{ background: C.statusInfoBg, borderRadius: '0.375rem', padding: '0.15rem 0.45rem', fontSize: '0.73rem', fontWeight: '600', color: C.statusInfo, display: 'inline-block' }}>
                               Saldo {fBRL(v.saldo_valor)} — {v.saldo_forma}
                             </span>
                           </div>
                         ) : (
                           <span style={{
-                            background: '#f1f5f9', borderRadius: '0.4rem',
-                            padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontWeight: '600',
+                            background: C.surfaceContainerHigh, borderRadius: '0.375rem',
+                            padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600',
                           }}>{v.forma_pagamento}</span>
                         )}
                       </td>
@@ -874,15 +884,15 @@ export default function Vendas() {
                           <div style={{ display: 'flex', gap: '0.4rem' }}>
                             <button onClick={() => abrirEdicao(v)}
                               style={{
-                                padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
-                                borderRadius: '0.4rem', border: '1.5px solid #e2e8f0',
-                                background: '#f8fafc', color: '#475569', cursor: 'pointer',
+                                padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600',
+                                borderRadius: '0.375rem', border: `1.5px solid ${C.borderSubtle}`,
+                                background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'pointer',
                               }}>Editar</button>
                             <button onClick={() => excluir(v.id)}
                               style={{
-                                padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontWeight: '600',
-                                borderRadius: '0.4rem', border: '1.5px solid #fecaca',
-                                background: '#fef2f2', color: '#dc2626', cursor: 'pointer',
+                                padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600',
+                                borderRadius: '0.375rem', border: `1.5px solid ${C.outlineVariant}`,
+                                background: C.statusDangerBg, color: C.statusDanger, cursor: 'pointer',
                               }}>Excluir</button>
                           </div>
                         )}
@@ -892,15 +902,15 @@ export default function Vendas() {
                 })}
               </tbody>
               <tfoot>
-                <tr style={{ borderTop: '2px solid #f1f5f9', background: '#f8fafc' }}>
-                  <td colSpan={colsFixas} style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.82rem' }}>
+                <tr style={{ borderTop: `2px solid ${C.borderSubtle}`, background: C.tableHeader }}>
+                  <td colSpan={colsFixas} style={{ padding: '0.65rem 0.75rem', fontFamily: F.body, fontWeight: '700', color: C.onSurface, fontSize: '0.82rem' }}>
                     TOTAL EFETIVADO — {vendasEfetivadas.length} venda{vendasEfetivadas.length !== 1 ? 's' : ''}
                   </td>
-                  <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', whiteSpace: 'nowrap' }}>{fBRL(totBruto)}</td>
-                  <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#dc2626', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.mono, fontWeight: '700', color: C.onSurface, whiteSpace: 'nowrap' }}>{fBRL(totBruto)}</td>
+                  <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.mono, fontWeight: '700', color: C.statusDanger, whiteSpace: 'nowrap' }}>
                     {totDesc > 0 ? `- ${fBRL(totDesc)}` : '—'}
                   </td>
-                  <td style={{ padding: '0.65rem 0.75rem', fontWeight: '800', color: '#16a34a', whiteSpace: 'nowrap' }}>{fBRL(totFinal)}</td>
+                  <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.mono, fontWeight: '800', color: C.statusSuccess, whiteSpace: 'nowrap' }}>{fBRL(totFinal)}</td>
                   <td colSpan={2} />
                 </tr>
               </tfoot>

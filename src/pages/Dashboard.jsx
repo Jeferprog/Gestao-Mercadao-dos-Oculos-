@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { C, F, card as dsCard } from '../lib/ds'
 
 /* ── helpers ── */
 function todayISO() { return new Date().toISOString().slice(0, 10) }
@@ -46,8 +47,8 @@ function buildChartData(vendas) {
 /* ── Gráfico de barras (SVG inline) ── */
 function BarChart({ dados, shimmer }) {
   if (shimmer) return (
-    <div style={{ height: '155px', background: '#f8fafc', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: '90%', height: '80%', background: 'linear-gradient(90deg,#f1f5f9 30%,#e2e8f0 50%,#f1f5f9 70%)', backgroundSize: '200% 100%', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+    <div style={{ height: '155px', background: C.surfaceContainerLow, borderRadius: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: '90%', height: '80%', background: `linear-gradient(90deg,${C.surfaceContainerHigh} 30%,${C.borderSubtle} 50%,${C.surfaceContainerHigh} 70%)`, backgroundSize: '200% 100%', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
     </div>
   )
 
@@ -70,15 +71,15 @@ function BarChart({ dados, shimmer }) {
     <svg viewBox={`0 0 ${W} ${padT + chartH + padB}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
       {yLines.map((gl, i) => (
         <g key={i}>
-          <line x1={padL} y1={gl.y} x2={padL + chartW} y2={gl.y} stroke="#f1f5f9" strokeWidth="1" />
-          <text x={padL - 4} y={gl.y + 3.5} textAnchor="end" fontSize="9" fill="#cbd5e1">
+          <line x1={padL} y1={gl.y} x2={padL + chartW} y2={gl.y} stroke={C.surfaceContainerHigh} strokeWidth="1" />
+          <text x={padL - 4} y={gl.y + 3.5} textAnchor="end" fontSize="9" fill={C.onSurfaceVariant}>
             {gl.v >= 1000 ? (gl.v / 1000).toFixed(gl.v >= 10000 ? 0 : 1) + 'k' : Math.round(gl.v)}
           </text>
         </g>
       ))}
 
-      <line x1={padL} y1={padT} x2={padL} y2={padT + chartH} stroke="#e2e8f0" strokeWidth="1" />
-      <line x1={padL} y1={padT + chartH} x2={padL + chartW} y2={padT + chartH} stroke="#e2e8f0" strokeWidth="1" />
+      <line x1={padL} y1={padT} x2={padL} y2={padT + chartH} stroke={C.borderSubtle} strokeWidth="1" />
+      <line x1={padL} y1={padT + chartH} x2={padL + chartW} y2={padT + chartH} stroke={C.borderSubtle} strokeWidth="1" />
 
       {dados.map((d, i) => {
         const barH  = allZero ? 0 : Math.max((d.total / maxVal) * chartH, d.total > 0 ? 2 : 0)
@@ -89,13 +90,13 @@ function BarChart({ dados, shimmer }) {
           <g key={i}>
             {d.total > 0 && (
               <rect x={x} y={y} width={barW} height={barH} rx="2"
-                fill={isHj ? '#0f2d4a' : '#C0272D'} opacity="0.82">
+                fill={isHj ? C.statusInfo : C.statusDanger} opacity="0.82">
                 <title>{`Dia ${d.dia}: ${fBRL(d.total)}`}</title>
               </rect>
             )}
             {(d.dia === 1 || d.dia % 5 === 0 || d.dia === n) && (
               <text x={x + barW / 2} y={padT + chartH + 14} textAnchor="middle" fontSize="9"
-                fill={isHj ? '#0f2d4a' : '#94a3b8'} fontWeight={isHj ? '700' : '400'}>
+                fill={isHj ? C.statusInfo : C.onSurfaceVariant} fontWeight={isHj ? '700' : '400'}>
                 {d.dia}
               </text>
             )}
@@ -105,7 +106,7 @@ function BarChart({ dados, shimmer }) {
 
       {allZero && (
         <text x={padL + chartW / 2} y={padT + chartH / 2 + 4}
-          textAnchor="middle" fontSize="11" fill="#cbd5e1">
+          textAnchor="middle" fontSize="11" fill={C.onSurfaceVariant}>
           Sem vendas registradas no mês
         </text>
       )}
@@ -119,9 +120,14 @@ function StatCard({ icon, label, value, sub, alert, alertColor, color, bg, shimm
     <div
       onClick={onClick}
       style={{
-        background: '#fff', borderRadius: '1rem', padding: '1.25rem',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9',
-        display: 'flex', flexDirection: 'column', gap: '0.75rem',
+        background: C.surfaceContainerLowest,
+        borderRadius: '0.75rem',
+        padding: '1.25rem',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        border: `1px solid ${C.borderSubtle}`,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.75rem',
         cursor: onClick ? 'pointer' : 'default',
         transition: 'box-shadow 0.15s, transform 0.12s',
       }}
@@ -132,18 +138,18 @@ function StatCard({ icon, label, value, sub, alert, alertColor, color, bg, shimm
         {icon}
       </div>
       <div>
-        <p style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 0.25rem' }}>
+        <p style={{ color: C.onSurfaceVariant, fontSize: '0.75rem', fontFamily: F.body, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 0.25rem' }}>
           {label}
         </p>
         {shimmer ? (
-          <div style={{ height: '28px', width: '110px', background: '#f1f5f9', borderRadius: '0.5rem', animation: 'pulse 1.5s infinite' }} />
+          <div style={{ height: '28px', width: '110px', background: C.surfaceContainerHigh, borderRadius: '0.5rem', animation: 'pulse 1.5s infinite' }} />
         ) : (
           <>
-            <p style={{ color: color || '#1e293b', fontSize: '1.45rem', fontWeight: '800', margin: 0, letterSpacing: '-0.5px' }}>
+            <p style={{ color: color || C.onSurface, fontSize: '1.45rem', fontFamily: F.headline, fontWeight: '800', margin: 0, letterSpacing: '-0.5px' }}>
               {value}
             </p>
-            {sub   && <p style={{ margin: '0.15rem 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>{sub}</p>}
-            {alert && <p style={{ margin: '0.1rem 0 0', fontSize: '0.75rem', fontWeight: '700', color: alertColor || '#dc2626' }}>{alert}</p>}
+            {sub   && <p style={{ margin: '0.15rem 0 0', fontSize: '0.75rem', fontFamily: F.body, color: C.onSurfaceVariant }}>{sub}</p>}
+            {alert && <p style={{ margin: '0.1rem 0 0', fontSize: '0.75rem', fontFamily: F.body, fontWeight: '700', color: alertColor || C.statusDanger }}>{alert}</p>}
           </>
         )}
       </div>
@@ -156,7 +162,7 @@ function LembreteShimmer() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
       {[100, 80, 90].map(w => (
-        <div key={w} style={{ height: '14px', width: `${w}%`, background: '#f1f5f9', borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
+        <div key={w} style={{ height: '14px', width: `${w}%`, background: C.surfaceContainerHigh, borderRadius: '4px', animation: 'pulse 1.5s infinite' }} />
       ))}
     </div>
   )
@@ -259,10 +265,6 @@ export default function Dashboard() {
   const hoje   = todayISO()
   const mesTit = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
   const greet  = new Date().toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-  const cardBox = {
-    background: '#fff', borderRadius: '1rem', padding: '1.25rem',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #f1f5f9',
-  }
 
   return (
     <div className="pg">
@@ -270,10 +272,10 @@ export default function Dashboard() {
       {/* ── Cabeçalho ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.75rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: '0 0 0.25rem', letterSpacing: '-0.3px' }}>
+          <h1 style={{ fontSize: '1.4rem', fontWeight: '800', fontFamily: F.headline, color: C.onSurface, margin: '0 0 0.25rem', letterSpacing: '-0.3px' }}>
             Olá, {profile?.nome?.split(' ')[0] || 'seja bem-vindo'} 👋
           </h1>
-          <p style={{ color: '#94a3b8', margin: 0, fontSize: '0.85rem', textTransform: 'capitalize' }}>{greet}</p>
+          <p style={{ color: C.onSurfaceVariant, fontFamily: F.body, margin: 0, fontSize: '0.85rem', textTransform: 'capitalize' }}>{greet}</p>
         </div>
         {isAdmin && filiais.length > 1 && (
           <div>
@@ -281,9 +283,16 @@ export default function Dashboard() {
               value={filtroFilial}
               onChange={e => setFiltroFilial(e.target.value)}
               style={{
-                padding: '0.5rem 0.875rem', border: '1.5px solid #e2e8f0', borderRadius: '0.625rem',
-                fontSize: '0.875rem', outline: 'none', background: '#f8fafc', color: '#1e293b',
-                cursor: 'pointer', minWidth: '160px',
+                padding: '0.5rem 0.875rem',
+                border: `1.5px solid ${C.borderSubtle}`,
+                borderRadius: '0.5rem',
+                fontSize: '0.875rem',
+                fontFamily: F.body,
+                outline: 'none',
+                background: C.surfaceContainerLow,
+                color: C.onSurface,
+                cursor: 'pointer',
+                minWidth: '160px',
               }}>
               <option value="">Todas as filiais</option>
               {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
@@ -295,7 +304,7 @@ export default function Dashboard() {
       {/* ── Cards de indicadores ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
         <StatCard
-          icon="💰" bg="#fff0f0" color="#C0272D"
+          icon="💰" bg={C.statusDangerBg} color={C.statusDanger}
           label={isAdmin ? 'Vendas Hoje' : 'Minhas Vendas Hoje'}
           value={fBRL(stats.totHoje)}
           sub={stats.qtdHoje > 0 ? `${stats.qtdHoje} O.S.` : 'Sem vendas hoje'}
@@ -303,7 +312,7 @@ export default function Dashboard() {
           onClick={() => navigate('/vendas')}
         />
         <StatCard
-          icon="📈" bg="#f0fdf4" color="#15803d"
+          icon="📈" bg={C.statusSuccessBg} color={C.statusSuccess}
           label={isAdmin ? 'Vendas do Mês' : 'Minhas Vendas do Mês'}
           value={fBRL(stats.totMes)}
           sub={stats.qtdMes > 0 ? `${stats.qtdMes} O.S. no mês` : 'Sem vendas no mês'}
@@ -314,22 +323,22 @@ export default function Dashboard() {
         {isAdmin && (
           <>
             <StatCard
-              icon="💳" bg="#fffbeb" color="#d97706"
+              icon="💳" bg={C.statusWarningBg} color={C.statusWarning}
               label="Contas a Pagar"
               value={fBRL(stats.totDespAberto)}
               sub={`${stats.qtdDespAberto ?? 0} conta${stats.qtdDespAberto !== 1 ? 's' : ''} em aberto`}
               alert={stats.totDespAtrasado > 0 ? `⚠️ ${fBRL(stats.totDespAtrasado)} atrasado` : null}
-              alertColor="#dc2626"
+              alertColor={C.statusDanger}
               shimmer={loading}
               onClick={() => navigate('/resumo')}
             />
             <StatCard
-              icon="⚖️" bg="#fef2f2" color="#991b1b"
+              icon="⚖️" bg={C.statusDangerBg} color={C.statusDanger}
               label="Cobranças em Aberto"
               value={fBRL(stats.totBolAberto)}
               sub={`${stats.qtdDevsAberto ?? 0} devedor${stats.qtdDevsAberto !== 1 ? 'es' : ''} em aberto`}
               alert={stats.qtdDevsNovos > 0 ? `🆕 ${stats.qtdDevsNovos} novo${stats.qtdDevsNovos > 1 ? 's' : ''}` : null}
-              alertColor="#C0272D"
+              alertColor={C.statusDanger}
               shimmer={loading}
               onClick={() => navigate('/cobrancas')}
             />
@@ -338,20 +347,20 @@ export default function Dashboard() {
       </div>
 
       {/* ── Gráfico de barras ── */}
-      <div style={{ ...cardBox, marginBottom: '1.25rem' }}>
+      <div style={{ ...dsCard, marginBottom: '1.25rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.9rem' }}>
+          <div style={{ fontWeight: '700', fontFamily: F.headline, color: C.onSurface, fontSize: '0.9rem' }}>
             {isAdmin ? 'Vendas por Dia' : 'Minhas Vendas por Dia'} —&nbsp;
-            <span style={{ textTransform: 'capitalize', fontWeight: '500', color: '#64748b' }}>{mesTit}</span>
+            <span style={{ textTransform: 'capitalize', fontWeight: '500', color: C.onSurfaceVariant }}>{mesTit}</span>
           </div>
           {!loading && (
-            <div style={{ display: 'flex', gap: '0.875rem', fontSize: '0.72rem', color: '#94a3b8' }}>
+            <div style={{ display: 'flex', gap: '0.875rem', fontSize: '0.72rem', fontFamily: F.body, color: C.onSurfaceVariant }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ display: 'inline-block', width: '10px', height: '10px', background: '#C0272D', borderRadius: '2px', opacity: 0.82 }} />
+                <span style={{ display: 'inline-block', width: '10px', height: '10px', background: C.statusDanger, borderRadius: '2px', opacity: 0.82 }} />
                 Outros dias
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ display: 'inline-block', width: '10px', height: '10px', background: '#0f2d4a', borderRadius: '2px' }} />
+                <span style={{ display: 'inline-block', width: '10px', height: '10px', background: C.statusInfo, borderRadius: '2px' }} />
                 Hoje
               </span>
             </div>
@@ -365,28 +374,28 @@ export default function Dashboard() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem' }}>
 
           {/* Contas a vencer */}
-          <div style={cardBox}>
-            <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.88rem', marginBottom: '0.875rem' }}>
+          <div style={dsCard}>
+            <div style={{ fontWeight: '700', fontFamily: F.headline, color: C.onSurface, fontSize: '0.88rem', marginBottom: '0.875rem' }}>
               📅 Contas a Vencer nos Próximos 7 Dias
             </div>
             {loading ? <LembreteShimmer /> : despProximas.length === 0 ? (
-              <p style={{ color: '#94a3b8', fontSize: '0.82rem', margin: 0 }}>Nenhuma conta nos próximos 7 dias.</p>
+              <p style={{ color: C.onSurfaceVariant, fontFamily: F.body, fontSize: '0.82rem', margin: 0 }}>Nenhuma conta nos próximos 7 dias.</p>
             ) : (
               <div>
                 {despProximas.map((d, i) => {
                   const dias = diffDias(d.data_vencimento)
                   const isHj = dias === 0
                   return (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.55rem 0', borderBottom: i < despProximas.length - 1 ? '1px solid #f8fafc' : 'none' }}>
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.55rem 0', borderBottom: i < despProximas.length - 1 ? `1px solid ${C.borderSubtle}` : 'none' }}>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: '600', fontSize: '0.82rem', color: isHj ? '#dc2626' : '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <div style={{ fontWeight: '600', fontFamily: F.body, fontSize: '0.82rem', color: isHj ? C.statusDanger : C.onSurface, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {isHj && '🔴 '}{d.descricao}
                         </div>
-                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '1px' }}>
+                        <div style={{ fontSize: '0.72rem', fontFamily: F.body, color: C.onSurfaceVariant, marginTop: '1px' }}>
                           {fDateBR(d.data_vencimento)}{dias === 0 ? ' — hoje' : dias === 1 ? ' — amanhã' : ` — em ${dias} dias`}
                         </div>
                       </div>
-                      <div style={{ fontWeight: '700', color: '#d97706', fontSize: '0.875rem', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <div style={{ fontWeight: '700', fontFamily: F.mono, color: C.statusWarning, fontSize: '0.875rem', whiteSpace: 'nowrap', flexShrink: 0 }}>
                         {fBRL(d.valor)}
                       </div>
                     </div>
@@ -394,7 +403,7 @@ export default function Dashboard() {
                 })}
                 <div style={{ marginTop: '0.75rem', textAlign: 'right' }}>
                   <button onClick={() => navigate('/resumo')}
-                    style={{ background: 'none', border: 'none', color: '#C0272D', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', padding: 0 }}>
+                    style={{ background: 'none', border: 'none', color: C.statusDanger, fontFamily: F.body, fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', padding: 0 }}>
                     Ver todas →
                   </button>
                 </div>
@@ -403,29 +412,29 @@ export default function Dashboard() {
           </div>
 
           {/* Audiências */}
-          <div style={cardBox}>
-            <div style={{ fontWeight: '700', color: '#0f2d4a', fontSize: '0.88rem', marginBottom: '0.875rem' }}>
+          <div style={dsCard}>
+            <div style={{ fontWeight: '700', fontFamily: F.headline, color: C.onSurface, fontSize: '0.88rem', marginBottom: '0.875rem' }}>
               ⚖️ Próximas Audiências (7 Dias)
             </div>
             {loading ? <LembreteShimmer /> : audiencias.length === 0 ? (
-              <p style={{ color: '#94a3b8', fontSize: '0.82rem', margin: 0 }}>Nenhuma audiência nos próximos 7 dias.</p>
+              <p style={{ color: C.onSurfaceVariant, fontFamily: F.body, fontSize: '0.82rem', margin: 0 }}>Nenhuma audiência nos próximos 7 dias.</p>
             ) : (
               <div>
                 {audiencias.map((a, i) => {
                   const dias = diffDias(a.data_audiencia)
                   const isHj = a.data_audiencia === hoje
                   return (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.55rem 0', borderBottom: i < audiencias.length - 1 ? '1px solid #f8fafc' : 'none', background: isHj ? '#fff5f5' : 'transparent', borderRadius: isHj ? '0.4rem' : 0, paddingLeft: isHj ? '0.5rem' : 0 }}>
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.55rem 0', borderBottom: i < audiencias.length - 1 ? `1px solid ${C.borderSubtle}` : 'none', background: isHj ? C.statusDangerBg : 'transparent', borderRadius: isHj ? '0.4rem' : 0, paddingLeft: isHj ? '0.5rem' : 0 }}>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: '600', fontSize: '0.82rem', color: isHj ? '#C0272D' : '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <div style={{ fontWeight: '600', fontFamily: F.body, fontSize: '0.82rem', color: isHj ? C.statusDanger : C.onSurface, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {a.nome_pagador}
                         </div>
-                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '1px' }}>
+                        <div style={{ fontSize: '0.72rem', fontFamily: F.body, color: C.onSurfaceVariant, marginTop: '1px' }}>
                           {fDateBR(a.data_audiencia)}{dias === 0 ? ' — hoje' : dias === 1 ? ' — amanhã' : ` — em ${dias} dias`}
                         </div>
                       </div>
                       {isHj && (
-                        <span style={{ background: '#C0272D', color: '#fff', borderRadius: '9999px', fontSize: '0.62rem', fontWeight: '800', padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        <span style={{ background: C.statusDanger, color: '#fff', borderRadius: '9999px', fontSize: '0.62rem', fontFamily: F.body, fontWeight: '800', padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
                           HOJE
                         </span>
                       )}
@@ -434,7 +443,7 @@ export default function Dashboard() {
                 })}
                 <div style={{ marginTop: '0.75rem', textAlign: 'right' }}>
                   <button onClick={() => navigate('/cobrancas')}
-                    style={{ background: 'none', border: 'none', color: '#C0272D', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', padding: 0 }}>
+                    style={{ background: 'none', border: 'none', color: C.statusDanger, fontFamily: F.body, fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', padding: 0 }}>
                     Ver todas →
                   </button>
                 </div>
