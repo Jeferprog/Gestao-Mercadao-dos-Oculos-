@@ -76,7 +76,7 @@ const FORM_INIT = {
   valor_bruto: '',
   desconto: '0',
   valor_final: '',
-  forma_pagamento: '',
+  forma_pagamento: 'Entrada e Saldo',
   entrada_valor: '',
   entrada_forma: '',
   saldo_valor: '',
