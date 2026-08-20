@@ -62,11 +62,13 @@ const Label = ({ children }) => (
 )
 
 const FORM_INIT = {
+  tipo_venda: 'Grau',
   os_numero: '',
   nota_fiscal: '',
   nome_cliente: '',
   data_venda: todayISO(),
   vendedor_id: '',
+  filial_id: '',
   valor_bruto: '',
   desconto: '0',
   valor_final: '',
@@ -74,7 +76,7 @@ const FORM_INIT = {
 }
 
 /* ── FormVenda ── */
-function FormVenda({ form, onChange, vendedores, formasPagamento, isAdmin, onSubmit, onCancel, saving, editando }) {
+function FormVenda({ form, onChange, vendedores, filiais, formasPagamento, isAdmin, onSubmit, onCancel, saving, editando }) {
   function handleBrutoDesc(field, val) {
     const next = { ...form, [field]: val }
     const bruto = parseFloat(String(next.valor_bruto).replace(',', '.')) || 0
@@ -85,16 +87,31 @@ function FormVenda({ form, onChange, vendedores, formasPagamento, isAdmin, onSub
 
   const bruto = parseFloat(String(form.valor_bruto).replace(',', '.')) || 0
   const desc = parseFloat(String(form.desconto).replace(',', '.')) || 0
+  const isGrau = form.tipo_venda === 'Grau'
 
   return (
     <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem' }}>
-        {/* O.S. */}
+
+        {/* Tipo de Venda */}
         <div>
-          <Label>Nº O.S.</Label>
-          <input style={{ ...inputCss, background: '#f1f5f9', color: '#94a3b8' }}
-            value={form.os_numero} readOnly />
+          <Label>Tipo de Venda</Label>
+          <select style={inputCss}
+            value={form.tipo_venda}
+            onChange={e => onChange({ ...form, tipo_venda: e.target.value, os_numero: e.target.value === 'Solar' ? '' : form.os_numero })}>
+            <option value="Grau">Óculos de Grau</option>
+            <option value="Solar">Solar</option>
+          </select>
         </div>
+
+        {/* O.S. — somente para Grau */}
+        {isGrau && (
+          <div>
+            <Label>Nº O.S.</Label>
+            <input style={{ ...inputCss, background: '#f1f5f9', color: '#94a3b8' }}
+              value={form.os_numero} readOnly />
+          </div>
+        )}
 
         {/* Nota Fiscal */}
         <div>
@@ -119,6 +136,26 @@ function FormVenda({ form, onChange, vendedores, formasPagamento, isAdmin, onSub
             value={form.data_venda}
             onChange={e => onChange({ ...form, data_venda: e.target.value })} />
         </div>
+
+        {/* Filial */}
+        {isAdmin ? (
+          <div>
+            <Label>Filial</Label>
+            <select style={inputCss}
+              value={form.filial_id}
+              onChange={e => onChange({ ...form, filial_id: e.target.value })}>
+              <option value="">Sem filial</option>
+              {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+            </select>
+          </div>
+        ) : filiais.length > 1 && (
+          <div>
+            <Label>Filial</Label>
+            <input style={{ ...inputCss, background: '#f1f5f9', color: '#64748b' }}
+              value={filiais.find(f => f.id === form.filial_id)?.nome || '—'}
+              readOnly />
+          </div>
+        )}
 
         {/* Vendedor */}
         {isAdmin ? (
@@ -202,6 +239,8 @@ export default function Vendas() {
   const [loading, setLoading] = useState(true)
   const [formasPagamento, setFormasPagamento] = useState([])
   const [vendedores, setVendedores] = useState([])
+  const [filiais, setFiliais] = useState([])
+  const [filtroFilial, setFiltroFilial] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(FORM_INIT)
   const [editId, setEditId] = useState(null)
@@ -213,19 +252,20 @@ export default function Vendas() {
     setTimeout(() => setToast(null), 3500)
   }
 
-  /* carrega configurações e vendedores (uma vez) */
+  /* carrega configurações, vendedores e filiais (uma vez) */
   useEffect(() => {
     async function init() {
-      const [{ data: cfgRows }, { data: vends }] = await Promise.all([
+      const [{ data: cfgRows }, { data: vends }, { data: fils }] = await Promise.all([
         supabase.from('configuracoes').select('*'),
         supabase.from('profiles').select('id, nome').eq('ativo', true).order('nome'),
+        supabase.from('filiais').select('*').order('nome'),
       ])
       if (cfgRows) {
         const map = Object.fromEntries(cfgRows.map(r => [r.chave, r.valor]))
-        const formas = (map.formas_pagamento || '').split(',').filter(Boolean)
-        setFormasPagamento(formas)
+        setFormasPagamento((map.formas_pagamento || '').split(',').filter(Boolean))
       }
       if (vends) setVendedores(vends)
+      if (fils) setFiliais(fils)
     }
     init()
   }, [])
@@ -233,45 +273,59 @@ export default function Vendas() {
   /* dias com movimento no mês atual */
   const carregarDias = useCallback(async () => {
     const mes = dataSel.slice(0, 7)
-    const { data } = await supabase
+    let q = supabase
       .from('vendas')
       .select('data_venda')
       .gte('data_venda', `${mes}-01`)
       .lte('data_venda', `${mes}-31`)
+    if (filtroFilial) q = q.eq('filial_id', filtroFilial)
+    else if (!isAdmin) q = q.eq('vendedor_id', profile?.id || '')
+    const { data } = await q
     if (data) {
       const unique = [...new Set(data.map(r => r.data_venda))].sort()
       setDiasComVendas(unique)
     }
-  }, [dataSel])
+  }, [dataSel, filtroFilial, isAdmin, profile?.id])
 
   /* vendas do dia selecionado */
   const carregarVendas = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase
+    let q = supabase
       .from('vendas')
       .select('*')
       .eq('data_venda', dataSel)
-      .order('os_numero')
+      .order('os_numero', { nullsLast: true })
+    if (filtroFilial) q = q.eq('filial_id', filtroFilial)
+    else if (!isAdmin) q = q.eq('vendedor_id', profile?.id || '')
+    const { data, error } = await q
     if (!error && data) setVendas(data)
     setLoading(false)
-  }, [dataSel])
+  }, [dataSel, filtroFilial, isAdmin, profile?.id])
 
   useEffect(() => {
     carregarDias()
     carregarVendas()
   }, [carregarDias, carregarVendas])
 
-  /* próximo O.S. */
-  async function getProximoOs() {
-    const { data: maxRow } = await supabase
+  /* próximo O.S. por filial */
+  async function getProximoOs(filialId) {
+    let q = supabase
       .from('vendas')
       .select('os_numero')
+      .not('os_numero', 'is', null)
       .order('os_numero', { ascending: false })
       .limit(1)
       .maybeSingle()
+    if (filialId) q = supabase.from('vendas').select('os_numero').eq('filial_id', filialId).not('os_numero', 'is', null).order('os_numero', { ascending: false }).limit(1).maybeSingle()
 
+    const { data: maxRow } = await q
     if (maxRow) return maxRow.os_numero + 1
 
+    // fallback: os_numero_inicial da filial ou configurações globais
+    if (filialId) {
+      const { data: fil } = await supabase.from('filiais').select('os_numero_inicial').eq('id', filialId).maybeSingle()
+      if (fil) return fil.os_numero_inicial || 1
+    }
     const { data: cfgRows } = await supabase.from('configuracoes').select('*')
     if (cfgRows) {
       const map = Object.fromEntries(cfgRows.map(r => [r.chave, r.valor]))
@@ -281,12 +335,15 @@ export default function Vendas() {
   }
 
   async function abrirNovaVenda() {
-    const proximo = await getProximoOs()
+    const filialId = profile?.filial_id || (filiais.length === 1 ? filiais[0].id : '')
+    const proximo = await getProximoOs(filialId)
     setForm({
       ...FORM_INIT,
+      tipo_venda: 'Grau',
       os_numero: proximo,
       data_venda: dataSel,
       vendedor_id: profile?.id || '',
+      filial_id: filialId,
     })
     setEditId(null)
     setShowForm(true)
@@ -294,11 +351,13 @@ export default function Vendas() {
 
   function abrirEdicao(v) {
     setForm({
-      os_numero: v.os_numero,
+      tipo_venda: v.tipo_venda || 'Grau',
+      os_numero: v.os_numero || '',
       nota_fiscal: v.nota_fiscal || '',
       nome_cliente: v.nome_cliente || '',
       data_venda: v.data_venda,
       vendedor_id: v.vendedor_id,
+      filial_id: v.filial_id || '',
       valor_bruto: v.valor_bruto,
       desconto: v.desconto || 0,
       valor_final: v.valor_final,
@@ -318,11 +377,13 @@ export default function Vendas() {
 
     setSaving(true)
     const payload = {
-      os_numero: form.os_numero,
+      tipo_venda: form.tipo_venda || 'Grau',
+      os_numero: form.tipo_venda === 'Grau' ? (form.os_numero || null) : null,
       nota_fiscal: form.nota_fiscal || null,
       nome_cliente: form.nome_cliente || null,
       data_venda: form.data_venda,
       vendedor_id: form.vendedor_id,
+      filial_id: form.filial_id || null,
       valor_bruto: bruto,
       desconto: desc,
       valor_final: final,
@@ -375,6 +436,7 @@ export default function Vendas() {
   const totDesc = vendas.reduce((s, v) => s + (v.desconto || 0), 0)
   const totFinal = vendas.reduce((s, v) => s + (v.valor_final || 0), 0)
   const vendedorMap = Object.fromEntries(vendedores.map(v => [v.id, v.nome]))
+  const filialMap = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
 
   function navegarDia(delta) {
     const d = new Date(dataSel + 'T12:00:00')
@@ -421,6 +483,7 @@ export default function Vendas() {
             form={form}
             onChange={setForm}
             vendedores={vendedores}
+            filiais={filiais}
             formasPagamento={formasPagamento}
             isAdmin={isAdmin}
             onSubmit={salvar}
@@ -428,6 +491,23 @@ export default function Vendas() {
             saving={saving}
             editando={!!editId}
           />
+        </div>
+      )}
+
+      {/* Filtro de filial (admin + múltiplas filiais) */}
+      {isAdmin && filiais.length > 1 && (
+        <div style={{ ...card, marginBottom: '1rem', padding: '1rem 1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div>
+              <Label>Filial</Label>
+              <select style={{ ...inputCss, width: 'auto', minWidth: '160px' }}
+                value={filtroFilial}
+                onChange={e => setFiltroFilial(e.target.value)}>
+                <option value="">Todas</option>
+                {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+              </select>
+            </div>
+          </div>
         </div>
       )}
 
@@ -487,7 +567,7 @@ export default function Vendas() {
             {fDateBR(dataSel)}
             {vendas.length > 0 && (
               <span style={{ marginLeft: '0.5rem', color: '#64748b', fontWeight: '400', fontSize: '0.85rem' }}>
-                — {vendas.length} O.S.
+                — {vendas.length} venda{vendas.length !== 1 ? 's' : ''}
               </span>
             )}
           </div>
@@ -506,7 +586,7 @@ export default function Vendas() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                  {['O.S.', 'N. Fiscal', 'Cliente', 'Data', 'Vendedor', 'Valor Bruto', 'Desconto', 'Valor Final', 'Pagamento', 'Ações'].map(h => (
+                  {['Tipo', 'O.S.', 'N. Fiscal', 'Cliente', 'Data', 'Vendedor', ...(filiais.length > 1 ? ['Filial'] : []), 'Valor Bruto', 'Desconto', 'Valor Final', 'Pagamento', 'Ações'].map(h => (
                     <th key={h} style={{
                       padding: '0.6rem 0.75rem', textAlign: 'left', fontSize: '0.75rem',
                       fontWeight: '700', color: '#64748b', textTransform: 'uppercase',
@@ -520,11 +600,26 @@ export default function Vendas() {
                   <tr key={v.id} style={{ borderBottom: '1px solid #f8fafc' }}
                     onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a' }}>#{v.os_numero}</td>
+                    <td style={{ padding: '0.65rem 0.75rem' }}>
+                      <span style={{
+                        background: v.tipo_venda === 'Solar' ? '#fef3c7' : '#eff6ff',
+                        color: v.tipo_venda === 'Solar' ? '#92400e' : '#1d4ed8',
+                        borderRadius: '0.4rem', padding: '0.2rem 0.55rem',
+                        fontSize: '0.75rem', fontWeight: '600',
+                      }}>{v.tipo_venda || 'Grau'}</span>
+                    </td>
+                    <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a' }}>
+                      {v.os_numero ? `#${v.os_numero}` : '—'}
+                    </td>
                     <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>{v.nota_fiscal || '—'}</td>
                     <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>{v.nome_cliente || '—'}</td>
                     <td style={{ padding: '0.65rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>{fDateBR(v.data_venda)}</td>
                     <td style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>{vendedorMap[v.vendedor_id] || '—'}</td>
+                    {filiais.length > 1 && (
+                      <td style={{ padding: '0.65rem 0.75rem', color: '#475569', fontSize: '0.82rem' }}>
+                        {filialMap[v.filial_id] || '—'}
+                      </td>
+                    )}
                     <td style={{ padding: '0.65rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>{fBRL(v.valor_bruto)}</td>
                     <td style={{ padding: '0.65rem 0.75rem', color: v.desconto > 0 ? '#dc2626' : '#94a3b8', whiteSpace: 'nowrap' }}>
                       {v.desconto > 0 ? `- ${fBRL(v.desconto)}` : '—'}
@@ -559,8 +654,8 @@ export default function Vendas() {
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: '2px solid #f1f5f9', background: '#f8fafc' }}>
-                  <td colSpan={5} style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.82rem' }}>
-                    TOTAL — {vendas.length} O.S.
+                  <td colSpan={filiais.length > 1 ? 7 : 6} style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.82rem' }}>
+                    TOTAL — {vendas.length} venda{vendas.length !== 1 ? 's' : ''}
                   </td>
                   <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#0f2d4a', whiteSpace: 'nowrap' }}>{fBRL(totBruto)}</td>
                   <td style={{ padding: '0.65rem 0.75rem', fontWeight: '700', color: '#dc2626', whiteSpace: 'nowrap' }}>

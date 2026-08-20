@@ -73,6 +73,7 @@ const FORM_INIT = {
   descricao: '',
   categoria: '',
   fornecedor: '',
+  filial_id: '',
   valor: '',
   data_vencimento: todayISO(),
   pago: false,
@@ -108,8 +109,10 @@ export default function Resumo() {
   const [despesas, setDespesas] = useState([])
   const [categorias, setCategorias] = useState([])
   const [formasPagamento, setFormasPagamento] = useState([])
+  const [filiais, setFiliais] = useState([])
   const [filtroStatus, setFiltroStatus] = useState('todas')
   const [filtroCategoria, setFiltroCategoria] = useState('')
+  const [filtroFilial, setFiltroFilial] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(FORM_INIT)
   const [editId, setEditId] = useState(null)
@@ -122,15 +125,19 @@ export default function Resumo() {
     setTimeout(() => setToast(null), 3500)
   }
 
-  /* carrega categorias e formas de pagamento uma vez */
+  /* carrega categorias, formas de pagamento e filiais uma vez */
   useEffect(() => {
     async function init() {
-      const { data } = await supabase.from('configuracoes').select('*')
-      if (data) {
-        const map = Object.fromEntries(data.map(r => [r.chave, r.valor]))
+      const [{ data: cfgRows }, { data: fils }] = await Promise.all([
+        supabase.from('configuracoes').select('*'),
+        supabase.from('filiais').select('*').order('nome'),
+      ])
+      if (cfgRows) {
+        const map = Object.fromEntries(cfgRows.map(r => [r.chave, r.valor]))
         setCategorias((map.categorias_despesa || '').split(',').filter(Boolean))
         setFormasPagamento((map.formas_pagamento || '').split(',').filter(Boolean))
       }
+      if (fils) setFiliais(fils)
     }
     init()
   }, [])
@@ -138,15 +145,17 @@ export default function Resumo() {
   /* carrega despesas do período */
   const carregarDespesas = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase
+    let q = supabase
       .from('despesas')
       .select('*')
       .gte('data_vencimento', dataInicio)
       .lte('data_vencimento', dataFim)
       .order('data_vencimento')
+    if (filtroFilial) q = q.eq('filial_id', filtroFilial)
+    const { data, error } = await q
     if (!error && data) setDespesas(data)
     setLoading(false)
-  }, [dataInicio, dataFim])
+  }, [dataInicio, dataFim, filtroFilial])
 
   useEffect(() => { carregarDespesas() }, [carregarDespesas])
 
@@ -170,6 +179,8 @@ export default function Resumo() {
     if (filtroStatus === 'atrasadas') return isAtrasada(d)
     return true
   })
+
+  const filialMap = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
 
   /* totais do período inteiro (independente dos filtros de status/categoria) */
   const totLancado = despesas.reduce((s, d) => s + (d.valor || 0), 0)
@@ -198,6 +209,7 @@ export default function Resumo() {
       descricao: d.descricao,
       categoria: d.categoria || '',
       fornecedor: d.fornecedor || '',
+      filial_id: d.filial_id || '',
       valor: d.valor,
       data_vencimento: d.data_vencimento || hoje,
       pago: d.pago || false,
@@ -225,6 +237,7 @@ export default function Resumo() {
       descricao: form.descricao.trim(),
       categoria: form.categoria || null,
       fornecedor: form.fornecedor.trim() || null,
+      filial_id: form.filial_id || null,
       valor,
       data_vencimento: form.data_vencimento || null,
       pago: form.pago,
@@ -346,6 +359,15 @@ export default function Resumo() {
                 <input style={inputCss} placeholder="Opcional"
                   value={form.fornecedor} onChange={e => setField('fornecedor', e.target.value)} />
               </div>
+              {filiais.length > 0 && (
+                <div>
+                  <Label>Filial</Label>
+                  <select style={inputCss} value={form.filial_id} onChange={e => setField('filial_id', e.target.value)}>
+                    <option value="">Sem filial</option>
+                    {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                  </select>
+                </div>
+              )}
               <div>
                 <Label>Valor (R$) *</Label>
                 <input style={inputCss} type="number" min="0.01" step="0.01" required placeholder="0,00"
@@ -448,8 +470,18 @@ export default function Resumo() {
               {categorias.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
+          {filiais.length > 1 && (
+            <div>
+              <Label>Filial</Label>
+              <select style={{ ...inputCss, width: 'auto', minWidth: '160px' }}
+                value={filtroFilial} onChange={e => setFiltroFilial(e.target.value)}>
+                <option value="">Todas</option>
+                {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+              </select>
+            </div>
+          )}
           <button style={{ ...btnSecondary, alignSelf: 'flex-end' }}
-            onClick={() => { setFiltroStatus('todas'); setFiltroCategoria('') }}>
+            onClick={() => { setFiltroStatus('todas'); setFiltroCategoria(''); setFiltroFilial('') }}>
             Limpar filtros
           </button>
         </div>
