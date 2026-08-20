@@ -48,7 +48,7 @@ const FORM_INIT = {
 }
 
 /* ── FormVenda ── */
-function FormVenda({ form, onChange, onFilialChange, vendedores, filiais, formasPagamento, isAdmin, onSubmit, onCancel, saving, editando }) {
+function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedores, filiais, formasPagamento, isAdmin, onSubmit, onCancel, saving, editando }) {
   function handleBrutoDesc(field, val) {
     const next = { ...form, [field]: val }
     const bruto = parseFloat(String(next.valor_bruto).replace(',', '.')) || 0
@@ -76,7 +76,7 @@ function FormVenda({ form, onChange, onFilialChange, vendedores, filiais, formas
           <Label>Tipo de Venda</Label>
           <select style={inputCss}
             value={form.tipo_venda}
-            onChange={e => onChange({ ...form, tipo_venda: e.target.value, os_numero: e.target.value === 'Solar' ? '' : form.os_numero })}>
+            onChange={e => onTipoVendaChange(e.target.value)}>
             <option value="Grau">Óculos de Grau</option>
             <option value="Solar">Solar</option>
           </select>
@@ -374,6 +374,16 @@ export default function Vendas() {
     setForm(f => ({ ...f, filial_id: newFilialId, os_numero: nextOs }))
   }
 
+  /* recalcula O.S. ao trocar tipo de venda */
+  async function handleTipoVendaChange(novoTipo) {
+    if (novoTipo === 'Grau') {
+      const nextOs = await getProximoOs(form.filial_id)
+      setForm(f => ({ ...f, tipo_venda: novoTipo, os_numero: nextOs }))
+    } else {
+      setForm(f => ({ ...f, tipo_venda: novoTipo, os_numero: '' }))
+    }
+  }
+
   /* próximo O.S. por filial — usa exclusivamente a sequência da filial */
   async function getProximoOs(filialId) {
     if (filialId) {
@@ -438,6 +448,9 @@ export default function Vendas() {
     const final = parseFloat(String(form.valor_final).replace(',', '.')) || 0
     if (bruto <= 0) return showToast('Valor Bruto deve ser maior que zero.', 'err')
     if (desc > bruto) return showToast('Desconto não pode ser maior que o Valor Bruto.', 'err')
+    if (form.tipo_venda === 'Grau' && !form.os_numero) {
+      return showToast('Número de O.S. é obrigatório para vendas de Óculos de Grau.', 'err')
+    }
 
     if (!form.efetivada && !form.motivo_nao_efetivada?.trim()) {
       return showToast('Informe o motivo da venda não efetivada.', 'err')
@@ -633,6 +646,7 @@ export default function Vendas() {
               form={form}
               onChange={setForm}
               onFilialChange={handleFilialChange}
+              onTipoVendaChange={handleTipoVendaChange}
               vendedores={vendedores}
               filiais={filiais}
               formasPagamento={formasPagamento}
