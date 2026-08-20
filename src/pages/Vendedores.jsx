@@ -67,6 +67,7 @@ export default function Vendedores() {
       .select('id, os_numero, tipo_venda, data_venda, vendedor_id, filial_id, valor_final, forma_pagamento')
       .gte('data_venda', dataInicio)
       .lte('data_venda', dataFim)
+      .eq('efetivada', true)
     if (filtroFilial) qVendas = qVendas.eq('filial_id', filtroFilial)
 
     const [{ data: perfis }, { data: vendasData }, { data: fils }] = await Promise.all([
