@@ -172,6 +172,15 @@ export default function Dashboard() {
   const [chartData,     setChartData]     = useState([])
   const [despProximas,  setDespProximas]  = useState([])
   const [audiencias,    setAudiencias]    = useState([])
+  const [filiais,       setFiliais]       = useState([])
+  const [filtroFilial,  setFiltroFilial]  = useState('')
+
+  /* carrega filiais uma vez */
+  useEffect(() => {
+    if (isAdmin) {
+      supabase.from('filiais').select('*').order('nome').then(({ data }) => setFiliais(data || []))
+    }
+  }, [isAdmin])
 
   useEffect(() => {
     if (!profile) return
@@ -188,6 +197,10 @@ export default function Dashboard() {
       if (!isAdmin) {
         qHoje = qHoje.eq('vendedor_id', profile.id)
         qMes  = qMes.eq('vendedor_id', profile.id)
+      }
+      if (filtroFilial) {
+        qHoje = qHoje.eq('filial_id', filtroFilial)
+        qMes  = qMes.eq('filial_id', filtroFilial)
       }
 
       const adminQs = isAdmin ? [
@@ -241,7 +254,7 @@ export default function Dashboard() {
     }
 
     load()
-  }, [profile, isAdmin])
+  }, [profile, isAdmin, filtroFilial])
 
   const hoje   = todayISO()
   const mesTit = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
@@ -255,11 +268,28 @@ export default function Dashboard() {
     <div className="pg">
 
       {/* ── Cabeçalho ── */}
-      <div style={{ marginBottom: '1.75rem' }}>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: '0 0 0.25rem', letterSpacing: '-0.3px' }}>
-          Olá, {profile?.nome?.split(' ')[0] || 'seja bem-vindo'} 👋
-        </h1>
-        <p style={{ color: '#94a3b8', margin: 0, fontSize: '0.85rem', textTransform: 'capitalize' }}>{greet}</p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.75rem' }}>
+        <div>
+          <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f2d4a', margin: '0 0 0.25rem', letterSpacing: '-0.3px' }}>
+            Olá, {profile?.nome?.split(' ')[0] || 'seja bem-vindo'} 👋
+          </h1>
+          <p style={{ color: '#94a3b8', margin: 0, fontSize: '0.85rem', textTransform: 'capitalize' }}>{greet}</p>
+        </div>
+        {isAdmin && filiais.length > 1 && (
+          <div>
+            <select
+              value={filtroFilial}
+              onChange={e => setFiltroFilial(e.target.value)}
+              style={{
+                padding: '0.5rem 0.875rem', border: '1.5px solid #e2e8f0', borderRadius: '0.625rem',
+                fontSize: '0.875rem', outline: 'none', background: '#f8fafc', color: '#1e293b',
+                cursor: 'pointer', minWidth: '160px',
+              }}>
+              <option value="">Todas as filiais</option>
+              {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* ── Cards de indicadores ── */}

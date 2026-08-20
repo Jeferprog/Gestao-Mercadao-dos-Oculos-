@@ -233,27 +233,29 @@ export default function Cobrancas() {
   const { isAdmin } = useAuth()
   const fileRef = useRef()
 
-  const [view,       setView]       = useState('lista')
-  const [devedores,  setDevedores]  = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [selectedId, setSelectedId] = useState(null)
-  const [editForm,   setEditForm]   = useState({})
-  const [salvando,   setSalvando]   = useState(false)
-  const [importando, setImportando] = useState(false)
-  const [importErr,  setImportErr]  = useState(null)
-  const [resultado,  setResultado]  = useState(null)
-  const [copied,     setCopied]     = useState(false)
-  const [filtros,    setFiltros]    = useState({
+  const [view,        setView]        = useState('lista')
+  const [devedores,   setDevedores]   = useState([])
+  const [filiais,     setFiliais]     = useState([])
+  const [filtroFilial, setFiltroFilial] = useState('')
+  const [loading,     setLoading]     = useState(true)
+  const [selectedId,  setSelectedId]  = useState(null)
+  const [editForm,    setEditForm]    = useState({})
+  const [salvando,    setSalvando]    = useState(false)
+  const [importando,  setImportando]  = useState(false)
+  const [importErr,   setImportErr]   = useState(null)
+  const [resultado,   setResultado]   = useState(null)
+  const [copied,      setCopied]      = useState(false)
+  const [filtros,     setFiltros]     = useState({
     busca: '', status: '', somenteNovos: false, somentePC: false, somenteAudiencia: false,
   })
 
   /* ── carregamento ── */
   const carregar = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
+    let q = supabase
       .from('cobrancas_devedores')
       .select(`
-        id, nome_pagador, telefone, status_cobranca, primeiro_registro, ultima_atualizacao,
+        id, nome_pagador, telefone, filial_id, status_cobranca, primeiro_registro, ultima_atualizacao,
         pequenas_causas, data_audiencia, situacao_audiencia, observacoes,
         cobrancas_boletos (
           id, data_vencimento, data_liquidacao, valor, valor_liquidacao,
@@ -261,8 +263,15 @@ export default function Cobrancas() {
         )
       `)
       .order('ultima_atualizacao', { ascending: false })
+    if (filtroFilial) q = q.eq('filial_id', filtroFilial)
+    const { data } = await q
     setDevedores(data || [])
     setLoading(false)
+  }, [filtroFilial])
+
+  /* carrega filiais uma vez */
+  useEffect(() => {
+    supabase.from('filiais').select('*').order('nome').then(({ data }) => setFiliais(data || []))
   }, [])
 
   useEffect(() => { carregar() }, [carregar])
@@ -457,6 +466,13 @@ export default function Cobrancas() {
                 <option value="">Todos os status</option>
                 {STATUS_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
+              {isAdmin && filiais.length > 1 && (
+                <select value={filtroFilial} onChange={e => setFiltroFilial(e.target.value)}
+                  style={{ ...inputCss, minWidth: '160px' }}>
+                  <option value="">Todas as filiais</option>
+                  {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                </select>
+              )}
               {[
                 { key: 'somenteNovos',     label: 'Somente novos' },
                 { key: 'somentePC',        label: 'Pequenas causas' },

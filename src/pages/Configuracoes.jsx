@@ -220,11 +220,11 @@ function TabSistema({ showToast }) {
       {/* Número Inicial da O.S. */}
       <div style={card}>
         <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: '#1e293b' }}>
-          Número Inicial da Ordem de Serviço
+          Número Inicial da Ordem de Serviço (Global)
         </h3>
         <p style={{ color: '#64748b', fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5' }}>
-          Define a partir de qual número as O.S. serão geradas.
-          O próximo número sempre será o maior já cadastrado + 1 (ou este valor, se não houver nenhuma venda).
+          Fallback global quando não há filial configurada.
+          Para controle por filial, use a aba Filiais.
         </p>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem' }}>
           <div>
@@ -252,36 +252,20 @@ function TabSistema({ showToast }) {
           Gerencie as opções disponíveis no cadastro de vendas.
         </p>
 
-        {/* Tags */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem', minHeight: '36px' }}>
           {formas.map(f => (
             <span key={f} style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.375rem',
-              background: '#eff6ff',
-              color: '#1d4ed8',
-              padding: '0.3rem 0.75rem',
-              borderRadius: '999px',
-              fontSize: '0.82rem',
-              fontWeight: '500',
+              display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
+              background: '#eff6ff', color: '#1d4ed8',
+              padding: '0.3rem 0.75rem', borderRadius: '999px',
+              fontSize: '0.82rem', fontWeight: '500',
             }}>
               {f}
               <button
                 onClick={() => removeForma(f)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#93c5fd',
-                  fontSize: '1rem',
-                  lineHeight: 1,
-                  padding: 0,
-                }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#93c5fd', fontSize: '1rem', lineHeight: 1, padding: 0 }}
                 title={`Remover ${f}`}
-              >
-                ×
-              </button>
+              >×</button>
             </span>
           ))}
           {formas.length === 0 && (
@@ -289,16 +273,10 @@ function TabSistema({ showToast }) {
           )}
         </div>
 
-        {/* Adicionar */}
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
-          <input
-            type="text"
-            value={novaForma}
-            onChange={e => setNovaForma(e.target.value)}
+          <input type="text" value={novaForma} onChange={e => setNovaForma(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addForma())}
-            placeholder="Ex: Transferência"
-            style={{ ...inputCss, flex: 1 }}
-          />
+            placeholder="Ex: Transferência" style={{ ...inputCss, flex: 1 }} />
           <button onClick={addForma} style={btnSecondary}>+ Adicionar</button>
         </div>
 
@@ -325,11 +303,9 @@ function TabSistema({ showToast }) {
               fontSize: '0.82rem', fontWeight: '500',
             }}>
               {c}
-              <button
-                onClick={() => removeCategoria(c)}
+              <button onClick={() => removeCategoria(c)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fca5a5', fontSize: '1rem', lineHeight: 1, padding: 0 }}
-                title={`Remover ${c}`}
-              >×</button>
+                title={`Remover ${c}`}>×</button>
             </span>
           ))}
           {categorias.length === 0 && (
@@ -338,14 +314,9 @@ function TabSistema({ showToast }) {
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
-          <input
-            type="text"
-            value={novaCategoria}
-            onChange={e => setNovaCategoria(e.target.value)}
+          <input type="text" value={novaCategoria} onChange={e => setNovaCategoria(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCategoria())}
-            placeholder="Ex: Manutenção"
-            style={{ ...inputCss, flex: 1 }}
-          />
+            placeholder="Ex: Manutenção" style={{ ...inputCss, flex: 1 }} />
           <button onClick={addCategoria} style={btnSecondary}>+ Adicionar</button>
         </div>
 
@@ -357,23 +328,189 @@ function TabSistema({ showToast }) {
   )
 }
 
+/* ─────────────────────────────────────────── Aba: Filiais ── */
+
+const FILIAL_INIT = { nome: '', os_numero_inicial: '1' }
+
+function TabFiliais({ showToast }) {
+  const [filiais, setFiliais] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [modal, setModal] = useState(null) // null | 'add' | { type:'edit', data }
+  const [form, setForm] = useState(FILIAL_INIT)
+  const [saving, setSaving] = useState(false)
+
+  const loadFiliais = useCallback(async () => {
+    const { data } = await supabase.from('filiais').select('*').order('nome')
+    setFiliais(data || [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { loadFiliais() }, [loadFiliais])
+
+  function openAdd() {
+    setForm(FILIAL_INIT)
+    setModal('add')
+  }
+
+  function openEdit(f) {
+    setForm({ nome: f.nome, os_numero_inicial: String(f.os_numero_inicial || 1) })
+    setModal({ type: 'edit', data: f })
+  }
+
+  async function handleSave() {
+    if (!form.nome.trim()) return showToast('Erro: informe o nome da filial.')
+    setSaving(true)
+    const payload = {
+      nome: form.nome.trim(),
+      os_numero_inicial: parseInt(form.os_numero_inicial) || 1,
+    }
+    let error
+    if (modal === 'add') {
+      ;({ error } = await supabase.from('filiais').insert(payload))
+    } else {
+      ;({ error } = await supabase.from('filiais').update(payload).eq('id', modal.data.id))
+    }
+    setSaving(false)
+    if (error) {
+      showToast('Erro ao salvar: ' + error.message)
+    } else {
+      showToast(modal === 'add' ? 'Filial criada!' : 'Filial atualizada!')
+      setModal(null)
+      await loadFiliais()
+    }
+  }
+
+  async function excluir(f) {
+    if (!window.confirm(`Excluir filial "${f.nome}"? Dados vinculados perderão a referência.`)) return
+    const { error } = await supabase.from('filiais').delete().eq('id', f.id)
+    if (error) {
+      showToast('Erro ao excluir: ' + error.message)
+    } else {
+      showToast('Filial excluída.')
+      await loadFiliais()
+    }
+  }
+
+  if (loading) return <p style={{ color: '#94a3b8' }}>Carregando filiais...</p>
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <p style={{ margin: 0, color: '#64748b', fontSize: '0.875rem' }}>
+          {filiais.length} {filiais.length === 1 ? 'filial cadastrada' : 'filiais cadastradas'}
+        </p>
+        <button onClick={openAdd} style={btnPrimary}>+ Nova Filial</button>
+      </div>
+
+      <div style={{
+        background: '#fff', borderRadius: '1rem', border: '1px solid #f1f5f9',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden',
+      }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+              {['Nome', 'N.º O.S. Inicial', 'Ações'].map(col => (
+                <th key={col} style={{
+                  textAlign: 'left', padding: '0.875rem 1rem',
+                  fontSize: '0.75rem', fontWeight: '700', color: '#64748b',
+                  textTransform: 'uppercase', letterSpacing: '0.5px',
+                }}>{col}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filiais.length === 0 && (
+              <tr>
+                <td colSpan={3} style={{ padding: '2.5rem', textAlign: 'center', color: '#cbd5e1', fontSize: '0.9rem' }}>
+                  Nenhuma filial cadastrada. Clique em "+ Nova Filial" para começar.
+                </td>
+              </tr>
+            )}
+            {filiais.map((f, i) => (
+              <tr key={f.id}
+                style={{ borderBottom: i < filiais.length - 1 ? '1px solid #f8fafc' : 'none' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <td style={{ padding: '0.875rem 1rem', fontWeight: '600', color: '#1e293b' }}>{f.nome}</td>
+                <td style={{ padding: '0.875rem 1rem', color: '#64748b' }}>{f.os_numero_inicial}</td>
+                <td style={{ padding: '0.875rem 1rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button onClick={() => openEdit(f)}
+                      style={{ padding: '0.3rem 0.75rem', background: 'none', border: '1.5px solid #e2e8f0', borderRadius: '0.5rem', color: '#475569', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>
+                      Editar
+                    </button>
+                    <button onClick={() => excluir(f)}
+                      style={{ padding: '0.3rem 0.75rem', background: 'none', border: '1.5px solid #fecaca', borderRadius: '0.5rem', color: '#dc2626', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>
+                      Excluir
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ marginTop: '1rem', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '0.75rem', padding: '0.875rem 1.25rem', fontSize: '0.8rem', color: '#0369a1', lineHeight: '1.5' }}>
+        ℹ️ O <strong>N.º O.S. Inicial</strong> define a partir de qual número as ordens de serviço de <strong>Óculos de Grau</strong> são geradas para cada filial.
+        Vendas do tipo <strong>Solar</strong> não recebem número de O.S.
+      </div>
+
+      {modal && (
+        <Modal title={modal === 'add' ? 'Nova Filial' : 'Editar Filial'} onClose={() => setModal(null)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div>
+              <Label>Nome da Filial *</Label>
+              <input type="text" style={inputCss} autoFocus
+                value={form.nome}
+                onChange={e => setForm(p => ({ ...p, nome: e.target.value }))}
+                placeholder="Ex: Filial Centro" />
+            </div>
+            <div>
+              <Label>N.º O.S. Inicial</Label>
+              <input type="number" min="1" style={{ ...inputCss, width: '130px' }}
+                value={form.os_numero_inicial}
+                onChange={e => setForm(p => ({ ...p, os_numero_inicial: e.target.value }))} />
+              <p style={{ margin: '0.3rem 0 0', color: '#94a3b8', fontSize: '0.75rem' }}>
+                O próximo número será sempre o maior já registrado nesta filial + 1 (ou este valor se não houver nenhum).
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+              <button onClick={() => setModal(null)} style={{ ...btnSecondary, flex: 1 }}>Cancelar</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, flex: 1, opacity: saving ? 0.6 : 1 }}>
+                {saving ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </>
+  )
+}
+
 /* ─────────────────────────────────────────── Aba: Vendedores ── */
 
 const PAPEL_LABEL = { admin: 'Administrador', vendedor: 'Vendedor' }
 
-const FORM_INITIAL = { nome: '', email: '', senha: '', papel: 'vendedor', comissao_percentual: '0' }
+const FORM_INITIAL = { nome: '', email: '', senha: '', papel: 'vendedor', comissao_percentual: '0', filial_id: '' }
 
 function TabVendedores({ showToast }) {
   const [vendedores, setVendedores] = useState([])
+  const [filiais, setFiliais] = useState([])
   const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState(null) // null | 'add' | { type:'edit', data:obj }
+  const [modal, setModal] = useState(null)
   const [form, setForm] = useState(FORM_INITIAL)
   const [modalError, setModalError] = useState('')
   const [saving, setSaving] = useState(false)
 
   const loadVendedores = useCallback(async () => {
-    const { data } = await supabase.from('profiles').select('*').order('nome')
-    setVendedores(data || [])
+    const [{ data: perfis }, { data: fils }] = await Promise.all([
+      supabase.from('profiles').select('*').order('nome'),
+      supabase.from('filiais').select('*').order('nome'),
+    ])
+    setVendedores(perfis || [])
+    setFiliais(fils || [])
     setLoading(false)
   }, [])
 
@@ -393,6 +530,7 @@ function TabVendedores({ showToast }) {
       senha: '',
       papel: v.papel,
       comissao_percentual: String(v.comissao_percentual ?? 0),
+      filial_id: v.filial_id || '',
     })
     setModalError('')
     setModal({ type: 'edit', data: v })
@@ -436,7 +574,6 @@ function TabVendedores({ showToast }) {
       return
     }
 
-    // Atualiza perfil com comissão (nome e papel já foram definidos pelo trigger)
     if (data.user) {
       await supabase
         .from('profiles')
@@ -444,6 +581,7 @@ function TabVendedores({ showToast }) {
           nome: form.nome.trim(),
           papel: form.papel,
           comissao_percentual: parseFloat(form.comissao_percentual) || 0,
+          filial_id: form.filial_id || null,
         })
         .eq('id', data.user.id)
     }
@@ -468,6 +606,7 @@ function TabVendedores({ showToast }) {
         nome: form.nome.trim(),
         papel: form.papel,
         comissao_percentual: parseFloat(form.comissao_percentual) || 0,
+        filial_id: form.filial_id || null,
       })
       .eq('id', form.id)
 
@@ -489,6 +628,8 @@ function TabVendedores({ showToast }) {
     showToast(v.ativo ? 'Vendedor desativado.' : 'Vendedor ativado!')
   }
 
+  const filialMap = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
+
   if (loading) return <p style={{ color: '#94a3b8' }}>Carregando vendedores...</p>
 
   return (
@@ -502,63 +643,43 @@ function TabVendedores({ showToast }) {
         </button>
       </div>
 
-      {/* Tabela */}
       <div style={{
-        background: '#fff',
-        borderRadius: '1rem',
-        border: '1px solid #f1f5f9',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-        overflow: 'hidden',
+        background: '#fff', borderRadius: '1rem', border: '1px solid #f1f5f9',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden',
       }}>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
-                {['Nome', 'E-mail', 'Papel', 'Comissão', 'Status', 'Ações'].map(col => (
+                {['Nome', 'E-mail', 'Papel', 'Filial', 'Comissão', 'Status', 'Ações'].map(col => (
                   <th key={col} style={{
-                    textAlign: 'left',
-                    padding: '0.875rem 1rem',
-                    fontSize: '0.75rem',
-                    fontWeight: '700',
-                    color: '#64748b',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {col}
-                  </th>
+                    textAlign: 'left', padding: '0.875rem 1rem',
+                    fontSize: '0.75rem', fontWeight: '700', color: '#64748b',
+                    textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap',
+                  }}>{col}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {vendedores.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ padding: '2.5rem', textAlign: 'center', color: '#cbd5e1', fontSize: '0.9rem' }}>
+                  <td colSpan={7} style={{ padding: '2.5rem', textAlign: 'center', color: '#cbd5e1', fontSize: '0.9rem' }}>
                     Nenhum vendedor cadastrado ainda.
                   </td>
                 </tr>
               )}
               {vendedores.map((v, i) => (
-                <tr key={v.id} style={{
-                  borderBottom: i < vendedores.length - 1 ? '1px solid #f8fafc' : 'none',
-                  transition: 'background 0.1s',
-                }}
+                <tr key={v.id}
+                  style={{ borderBottom: i < vendedores.length - 1 ? '1px solid #f8fafc' : 'none', transition: 'background 0.1s' }}
                   onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  <td style={{ padding: '0.875rem 1rem', fontWeight: '600', color: '#1e293b', fontSize: '0.875rem' }}>
-                    {v.nome}
-                  </td>
-                  <td style={{ padding: '0.875rem 1rem', color: '#64748b', fontSize: '0.875rem' }}>
-                    {v.email || '—'}
-                  </td>
+                  <td style={{ padding: '0.875rem 1rem', fontWeight: '600', color: '#1e293b', fontSize: '0.875rem' }}>{v.nome}</td>
+                  <td style={{ padding: '0.875rem 1rem', color: '#64748b', fontSize: '0.875rem' }}>{v.email || '—'}</td>
                   <td style={{ padding: '0.875rem 1rem' }}>
                     <span style={{
-                      display: 'inline-block',
-                      padding: '0.2rem 0.625rem',
-                      borderRadius: '999px',
-                      fontSize: '0.75rem',
-                      fontWeight: '600',
+                      display: 'inline-block', padding: '0.2rem 0.625rem', borderRadius: '999px',
+                      fontSize: '0.75rem', fontWeight: '600',
                       background: v.papel === 'admin' ? '#faf5ff' : '#eff6ff',
                       color: v.papel === 'admin' ? '#7c3aed' : '#1d4ed8',
                     }}>
@@ -566,15 +687,15 @@ function TabVendedores({ showToast }) {
                     </span>
                   </td>
                   <td style={{ padding: '0.875rem 1rem', color: '#64748b', fontSize: '0.875rem' }}>
+                    {filialMap[v.filial_id] || '—'}
+                  </td>
+                  <td style={{ padding: '0.875rem 1rem', color: '#64748b', fontSize: '0.875rem' }}>
                     {v.comissao_percentual ?? 0}%
                   </td>
                   <td style={{ padding: '0.875rem 1rem' }}>
                     <span style={{
-                      display: 'inline-block',
-                      padding: '0.2rem 0.625rem',
-                      borderRadius: '999px',
-                      fontSize: '0.75rem',
-                      fontWeight: '600',
+                      display: 'inline-block', padding: '0.2rem 0.625rem', borderRadius: '999px',
+                      fontSize: '0.75rem', fontWeight: '600',
                       background: v.ativo ? '#f0fdf4' : '#f8fafc',
                       color: v.ativo ? '#16a34a' : '#94a3b8',
                     }}>
@@ -583,34 +704,12 @@ function TabVendedores({ showToast }) {
                   </td>
                   <td style={{ padding: '0.875rem 1rem' }}>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button
-                        onClick={() => openEdit(v)}
-                        style={{
-                          padding: '0.3rem 0.75rem',
-                          background: 'none',
-                          border: '1.5px solid #e2e8f0',
-                          borderRadius: '0.5rem',
-                          color: '#475569',
-                          fontSize: '0.8rem',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                        }}
-                      >
+                      <button onClick={() => openEdit(v)}
+                        style={{ padding: '0.3rem 0.75rem', background: 'none', border: '1.5px solid #e2e8f0', borderRadius: '0.5rem', color: '#475569', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>
                         Editar
                       </button>
-                      <button
-                        onClick={() => toggleAtivo(v)}
-                        style={{
-                          padding: '0.3rem 0.75rem',
-                          background: 'none',
-                          border: `1.5px solid ${v.ativo ? '#fecaca' : '#bbf7d0'}`,
-                          borderRadius: '0.5rem',
-                          color: v.ativo ? '#dc2626' : '#16a34a',
-                          fontSize: '0.8rem',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                        }}
-                      >
+                      <button onClick={() => toggleAtivo(v)}
+                        style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${v.ativo ? '#fecaca' : '#bbf7d0'}`, borderRadius: '0.5rem', color: v.ativo ? '#dc2626' : '#16a34a', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>
                         {v.ativo ? 'Desativar' : 'Ativar'}
                       </button>
                     </div>
@@ -622,23 +721,10 @@ function TabVendedores({ showToast }) {
         </div>
       </div>
 
-      {/* Aviso sobre criação de usuários */}
-      <div style={{
-        marginTop: '1rem',
-        background: '#fefce8',
-        border: '1px solid #fde68a',
-        borderRadius: '0.75rem',
-        padding: '0.875rem 1.25rem',
-        fontSize: '0.8rem',
-        color: '#854d0e',
-        lineHeight: '1.5',
-      }}>
-        ⚠️ <strong>Atenção:</strong> Ao adicionar um novo vendedor, ele receberá um e-mail de confirmação
-        para ativar a conta. Para que isso funcione, certifique-se de que as confirmações de e-mail estejam
-        ativadas no Supabase (Authentication → Providers → Email → "Confirm email").
+      <div style={{ marginTop: '1rem', background: '#fefce8', border: '1px solid #fde68a', borderRadius: '0.75rem', padding: '0.875rem 1.25rem', fontSize: '0.8rem', color: '#854d0e', lineHeight: '1.5' }}>
+        ⚠️ <strong>Atenção:</strong> Ao adicionar um novo vendedor, ele receberá um e-mail de confirmação para ativar a conta.
       </div>
 
-      {/* Modal */}
       {modal && (
         <Modal
           title={modal === 'add' ? 'Adicionar Vendedor' : 'Editar Vendedor'}
@@ -647,37 +733,21 @@ function TabVendedores({ showToast }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div>
               <Label>Nome completo *</Label>
-              <input
-                type="text"
-                value={form.nome}
-                onChange={e => setField('nome', e.target.value)}
-                style={inputCss}
-                placeholder="João da Silva"
-                autoFocus
-              />
+              <input type="text" value={form.nome} onChange={e => setField('nome', e.target.value)}
+                style={inputCss} placeholder="João da Silva" autoFocus />
             </div>
 
             {modal === 'add' && (
               <>
                 <div>
                   <Label>E-mail *</Label>
-                  <input
-                    type="email"
-                    value={form.email}
-                    onChange={e => setField('email', e.target.value)}
-                    style={inputCss}
-                    placeholder="joao@exemplo.com"
-                  />
+                  <input type="email" value={form.email} onChange={e => setField('email', e.target.value)}
+                    style={inputCss} placeholder="joao@exemplo.com" />
                 </div>
                 <div>
                   <Label>Senha inicial *</Label>
-                  <input
-                    type="password"
-                    value={form.senha}
-                    onChange={e => setField('senha', e.target.value)}
-                    style={inputCss}
-                    placeholder="Mínimo 6 caracteres"
-                  />
+                  <input type="password" value={form.senha} onChange={e => setField('senha', e.target.value)}
+                    style={inputCss} placeholder="Mínimo 6 caracteres" />
                   <p style={{ margin: '0.3rem 0 0', color: '#94a3b8', fontSize: '0.75rem' }}>
                     O vendedor poderá trocar a senha depois de confirmar o e-mail.
                   </p>
@@ -687,51 +757,37 @@ function TabVendedores({ showToast }) {
 
             <div>
               <Label>Papel</Label>
-              <select
-                value={form.papel}
-                onChange={e => setField('papel', e.target.value)}
-                style={inputCss}
-              >
+              <select value={form.papel} onChange={e => setField('papel', e.target.value)} style={inputCss}>
                 <option value="vendedor">Vendedor</option>
                 <option value="admin">Administrador</option>
               </select>
             </div>
 
             <div>
+              <Label>Filial</Label>
+              <select value={form.filial_id} onChange={e => setField('filial_id', e.target.value)} style={inputCss}>
+                <option value="">Sem filial</option>
+                {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+              </select>
+            </div>
+
+            <div>
               <Label>Comissão (%)</Label>
-              <input
-                type="number"
-                value={form.comissao_percentual}
+              <input type="number" value={form.comissao_percentual}
                 onChange={e => setField('comissao_percentual', e.target.value)}
-                style={{ ...inputCss, width: '130px' }}
-                min="0"
-                max="100"
-                step="0.5"
-              />
+                style={{ ...inputCss, width: '130px' }} min="0" max="100" step="0.5" />
             </div>
 
             {modalError && (
-              <div style={{
-                background: '#fef2f2',
-                border: '1px solid #fecaca',
-                borderRadius: '0.5rem',
-                padding: '0.625rem 0.875rem',
-                color: '#dc2626',
-                fontSize: '0.82rem',
-              }}>
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '0.5rem', padding: '0.625rem 0.875rem', color: '#dc2626', fontSize: '0.82rem' }}>
                 {modalError}
               </div>
             )}
 
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
-              <button onClick={fecharModal} style={{ ...btnSecondary, flex: 1 }}>
-                Cancelar
-              </button>
-              <button
-                onClick={modal === 'add' ? handleAdd : handleEdit}
-                disabled={saving}
-                style={{ ...btnPrimary, flex: 1, opacity: saving ? 0.6 : 1 }}
-              >
+              <button onClick={fecharModal} style={{ ...btnSecondary, flex: 1 }}>Cancelar</button>
+              <button onClick={modal === 'add' ? handleAdd : handleEdit} disabled={saving}
+                style={{ ...btnPrimary, flex: 1, opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'Salvando...' : 'Salvar'}
               </button>
             </div>
@@ -760,12 +816,8 @@ export default function Configuracoes() {
     return (
       <div style={{ padding: '2rem' }}>
         <div style={{
-          background: '#fef2f2',
-          border: '1px solid #fecaca',
-          borderRadius: '1rem',
-          padding: '2rem',
-          textAlign: 'center',
-          color: '#dc2626',
+          background: '#fef2f2', border: '1px solid #fecaca',
+          borderRadius: '1rem', padding: '2rem', textAlign: 'center', color: '#dc2626',
         }}>
           <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🔒</div>
           <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.1rem' }}>Acesso Restrito</h2>
@@ -800,12 +852,16 @@ export default function Configuracoes() {
         <button onClick={() => setActiveTab('sistema')} style={tabStyle(activeTab === 'sistema')}>
           ⚙️ Sistema
         </button>
+        <button onClick={() => setActiveTab('filiais')} style={tabStyle(activeTab === 'filiais')}>
+          🏪 Filiais
+        </button>
         <button onClick={() => setActiveTab('vendedores')} style={tabStyle(activeTab === 'vendedores')}>
           👥 Vendedores
         </button>
       </div>
 
-      {activeTab === 'sistema' && <TabSistema showToast={showToast} />}
+      {activeTab === 'sistema'    && <TabSistema    showToast={showToast} />}
+      {activeTab === 'filiais'    && <TabFiliais    showToast={showToast} />}
       {activeTab === 'vendedores' && <TabVendedores showToast={showToast} />}
 
       <Toast msg={toast} />

@@ -53,25 +53,32 @@ export default function Vendedores() {
   const [dataFim, setDataFim] = useState(lastOfMonth())
   const [vendedores, setVendedores] = useState([])
   const [vendas, setVendas] = useState([])
+  const [filiais, setFiliais] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [filtroVendedor, setFiltroVendedor] = useState('')
+  const [filtroFilial, setFiltroFilial] = useState('')
   const [loading, setLoading] = useState(true)
 
-  /* carrega perfis e vendas do período */
+  /* carrega perfis, vendas do período e filiais */
   const carregar = useCallback(async () => {
     setLoading(true)
-    const [{ data: perfis }, { data: vendasData }] = await Promise.all([
+    let qVendas = supabase
+      .from('vendas')
+      .select('id, os_numero, tipo_venda, data_venda, vendedor_id, filial_id, valor_final, forma_pagamento')
+      .gte('data_venda', dataInicio)
+      .lte('data_venda', dataFim)
+    if (filtroFilial) qVendas = qVendas.eq('filial_id', filtroFilial)
+
+    const [{ data: perfis }, { data: vendasData }, { data: fils }] = await Promise.all([
       supabase.from('profiles').select('id, nome, comissao_percentual, ativo').eq('ativo', true).order('nome'),
-      supabase
-        .from('vendas')
-        .select('id, os_numero, data_venda, vendedor_id, valor_final, forma_pagamento')
-        .gte('data_venda', dataInicio)
-        .lte('data_venda', dataFim),
+      qVendas,
+      supabase.from('filiais').select('*').order('nome'),
     ])
     setVendedores(perfis || [])
     setVendas(vendasData || [])
+    setFiliais(fils || [])
     setLoading(false)
-  }, [dataInicio, dataFim])
+  }, [dataInicio, dataFim, filtroFilial])
 
   useEffect(() => { carregar() }, [carregar])
 
@@ -111,7 +118,7 @@ export default function Vendedores() {
   const selectedVendas = selectedId
     ? vendas
         .filter(v => v.vendedor_id === selectedId)
-        .sort((a, b) => a.os_numero - b.os_numero)
+        .sort((a, b) => (a.os_numero || 0) - (b.os_numero || 0))
     : []
 
   function toggleSelecao(id) {
@@ -138,6 +145,17 @@ export default function Vendedores() {
             <input type="date" style={{ ...inputCss, minWidth: '140px' }}
               value={dataFim} onChange={e => { setDataFim(e.target.value); setSelectedId(null) }} />
           </div>
+          {isAdmin && filiais.length > 1 && (
+            <div>
+              <Label>Filial</Label>
+              <select style={{ ...inputCss, minWidth: '160px' }}
+                value={filtroFilial}
+                onChange={e => { setFiltroFilial(e.target.value); setSelectedId(null) }}>
+                <option value="">Todas</option>
+                {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+              </select>
+            </div>
+          )}
           {isAdmin && vendedores.length > 1 && (
             <div>
               <Label>Vendedor</Label>
@@ -299,7 +317,7 @@ export default function Vendedores() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                    {['O.S.', 'Data', 'Valor Final', 'Forma de Pagamento'].map(h => (
+                    {['Tipo', 'O.S.', 'Data', 'Valor Final', 'Forma de Pagamento'].map(h => (
                       <th key={h} style={{
                         padding: '0.55rem 0.75rem', textAlign: 'left', fontSize: '0.75rem',
                         fontWeight: '700', color: '#64748b', textTransform: 'uppercase',
@@ -313,8 +331,13 @@ export default function Vendedores() {
                     <tr key={v.id} style={{ borderBottom: '1px solid #f8fafc' }}
                       onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <td style={{ padding: '0.6rem 0.75rem' }}>
+                        <span style={{ background: v.tipo_venda === 'Solar' ? '#fef3c7' : '#eff6ff', color: v.tipo_venda === 'Solar' ? '#92400e' : '#1d4ed8', borderRadius: '0.4rem', padding: '0.2rem 0.5rem', fontSize: '0.75rem', fontWeight: '600' }}>
+                          {v.tipo_venda || 'Grau'}
+                        </span>
+                      </td>
                       <td style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#0f2d4a' }}>
-                        #{v.os_numero}
+                        {v.os_numero ? `#${v.os_numero}` : '—'}
                       </td>
                       <td style={{ padding: '0.6rem 0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>
                         {fDateBR(v.data_venda)}
@@ -333,8 +356,8 @@ export default function Vendedores() {
                 {/* subtotal do vendedor selecionado */}
                 <tfoot>
                   <tr style={{ borderTop: '2px solid #f1f5f9', background: '#f8fafc' }}>
-                    <td colSpan={2} style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.82rem' }}>
-                      SUBTOTAL — {selectedVendas.length} O.S.
+                    <td colSpan={3} style={{ padding: '0.6rem 0.75rem', fontWeight: '700', color: '#0f2d4a', fontSize: '0.82rem' }}>
+                      SUBTOTAL — {selectedVendas.length} venda{selectedVendas.length !== 1 ? 's' : ''}
                     </td>
                     <td style={{ padding: '0.6rem 0.75rem', fontWeight: '800', color: '#16a34a', whiteSpace: 'nowrap' }}>
                       {fBRL(selectedVendas.reduce((s, v) => s + (v.valor_final || 0), 0))}
