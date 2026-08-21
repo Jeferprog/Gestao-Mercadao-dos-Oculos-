@@ -134,9 +134,9 @@ async function importarBoletos(boletos, filialId) {
   const uniqueNorm = [...new Set(boletos.map(b => normalizarNome(b.nome_pagador)).filter(Boolean))]
   if (uniqueNorm.length === 0) throw new Error('Nenhum pagador válido encontrado.')
 
-  let qExist = supabase.from('cobrancas_devedores').select('id, nome_normalizado').in('nome_normalizado', uniqueNorm)
-  if (filialId) qExist = qExist.eq('filial_id', filialId)
-  const { data: existentesDB, error: e1 } = await qExist
+  // nome_normalizado é globalmente único — busca sem filtro de filial
+  const { data: existentesDB, error: e1 } = await supabase
+    .from('cobrancas_devedores').select('id, nome_normalizado, filial_id').in('nome_normalizado', uniqueNorm)
   if (e1) throw new Error(e1.message)
 
   const mapId = {}
@@ -168,8 +168,17 @@ async function importarBoletos(boletos, filialId) {
 
   const idsExistentes = existentesDB?.map(d => d.id) || []
   if (idsExistentes.length > 0) {
-    await supabase.from('cobrancas_devedores')
-      .update({ ultima_atualizacao: hoje }).in('id', idsExistentes)
+    if (filialId) {
+      // vincula à filial os devedores que ainda não têm filial; os demais só atualiza data
+      const semFilial = existentesDB.filter(d => !d.filial_id).map(d => d.id)
+      const comFilial = existentesDB.filter(d =>  d.filial_id).map(d => d.id)
+      if (semFilial.length > 0)
+        await supabase.from('cobrancas_devedores').update({ ultima_atualizacao: hoje, filial_id: filialId }).in('id', semFilial)
+      if (comFilial.length > 0)
+        await supabase.from('cobrancas_devedores').update({ ultima_atualizacao: hoje }).in('id', comFilial)
+    } else {
+      await supabase.from('cobrancas_devedores').update({ ultima_atualizacao: hoje }).in('id', idsExistentes)
+    }
   }
 
   const nossoNums = boletos.map(b => b.nosso_numero).filter(Boolean)
