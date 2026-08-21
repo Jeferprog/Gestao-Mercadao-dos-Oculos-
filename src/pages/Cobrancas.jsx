@@ -203,11 +203,15 @@ async function importarBoletos(boletos, filialId) {
     if (e3) throw new Error(e3.message)
   }
   for (const b of paraAtualizar) {
-    let q = supabase.from('cobrancas_boletos').update({
-      data_vencimento: b.data_vencimento, data_liquidacao: b.data_liquidacao,
-      valor: b.valor, valor_liquidacao: b.valor_liquidacao,
-      situacao_boleto: b.situacao_boleto, motivo: b.motivo,
-    }).eq('nosso_numero', b.nosso_numero)
+    const patch = {
+      data_vencimento:  b.data_vencimento,
+      data_liquidacao:  b.data_liquidacao,
+      valor:            b.valor,
+      valor_liquidacao: b.valor_liquidacao,
+    }
+    if (b.situacao_boleto) patch.situacao_boleto = b.situacao_boleto
+    if (b.motivo)          patch.motivo          = b.motivo
+    let q = supabase.from('cobrancas_boletos').update(patch).eq('nosso_numero', b.nosso_numero)
     if (filialId) q = q.eq('filial_id', filialId)
     await q
   }
