@@ -226,7 +226,7 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
   boletos.forEach(b => {
     const devedorId = mapId[normalizarNome(b.nome_pagador)]
     if (!devedorId) return
-    const payload = {
+    const base = {
       devedor_id: devedorId, filial_id: filialId || null,
       carteira: b.carteira, numero_doc: b.numero_doc,
       nosso_numero: b.nosso_numero, txid: b.txid,
@@ -234,8 +234,12 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
       valor: b.valor, valor_liquidacao: b.valor_liquidacao,
       situacao_boleto: b.situacao_boleto, motivo: b.motivo,
     }
-    if (b.nosso_numero && setExistentes.has(b.nosso_numero)) paraAtualizar.push(payload)
-    else paraInserir.push(payload)
+    if (b.nosso_numero && setExistentes.has(b.nosso_numero)) {
+      paraAtualizar.push(base)
+    } else {
+      // Boleto novo: inicializa situacao_atual com o valor vindo do banco
+      paraInserir.push({ ...base, situacao_atual: b.situacao_boleto || null })
+    }
   })
 
   if (paraInserir.length > 0) {
@@ -281,7 +285,6 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
 }
 
 const STATUS_OPTS = ['Novo', 'Em andamento', 'Negociado', 'Protestado', 'Quitado']
-const SITUACAO_BOLETO_OPTS = ['Em aberto', 'Vencido', 'Acordo parcial', 'Liquidado', 'Cancelado', 'Protestado']
 
 /* ════════════════════════════════ COMPONENTE PRINCIPAL ════════════════════════════════ */
 export default function Cobrancas() {
@@ -304,6 +307,8 @@ export default function Cobrancas() {
   const [modalDev,         setModalDev]         = useState(null)
   const [boletoEdits,      setBoletoEdits]      = useState({})
   const [savingBoleto,     setSavingBoleto]     = useState(new Set())
+
+  const [situacoesCobranca,    setSituacoesCobranca]    = useState(['Pendente','Em negociação','Acordado','Pago','Protestado','Ação judicial','Incobrável'])
 
   const [importStep,           setImportStep]           = useState('closed') // 'closed' | 'selecting' | 'preview'
   const [importFilialId,       setImportFilialId]       = useState('')
@@ -337,7 +342,7 @@ export default function Cobrancas() {
         pequenas_causas, data_audiencia, situacao_audiencia, observacoes,
         cobrancas_boletos (
           id, data_vencimento, data_liquidacao, valor, valor_liquidacao,
-          situacao_boleto, motivo, numero_doc, nosso_numero, carteira
+          situacao_boleto, situacao_atual, motivo, numero_doc, nosso_numero, carteira
         )
       `)
       .order('ultima_atualizacao', { ascending: false })
@@ -352,6 +357,9 @@ export default function Cobrancas() {
     supabase.from('filiais').select('*').order('nome').then(({ data }) => {
       setFiliais(data || [])
       setImportFilialId(data?.[0]?.id || '')
+    })
+    supabase.from('configuracoes').select('valor').eq('chave', 'situacoes_cobranca').single().then(({ data }) => {
+      if (data?.valor) setSituacoesCobranca(data.valor.split(',').filter(Boolean))
     })
   }, [])
 
@@ -384,7 +392,7 @@ export default function Cobrancas() {
   function abrirModal(dev) {
     const edits = {}
     ;(dev.cobrancas_boletos || []).forEach(b => {
-      edits[b.id] = { situacao_boleto: b.situacao_boleto || '', motivo: b.motivo || '', dirty: false }
+      edits[b.id] = { situacao_atual: b.situacao_atual || '', motivo: b.motivo || '', dirty: false }
     })
     setBoletoEdits(edits)
     setEditForm({
@@ -413,13 +421,13 @@ export default function Cobrancas() {
     if (!edit) return
     setSavingBoleto(prev => new Set(prev).add(boletoId))
     const { error } = await supabase.from('cobrancas_boletos').update({
-      situacao_boleto: edit.situacao_boleto || null,
-      motivo:          edit.motivo          || null,
+      situacao_atual: edit.situacao_atual || null,
+      motivo:         edit.motivo         || null,
     }).eq('id', boletoId)
     setSavingBoleto(prev => { const s = new Set(prev); s.delete(boletoId); return s })
     if (!error) {
       const patchBoletos = (bols) => (bols || []).map(b =>
-        b.id === boletoId ? { ...b, situacao_boleto: edit.situacao_boleto || null, motivo: edit.motivo || null } : b
+        b.id === boletoId ? { ...b, situacao_atual: edit.situacao_atual || null, motivo: edit.motivo || null } : b
       )
       setModalDev(prev => prev ? { ...prev, cobrancas_boletos: patchBoletos(prev.cobrancas_boletos) } : null)
       setDevedores(prev => prev.map(d =>
@@ -823,7 +831,7 @@ export default function Cobrancas() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                     <thead>
                       <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
-                        {['Nosso Nº', 'Vencimento', 'Valor', 'Situação', 'Motivo', 'Data Liquidação', 'Valor Liquidado', ''].map(h => (
+                        {['Nosso Nº', 'Vencimento', 'Valor', 'Sit. Banco', 'Situação Atual', 'Motivo', 'Data Liquidação', 'Valor Liquidado', ''].map(h => (
                           <th key={h} style={{ padding: '0.45rem 0.75rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: '600', color: C.onSurfaceVariant, textTransform: 'uppercase', whiteSpace: 'nowrap', fontFamily: F.body }}>{h}</th>
                         ))}
                       </tr>
@@ -833,7 +841,7 @@ export default function Cobrancas() {
                         .sort((a, b) => (a.data_vencimento || '').localeCompare(b.data_vencimento || ''))
                         .map(b => {
                           const emAberto = !b.data_liquidacao
-                          const edit = boletoEdits[b.id] || { situacao_boleto: b.situacao_boleto || '', motivo: b.motivo || '', dirty: false }
+                          const edit = boletoEdits[b.id] || { situacao_atual: b.situacao_atual || '', motivo: b.motivo || '', dirty: false }
                           const isSaving = savingBoleto.has(b.id)
                           return (
                             <tr key={b.id} style={{ borderBottom: `1px solid ${C.borderSubtle}`, background: emAberto ? 'transparent' : C.statusSuccessBg + '33' }}>
@@ -846,14 +854,22 @@ export default function Cobrancas() {
                               <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: emAberto ? C.statusDanger : C.onSurfaceVariant, whiteSpace: 'nowrap', fontFamily: F.mono }}>
                                 {fBRL(b.valor)}
                               </td>
-                              <td style={{ padding: '0.4rem 0.5rem', minWidth: '140px' }}>
-                                <select value={edit.situacao_boleto}
-                                  onChange={e => updateBoletoEdit(b.id, 'situacao_boleto', e.target.value)}
+                              {/* Situação (banco) — somente leitura */}
+                              <td style={{ padding: '0.5rem 0.75rem', minWidth: '120px' }}>
+                                {b.situacao_boleto
+                                  ? <span style={{ display: 'inline-block', background: C.surfaceContainerHigh, color: C.onSurfaceVariant, borderRadius: '0.3rem', padding: '0.15rem 0.5rem', fontSize: '0.73rem', fontWeight: '500', fontFamily: F.body, whiteSpace: 'nowrap' }}>{b.situacao_boleto}</span>
+                                  : <span style={{ color: C.outlineVariant, fontSize: '0.8rem' }}>—</span>
+                                }
+                              </td>
+                              {/* Situação Atual — editável pelo usuário */}
+                              <td style={{ padding: '0.4rem 0.5rem', minWidth: '150px' }}>
+                                <select value={edit.situacao_atual}
+                                  onChange={e => updateBoletoEdit(b.id, 'situacao_atual', e.target.value)}
                                   style={{ ...inputCss, padding: '0.3rem 0.5rem', fontSize: '0.78rem', width: '100%' }}>
                                   <option value="">—</option>
-                                  {SITUACAO_BOLETO_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
-                                  {edit.situacao_boleto && !SITUACAO_BOLETO_OPTS.includes(edit.situacao_boleto) && (
-                                    <option value={edit.situacao_boleto}>{edit.situacao_boleto}</option>
+                                  {situacoesCobranca.map(s => <option key={s} value={s}>{s}</option>)}
+                                  {edit.situacao_atual && !situacoesCobranca.includes(edit.situacao_atual) && (
+                                    <option value={edit.situacao_atual}>{edit.situacao_atual}</option>
                                   )}
                                 </select>
                               </td>
@@ -884,7 +900,7 @@ export default function Cobrancas() {
                         <tr style={{ borderTop: `2px solid ${C.borderSubtle}`, background: C.surfaceContainerLow }}>
                           <td colSpan={2} style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: C.onSurface, fontSize: '0.75rem', fontFamily: F.body }}>TOTAL EM ABERTO</td>
                           <td style={{ padding: '0.5rem 0.75rem', fontWeight: '800', color: C.statusDanger, whiteSpace: 'nowrap', fontFamily: F.mono }}>{fBRL(valorAberto(modalDev))}</td>
-                          <td colSpan={5} />
+                          <td colSpan={6} />
                         </tr>
                       </tfoot>
                     )}

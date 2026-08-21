@@ -72,6 +72,8 @@ function TabSistema({ showToast }) {
   const [novaForma, setNovaForma] = useState('')
   const [categorias, setCategorias] = useState([])
   const [novaCategoria, setNovaCategoria] = useState('')
+  const [situacoes, setSituacoes] = useState([])
+  const [novaSituacao, setNovaSituacao] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -81,6 +83,7 @@ function TabSistema({ showToast }) {
       const map = Object.fromEntries(data.map(r => [r.chave, r.valor]))
       setFormas((map.formas_pagamento || '').split(',').filter(Boolean))
       setCategorias((map.categorias_despesa || '').split(',').filter(Boolean))
+      setSituacoes((map.situacoes_cobranca || '').split(',').filter(Boolean))
     }
     setLoading(false)
   }, [])
@@ -120,6 +123,23 @@ function TabSistema({ showToast }) {
     if (c && !categorias.includes(c)) { setCategorias(prev => [...prev, c]); setNovaCategoria('') }
   }
   function removeCategoria(c) { setCategorias(prev => prev.filter(x => x !== c)) }
+
+  async function salvarSituacoes() {
+    if (situacoes.length === 0) return
+    setSaving(true)
+    const { error } = await supabase
+      .from('configuracoes')
+      .update({ valor: situacoes.join(',') })
+      .eq('chave', 'situacoes_cobranca')
+    showToast(error ? 'Erro ao salvar situações.' : 'Situações de cobrança salvas!')
+    setSaving(false)
+  }
+
+  function addSituacao() {
+    const s = novaSituacao.trim()
+    if (s && !situacoes.includes(s)) { setSituacoes(prev => [...prev, s]); setNovaSituacao('') }
+  }
+  function removeSituacao(s) { setSituacoes(prev => prev.filter(x => x !== s)) }
 
   if (loading) return <p style={{ color: C.onSurfaceVariant, fontFamily: F.body }}>Carregando configurações...</p>
 
@@ -196,6 +216,43 @@ function TabSistema({ showToast }) {
         </div>
         <button onClick={salvarCategorias} disabled={saving || categorias.length === 0} style={btnPrimary}>
           {saving ? 'Salvando...' : 'Salvar Categorias'}
+        </button>
+      </div>
+
+      {/* Situações de Cobrança */}
+      <div style={cardMb}>
+        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>
+          Situações de Cobrança
+        </h3>
+        <p style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5', fontFamily: F.body }}>
+          Opções disponíveis no campo "Situação Atual" de cada boleto no módulo de Cobranças.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem', minHeight: '36px' }}>
+          {situacoes.map(s => (
+            <span key={s} style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
+              background: 'rgba(157,5,24,0.08)', color: '#9d0518',
+              padding: '0.3rem 0.75rem', borderRadius: '999px',
+              fontSize: '0.82rem', fontWeight: '500', fontFamily: F.body,
+            }}>
+              {s}
+              <button onClick={() => removeSituacao(s)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9d0518', fontSize: '1rem', lineHeight: 1, padding: 0, opacity: 0.6 }}
+                title={`Remover ${s}`}>×</button>
+            </span>
+          ))}
+          {situacoes.length === 0 && (
+            <span style={{ color: C.outlineVariant, fontSize: '0.85rem', fontFamily: F.body }}>Nenhuma situação cadastrada.</span>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+          <input type="text" value={novaSituacao} onChange={e => setNovaSituacao(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addSituacao())}
+            placeholder="Ex: Renegociado" style={{ ...inputCss, flex: 1 }} />
+          <button onClick={addSituacao} style={btnSecondary}>+ Adicionar</button>
+        </div>
+        <button onClick={salvarSituacoes} disabled={saving || situacoes.length === 0} style={btnPrimary}>
+          {saving ? 'Salvando...' : 'Salvar Situações de Cobrança'}
         </button>
       </div>
     </>
