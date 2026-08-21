@@ -48,6 +48,18 @@ function fDate(iso) {
   const [y, m, d] = String(iso).split('-')
   return `${d}/${m}/${y}`
 }
+function fBytes(b) {
+  if (!b) return '—'
+  if (b < 1048576) return `${(b / 1024).toFixed(0)} KB`
+  return `${(b / 1048576).toFixed(1)} MB`
+}
+function tipoIcon(tipo) {
+  if (!tipo) return '📎'
+  if (tipo.includes('pdf')) return '📄'
+  if (tipo.includes('image')) return '🖼️'
+  if (tipo.includes('word') || tipo.includes('docx')) return '📝'
+  return '📎'
+}
 function diffDias(isoA, isoB) {
   return Math.round((new Date(isoA) - new Date(isoB)) / 86400000)
 }
@@ -240,7 +252,8 @@ const SITUACAO_BOLETO_OPTS = ['Em aberto', 'Vencido', 'Acordo parcial', 'Liquida
 /* ════════════════════════════════ COMPONENTE PRINCIPAL ════════════════════════════════ */
 export default function Cobrancas() {
   const { isAdmin, profile } = useAuth()
-  const fileRef = useRef()
+  const fileRef    = useRef()
+  const docFileRef = useRef()
 
   const [view,             setView]             = useState('lista')
   const [devedores,        setDevedores]        = useState([])
@@ -266,6 +279,13 @@ export default function Cobrancas() {
   })
   const [filtroVencInicio, setFiltroVencInicio] = useState('')
   const [filtroVencFim,    setFiltroVencFim]    = useState('')
+
+  const [docs,         setDocs]         = useState([])
+  const [loadingDocs,  setLoadingDocs]  = useState(false)
+  const [uploadingDoc, setUploadingDoc] = useState(false)
+  const [docDescricao, setDocDescricao] = useState('')
+  const [docDragOver,  setDocDragOver]  = useState(false)
+  const [docErr,       setDocErr]       = useState(null)
 
   /* ── carregamento ── */
   const carregar = useCallback(async () => {
@@ -336,9 +356,13 @@ export default function Cobrancas() {
       observacoes:        dev.observacoes        || '',
     })
     setModalDev(dev)
+    if (isAdmin) carregarDocs(dev.id)
   }
 
-  function fecharModal() { setModalDev(null); setBoletoEdits({}); setEditForm({}) }
+  function fecharModal() {
+    setModalDev(null); setBoletoEdits({}); setEditForm({})
+    setDocs([]); setDocErr(null); setDocDescricao('')
+  }
 
   function updateBoletoEdit(boletoId, field, value) {
     setBoletoEdits(prev => ({ ...prev, [boletoId]: { ...prev[boletoId], [field]: value, dirty: true } }))
@@ -427,6 +451,78 @@ export default function Cobrancas() {
     } : null)
   }
 
+  /* ── documentos ── */
+  async function carregarDocs(devedorId) {
+    setLoadingDocs(true)
+    const { data } = await supabase
+      .from('cobrancas_documentos')
+      .select('id, nome_arquivo, caminho, tipo, tamanho, descricao, created_at')
+      .eq('devedor_id', devedorId)
+      .order('created_at', { ascending: false })
+    setDocs(data || [])
+    setLoadingDocs(false)
+  }
+
+  async function handleDocUpload(file) {
+    if (!file) return
+    setDocErr(null)
+    const tiposOk = [
+      'application/pdf', 'image/jpeg', 'image/png',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ]
+    if (!tiposOk.includes(file.type)) {
+      return setDocErr('Tipo não permitido. Use PDF, JPG, PNG ou DOCX.')
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      return setDocErr('Arquivo muito grande. O limite é 10 MB.')
+    }
+    if (!modalDev) return
+    setUploadingDoc(true)
+    try {
+      const nomeSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const caminho = `${modalDev.id}/${Date.now()}-${nomeSeguro}`
+      const { error: upErr } = await supabase.storage
+        .from('cobrancas-documentos')
+        .upload(caminho, file, { contentType: file.type })
+      if (upErr) throw new Error(upErr.message)
+      const { error: dbErr } = await supabase.from('cobrancas_documentos').insert({
+        devedor_id:   modalDev.id,
+        nome_arquivo: file.name,
+        caminho,
+        tipo:         file.type,
+        tamanho:      file.size,
+        descricao:    docDescricao || null,
+        enviado_por:  profile?.id || null,
+      })
+      if (dbErr) throw new Error(dbErr.message)
+      setDocDescricao('')
+      await carregarDocs(modalDev.id)
+    } catch (err) {
+      setDocErr(err.message)
+    } finally {
+      setUploadingDoc(false)
+    }
+  }
+
+  async function visualizarDoc(doc) {
+    const { data, error } = await supabase.storage
+      .from('cobrancas-documentos')
+      .createSignedUrl(doc.caminho, 3600)
+    if (error) return setDocErr('Não foi possível gerar o link de acesso.')
+    window.open(data.signedUrl, '_blank', 'noopener')
+  }
+
+  async function excluirDoc(doc) {
+    if (!window.confirm(`Excluir "${doc.nome_arquivo}"?\nEsta ação não pode ser desfeita.`)) return
+    const { error: stErr } = await supabase.storage
+      .from('cobrancas-documentos')
+      .remove([doc.caminho])
+    if (stErr) return setDocErr('Erro ao excluir arquivo: ' + stErr.message)
+    const { error: dbErr } = await supabase.from('cobrancas_documentos').delete().eq('id', doc.id)
+    if (dbErr) return setDocErr('Erro ao excluir registro: ' + dbErr.message)
+    setDocs(prev => prev.filter(d => d.id !== doc.id))
+  }
+
   /* ── copiar cobrança ── */
   function copiarCobranca(dev) {
     const lista = abertos(dev).sort((a, b) => (a.data_vencimento || '').localeCompare(b.data_vencimento || ''))
@@ -510,6 +606,11 @@ export default function Cobrancas() {
                   {modalDev.filial_id && filialMap[modalDev.filial_id] && (
                     <span style={{ marginLeft: '0.5rem', background: C.surfaceContainerLow, borderRadius: '0.35rem', padding: '0.1rem 0.5rem', fontSize: '0.75rem', fontWeight: '600', color: C.onSurfaceVariant }}>
                       {filialMap[modalDev.filial_id]}
+                    </span>
+                  )}
+                  {isAdmin && docs.length > 0 && (
+                    <span style={{ marginLeft: '0.5rem', background: '#9d0518', color: '#fff', borderRadius: '0.35rem', padding: '0.1rem 0.5rem', fontSize: '0.72rem', fontWeight: '700' }}>
+                      {docs.length} doc{docs.length !== 1 ? 's' : ''}
                     </span>
                   )}
                 </div>
@@ -657,6 +758,128 @@ export default function Cobrancas() {
                   </button>
                 </div>
               </div>
+
+              {/* ── Documentos (somente admin) ── */}
+              {isAdmin && (
+                <div style={{ borderTop: `1px solid ${C.borderSubtle}`, paddingTop: '1.25rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.875rem' }}>
+                    <div style={{ fontWeight: '700', color: C.onSurfaceVariant, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>
+                      Documentos
+                    </div>
+                    {docs.length > 0 && (
+                      <span style={{ background: '#9d0518', color: '#fff', borderRadius: '9999px', padding: '1px 8px', fontSize: '0.7rem', fontWeight: '700', fontFamily: F.body }}>
+                        {docs.length}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Erro de upload */}
+                  {docErr && (
+                    <div style={{ background: C.statusDangerBg, border: `1px solid ${C.statusDanger}`, borderRadius: '0.5rem', padding: '0.5rem 0.75rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                      <span style={{ color: C.statusDanger, fontSize: '0.82rem', fontFamily: F.body }}>{docErr}</span>
+                      <button onClick={() => setDocErr(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.statusDanger, fontSize: '1rem', lineHeight: 1, flexShrink: 0 }}>✕</button>
+                    </div>
+                  )}
+
+                  {/* Campo de descrição */}
+                  <div style={{ marginBottom: '0.625rem' }}>
+                    <input
+                      type="text"
+                      placeholder="Descrição do documento (ex: Acordo assinado)"
+                      value={docDescricao}
+                      onChange={e => setDocDescricao(e.target.value)}
+                      style={{ ...inputCss, width: '100%' }}
+                    />
+                  </div>
+
+                  {/* Zona de upload */}
+                  <div
+                    onDragOver={e => { e.preventDefault(); setDocDragOver(true) }}
+                    onDragLeave={() => setDocDragOver(false)}
+                    onDrop={e => { e.preventDefault(); setDocDragOver(false); handleDocUpload(e.dataTransfer.files[0]) }}
+                    onClick={() => !uploadingDoc && docFileRef.current?.click()}
+                    style={{
+                      border: `2px dashed ${docDragOver ? '#9d0518' : C.borderSubtle}`,
+                      borderRadius: '0.75rem',
+                      padding: '1.25rem',
+                      textAlign: 'center',
+                      cursor: uploadingDoc ? 'not-allowed' : 'pointer',
+                      background: docDragOver ? 'rgba(157,5,24,0.05)' : C.surfaceContainerLow,
+                      transition: 'all 0.15s',
+                      marginBottom: '1rem',
+                    }}
+                  >
+                    <input
+                      ref={docFileRef}
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png,.docx"
+                      onChange={e => { handleDocUpload(e.target.files[0]); e.target.value = '' }}
+                      style={{ display: 'none' }}
+                    />
+                    <div style={{ fontSize: '1.4rem', marginBottom: '0.3rem' }}>📎</div>
+                    {uploadingDoc ? (
+                      <div style={{ color: C.onSurfaceVariant, fontSize: '0.85rem', fontFamily: F.body }}>Enviando arquivo…</div>
+                    ) : (
+                      <>
+                        <div style={{ fontWeight: '600', color: C.onSurface, fontSize: '0.85rem', fontFamily: F.body }}>
+                          Clique ou arraste um arquivo aqui
+                        </div>
+                        <div style={{ color: C.onSurfaceVariant, fontSize: '0.75rem', marginTop: '0.2rem', fontFamily: F.body }}>
+                          PDF, JPG, PNG, DOCX · máximo 10 MB por arquivo
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Lista de documentos */}
+                  {loadingDocs ? (
+                    <div style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', fontFamily: F.body, padding: '0.5rem 0', textAlign: 'center' }}>Carregando documentos…</div>
+                  ) : docs.length === 0 ? (
+                    <div style={{ color: C.outlineVariant, fontSize: '0.82rem', fontFamily: F.body, textAlign: 'center', padding: '1rem 0' }}>
+                      Nenhum documento anexado ainda.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {docs.map(doc => (
+                        <div key={doc.id} style={{
+                          display: 'flex', alignItems: 'center', gap: '0.75rem',
+                          background: C.surfaceContainerLow, borderRadius: '0.625rem',
+                          padding: '0.625rem 0.875rem', border: `1px solid ${C.borderSubtle}`,
+                        }}>
+                          <span style={{ fontSize: '1.25rem', flexShrink: 0 }}>{tipoIcon(doc.tipo)}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: '600', color: C.onSurface, fontSize: '0.82rem', fontFamily: F.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {doc.nome_arquivo}
+                            </div>
+                            <div style={{ color: C.onSurfaceVariant, fontSize: '0.72rem', fontFamily: F.body, display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                              {doc.descricao && <span style={{ fontStyle: 'italic' }}>{doc.descricao}</span>}
+                              {doc.descricao && <span>·</span>}
+                              <span>{fBytes(doc.tamanho)}</span>
+                              <span>·</span>
+                              <span>{fDate(doc.created_at?.slice(0, 10))}</span>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '0.375rem', flexShrink: 0 }}>
+                            <button
+                              onClick={() => visualizarDoc(doc)}
+                              style={{ padding: '0.3rem 0.65rem', borderRadius: '0.4rem', background: C.surfaceContainerHigh, color: C.onSurface, border: 'none', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}
+                            >
+                              Ver / Baixar
+                            </button>
+                            <button
+                              onClick={() => excluirDoc(doc)}
+                              style={{ padding: '0.3rem 0.65rem', borderRadius: '0.4rem', background: C.statusDangerBg, color: '#9d0518', border: `1px solid #9d051830`, fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}
+                            >
+                              Excluir
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           </div>
         </div>
@@ -676,12 +899,10 @@ export default function Cobrancas() {
             onClick={() => setView('audiencias')}
             style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', border: '1.5px solid', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s', fontFamily: F.body, ...(view === 'audiencias' ? { background: C.onSurface, color: C.surfaceContainerLowest, borderColor: C.onSurface } : { background: C.surfaceContainerLowest, color: C.onSurfaceVariant, borderColor: C.borderSubtle }) }}
           >📅 Audiências {comAudiencia.length > 0 && `(${comAudiencia.length})`}</button>
-          {isAdmin && (
-            <button
-              onClick={clickImportar} disabled={importando}
-              style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.85rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1, fontFamily: F.body }}
-            >{importando ? '⏳ Importando...' : '⬆️ Importar relatório'}</button>
-          )}
+          <button
+            onClick={clickImportar} disabled={importando}
+            style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.85rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1, fontFamily: F.body }}
+          >{importando ? '⏳ Importando...' : '⬆️ Importar relatório'}</button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImport} style={{ display: 'none' }} />
         </div>
       </div>
