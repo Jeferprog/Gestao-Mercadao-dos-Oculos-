@@ -134,9 +134,9 @@ async function importarBoletos(boletos, filialId) {
   const uniqueNorm = [...new Set(boletos.map(b => normalizarNome(b.nome_pagador)).filter(Boolean))]
   if (uniqueNorm.length === 0) throw new Error('Nenhum pagador válido encontrado.')
 
-  let qExist = supabase.from('cobrancas_devedores').select('id, nome_normalizado').in('nome_normalizado', uniqueNorm)
-  if (filialId) qExist = qExist.eq('filial_id', filialId)
-  const { data: existentesDB, error: e1 } = await qExist
+  // nome_normalizado é globalmente único — busca sem filtro de filial
+  const { data: existentesDB, error: e1 } = await supabase
+    .from('cobrancas_devedores').select('id, nome_normalizado').in('nome_normalizado', uniqueNorm)
   if (e1) throw new Error(e1.message)
 
   const mapId = {}
