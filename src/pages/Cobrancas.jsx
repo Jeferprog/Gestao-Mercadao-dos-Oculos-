@@ -676,12 +676,10 @@ export default function Cobrancas() {
             onClick={() => setView('audiencias')}
             style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', border: '1.5px solid', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s', fontFamily: F.body, ...(view === 'audiencias' ? { background: C.onSurface, color: C.surfaceContainerLowest, borderColor: C.onSurface } : { background: C.surfaceContainerLowest, color: C.onSurfaceVariant, borderColor: C.borderSubtle }) }}
           >📅 Audiências {comAudiencia.length > 0 && `(${comAudiencia.length})`}</button>
-          {isAdmin && (
-            <button
-              onClick={clickImportar} disabled={importando}
-              style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.85rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1, fontFamily: F.body }}
-            >{importando ? '⏳ Importando...' : '⬆️ Importar relatório'}</button>
-          )}
+          <button
+            onClick={clickImportar} disabled={importando}
+            style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.85rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1, fontFamily: F.body }}
+          >{importando ? '⏳ Importando...' : '⬆️ Importar relatório'}</button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImport} style={{ display: 'none' }} />
         </div>
       </div>
