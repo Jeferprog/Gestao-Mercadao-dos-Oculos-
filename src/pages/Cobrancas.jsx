@@ -74,6 +74,24 @@ function statusStyle(s) {
   }[s] || { bg: C.surfaceContainerHigh, color: C.onSurfaceVariant }
 }
 
+/* ── detectar período do relatório (linhas antes do cabeçalho ou min/max vencimento) ── */
+function detectarPeriodo(preHeaderRows, boletos) {
+  const re = /(\d{2}\/\d{2}\/\d{4})\s+(?:a|até|ate)\s+(\d{2}\/\d{2}\/\d{4})/i
+  for (const row of preHeaderRows) {
+    const text = (row || []).map(c => (c != null ? String(c) : '')).join(' ')
+    const m = re.exec(text)
+    if (m) {
+      const [d1, mo1, y1] = m[1].split('/'), [d2, mo2, y2] = m[2].split('/')
+      return {
+        periodoInicio: `${y1}-${mo1}-${d1}`,
+        periodoFim:    `${y2}-${mo2}-${d2}`,
+      }
+    }
+  }
+  const datas = boletos.map(b => b.data_vencimento).filter(Boolean).sort()
+  return { periodoInicio: datas[0] || null, periodoFim: datas[datas.length - 1] || null }
+}
+
 /* ── detectar colunas pelo cabeçalho ── */
 function detectarColunas(headerRow) {
   const col = {}
@@ -136,11 +154,12 @@ async function parseFile(file) {
     })
   }
   if (boletos.length === 0) throw new Error('Nenhuma linha de boleto encontrada após o cabeçalho.')
-  return boletos
+  const { periodoInicio, periodoFim } = detectarPeriodo(rows.slice(0, headerIdx), boletos)
+  return { boletos, periodoInicio, periodoFim }
 }
 
 /* ── importar boletos no Supabase (com filial) ── */
-async function importarBoletos(boletos, filialId) {
+async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, nomeArquivo, importadoPor } = {}) {
   const hoje = todayISO()
 
   const uniqueNorm = [...new Set(boletos.map(b => normalizarNome(b.nome_pagador)).filter(Boolean))]
@@ -237,6 +256,21 @@ async function importarBoletos(boletos, filialId) {
     await q
   }
 
+  // log import (silently ignore if table doesn't exist yet)
+  try {
+    await supabase.from('cobrancas_importacoes').insert({
+      filial_id:       filialId        || null,
+      periodo_inicio:  periodoInicio   || null,
+      periodo_fim:     periodoFim      || null,
+      nome_arquivo:    nomeArquivo     || null,
+      importado_por:   importadoPor    || null,
+      total_boletos:   boletos.length,
+      inseridos:       paraInserir.length,
+      atualizados:     paraAtualizar.length,
+      novos_devedores: novosNomes.length,
+    })
+  } catch (_) { /* tabela ainda não criada */ }
+
   return {
     total: boletos.length,
     inseridos: paraInserir.length,
@@ -271,8 +305,14 @@ export default function Cobrancas() {
   const [boletoEdits,      setBoletoEdits]      = useState({})
   const [savingBoleto,     setSavingBoleto]     = useState(new Set())
 
-  const [showFilialModal,  setShowFilialModal]  = useState(false)
-  const [importFilialId,   setImportFilialId]   = useState('')
+  const [importStep,           setImportStep]           = useState('closed') // 'closed' | 'selecting' | 'preview'
+  const [importFilialId,       setImportFilialId]       = useState('')
+  const [importParsed,         setImportParsed]         = useState(null)
+  const [importPeriodoInicio,  setImportPeriodoInicio]  = useState('')
+  const [importPeriodoFim,     setImportPeriodoFim]     = useState('')
+  const [importFileName,       setImportFileName]       = useState('')
+  const [historico,            setHistorico]            = useState([])
+  const [loadingHistorico,     setLoadingHistorico]     = useState(false)
 
   const [filtros, setFiltros] = useState({
     busca: '', status: '', somenteNovos: false, somentePC: false, somenteAudiencia: false,
@@ -390,20 +430,61 @@ export default function Cobrancas() {
   }
 
   /* ── importar arquivo ── */
-  function clickImportar() {
-    if (filiais.length > 0) { setShowFilialModal(true) } else { fileRef.current?.click() }
+  async function carregarHistorico() {
+    setLoadingHistorico(true)
+    const { data } = await supabase
+      .from('cobrancas_importacoes')
+      .select('id, created_at, nome_arquivo, filial_id, periodo_inicio, periodo_fim, total_boletos, inseridos, atualizados')
+      .order('created_at', { ascending: false })
+      .limit(3)
+    setHistorico(data || [])
+    setLoadingHistorico(false)
   }
-  function confirmarFilialImport() { setShowFilialModal(false); setTimeout(() => fileRef.current?.click(), 50) }
 
-  async function handleImport(e) {
+  function clickImportar() {
+    setImportStep('selecting')
+    setImportParsed(null)
+    setImportFileName('')
+    setImportPeriodoInicio('')
+    setImportPeriodoFim('')
+    setImportErr(null)
+    carregarHistorico()
+  }
+
+  async function handleFileSelect(e) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    setImportando(true); setImportErr(null); setResultado(null)
+    setImportando(true)
+    setImportErr(null)
     try {
-      const boletos = await parseFile(file)
-      const res = await importarBoletos(boletos, importFilialId || null)
+      const { boletos, periodoInicio, periodoFim } = await parseFile(file)
+      setImportParsed({ boletos })
+      setImportFileName(file.name)
+      setImportPeriodoInicio(periodoInicio || '')
+      setImportPeriodoFim(periodoFim || '')
+      setImportStep('preview')
+    } catch (err) {
+      setImportErr(err.message)
+    } finally {
+      setImportando(false)
+    }
+  }
+
+  async function confirmarImport() {
+    if (!importParsed) return
+    setImportando(true)
+    setImportErr(null)
+    setResultado(null)
+    try {
+      const res = await importarBoletos(importParsed.boletos, importFilialId || null, {
+        periodoInicio: importPeriodoInicio || null,
+        periodoFim:    importPeriodoFim    || null,
+        nomeArquivo:   importFileName      || null,
+        importadoPor:  profile?.id         || null,
+      })
       setResultado(res)
+      setImportStep('closed')
       await carregar()
     } catch (err) {
       setImportErr(err.message)
@@ -545,40 +626,144 @@ export default function Cobrancas() {
   return (
     <div className="pg">
 
-      {/* ── Modal selecionar filial para importação ── */}
-      {showFilialModal && (
+      {/* ── Modal de importação (selecionar / preview) ── */}
+      {importStep !== 'closed' && (
         <div style={{
-          position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(15,45,74,0.45)',
+          position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(15,45,74,0.50)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
-        }} onClick={() => setShowFilialModal(false)}>
+        }} onClick={() => importStep === 'selecting' && setImportStep('closed')}>
           <div style={{
             background: C.surfaceContainerLowest, borderRadius: '1rem', padding: '1.75rem',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: '100%', maxWidth: '400px',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.25)', width: '100%', maxWidth: '480px',
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontWeight: '800', color: C.onSurface, fontSize: '1.05rem', marginBottom: '0.5rem', fontFamily: F.headline }}>
-              Importar relatório
-            </div>
-            <p style={{ color: C.onSurfaceVariant, fontSize: '0.875rem', marginBottom: '1.25rem', fontFamily: F.body }}>
-              Selecione a filial à qual este relatório pertence. Devedores e boletos serão vinculados a ela.
-            </p>
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: C.onSurfaceVariant, marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>Filial</label>
-              <select value={importFilialId} onChange={e => setImportFilialId(e.target.value)}
-                style={{ ...inputCss, width: '100%' }}>
-                <option value="">Sem filial</option>
-                {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
-              </select>
-            </div>
-            <div style={{ display: 'flex', gap: '0.625rem', justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowFilialModal(false)}
-                style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', background: C.surfaceContainerLow, color: C.onSurfaceVariant, border: 'none', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
-                Cancelar
-              </button>
-              <button onClick={confirmarFilialImport}
-                style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.875rem', fontWeight: '700', cursor: 'pointer', fontFamily: F.body }}>
-                Selecionar arquivo →
+
+            {/* Cabeçalho */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <div style={{ fontWeight: '800', color: C.onSurface, fontSize: '1.05rem', fontFamily: F.headline }}>
+                {importStep === 'selecting' ? '⬆️ Importar relatório' : '✅ Confirmar importação'}
+              </div>
+              <button onClick={() => setImportStep('closed')}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.onSurfaceVariant, fontSize: '1.1rem', lineHeight: 1, padding: '0.2rem 0.4rem' }}>
+                ✕
               </button>
             </div>
+
+            {/* Erro */}
+            {importErr && (
+              <div style={{ background: C.statusDangerBg, border: `1px solid ${C.statusDanger}`, borderRadius: '0.5rem', padding: '0.5rem 0.75rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                <span style={{ color: C.statusDanger, fontSize: '0.82rem', fontFamily: F.body }}>{importErr}</span>
+                <button onClick={() => setImportErr(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.statusDanger, fontSize: '1rem', lineHeight: 1, flexShrink: 0 }}>✕</button>
+              </div>
+            )}
+
+            {importStep === 'selecting' ? (
+              <>
+                {/* Filial */}
+                {filiais.length > 0 && (
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: C.onSurfaceVariant, marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>Filial</label>
+                    <select value={importFilialId} onChange={e => setImportFilialId(e.target.value)}
+                      style={{ ...inputCss, width: '100%' }}>
+                      <option value="">Sem filial</option>
+                      {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {/* Botão selecionar arquivo */}
+                <button onClick={() => fileRef.current?.click()} disabled={importando}
+                  style={{ width: '100%', padding: '0.75rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.9rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1, fontFamily: F.body, marginBottom: '1.5rem' }}>
+                  {importando ? '⏳ Lendo arquivo…' : '📂 Selecionar arquivo (.xlsx / .csv)'}
+                </button>
+
+                {/* Histórico */}
+                <div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: '700', color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.625rem', fontFamily: F.body }}>
+                    Últimas importações
+                  </div>
+                  {loadingHistorico ? (
+                    <div style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', fontFamily: F.body }}>Carregando…</div>
+                  ) : historico.length === 0 ? (
+                    <div style={{ color: C.outlineVariant, fontSize: '0.82rem', fontFamily: F.body }}>Nenhuma importação registrada ainda.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {historico.map(h => {
+                        const filNome = filiais.find(f => f.id === h.filial_id)?.nome
+                        return (
+                          <div key={h.id} style={{ background: C.surfaceContainerLow, borderRadius: '0.5rem', padding: '0.6rem 0.75rem', border: `1px solid ${C.borderSubtle}` }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: '600', color: C.onSurface, fontSize: '0.82rem', fontFamily: F.body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '220px' }}>
+                                📄 {h.nome_arquivo || 'Arquivo'}
+                              </span>
+                              <span style={{ fontSize: '0.72rem', color: C.onSurfaceVariant, fontFamily: F.body, whiteSpace: 'nowrap' }}>
+                                {h.created_at ? new Date(h.created_at).toLocaleDateString('pt-BR') : ''}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: C.onSurfaceVariant, fontFamily: F.body, marginTop: '3px', display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                              {filNome && <span style={{ background: C.surfaceContainerHigh, borderRadius: '0.3rem', padding: '1px 5px' }}>{filNome}</span>}
+                              {(h.periodo_inicio || h.periodo_fim) && (
+                                <span>{fDate(h.periodo_inicio)} – {fDate(h.periodo_fim)}</span>
+                              )}
+                              <span>· {h.total_boletos} boleto{h.total_boletos !== 1 ? 's' : ''}</span>
+                              <span>· {h.inseridos} novo{h.inseridos !== 1 ? 's' : ''}</span>
+                              <span>· {h.atualizados} atualizado{h.atualizados !== 1 ? 's' : ''}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              /* ── Preview / confirmar ── */
+              <>
+                {/* Resumo do arquivo */}
+                <div style={{ background: C.surfaceContainerLow, borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1.25rem', border: `1px solid ${C.borderSubtle}` }}>
+                  <div style={{ fontWeight: '600', color: C.onSurface, fontSize: '0.85rem', fontFamily: F.body, marginBottom: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    📄 {importFileName}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: C.onSurfaceVariant, fontFamily: F.body }}>
+                    {importParsed?.boletos?.length ?? 0} boleto{(importParsed?.boletos?.length ?? 0) !== 1 ? 's' : ''} encontrado{(importParsed?.boletos?.length ?? 0) !== 1 ? 's' : ''}
+                    {importFilialId && filiais.find(f => f.id === importFilialId) && (
+                      <span> · Filial: <strong>{filiais.find(f => f.id === importFilialId)?.nome}</strong></span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Período */}
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: C.onSurfaceVariant, marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>
+                    Período do relatório
+                    {importPeriodoInicio && importPeriodoFim && (
+                      <span style={{ marginLeft: '0.5rem', fontWeight: '400', textTransform: 'none', letterSpacing: 0, color: C.statusSuccess, fontSize: '0.72rem' }}>
+                        ✓ detectado automaticamente
+                      </span>
+                    )}
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input type="date" value={importPeriodoInicio} onChange={e => setImportPeriodoInicio(e.target.value)}
+                      style={{ ...inputCss, flex: 1 }} />
+                    <span style={{ color: C.onSurfaceVariant, fontFamily: F.body, fontSize: '0.82rem' }}>até</span>
+                    <input type="date" value={importPeriodoFim} onChange={e => setImportPeriodoFim(e.target.value)}
+                      style={{ ...inputCss, flex: 1 }} />
+                  </div>
+                </div>
+
+                {/* Botões */}
+                <div style={{ display: 'flex', gap: '0.625rem', justifyContent: 'flex-end' }}>
+                  <button onClick={() => setImportStep('selecting')} disabled={importando}
+                    style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', background: C.surfaceContainerLow, color: C.onSurfaceVariant, border: 'none', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
+                    ← Voltar
+                  </button>
+                  <button onClick={confirmarImport} disabled={importando}
+                    style={{ padding: '0.55rem 1.25rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.875rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1, fontFamily: F.body }}>
+                    {importando ? '⏳ Importando…' : '✅ Confirmar importação'}
+                  </button>
+                </div>
+              </>
+            )}
+
           </div>
         </div>
       )}
@@ -903,7 +1088,7 @@ export default function Cobrancas() {
             onClick={clickImportar} disabled={importando}
             style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.85rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1, fontFamily: F.body }}
           >{importando ? '⏳ Importando...' : '⬆️ Importar relatório'}</button>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImport} style={{ display: 'none' }} />
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileSelect} style={{ display: 'none' }} />
         </div>
       </div>
 

@@ -315,8 +315,8 @@ export default function Dashboard() {
         const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud] = await Promise.all([
           supabase.from('vendas').select('valor_final').eq('data_venda', hoje).eq('efetivada', true).eq('filial_id', filtroFilial),
           supabase.from('vendas').select('data_venda, valor_final').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true).eq('filial_id', filtroFilial),
-          supabase.from('despesas').select('valor').eq('pago', false),
-          supabase.from('despesas').select('valor').eq('pago', false).lt('data_vencimento', hoje),
+          supabase.from('despesas').select('valor').eq('pago', false).eq('filial_id', filtroFilial),
+          supabase.from('despesas').select('valor').eq('pago', false).lt('data_vencimento', hoje).eq('filial_id', filtroFilial),
           supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
           supabase.from('cobrancas_boletos').select('valor, devedor_id').is('data_liquidacao', null).eq('filial_id', filtroFilial),
           supabase.from('cobrancas_devedores').select('id, status_cobranca').eq('filial_id', filtroFilial),
@@ -343,8 +343,8 @@ export default function Dashboard() {
       const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud] = await Promise.all([
         supabase.from('vendas').select('valor_final, filial_id').eq('data_venda', hoje).eq('efetivada', true),
         supabase.from('vendas').select('data_venda, valor_final, filial_id').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true),
-        supabase.from('despesas').select('valor').eq('pago', false),
-        supabase.from('despesas').select('valor').eq('pago', false).lt('data_vencimento', hoje),
+        supabase.from('despesas').select('valor, filial_id').eq('pago', false),
+        supabase.from('despesas').select('valor, filial_id').eq('pago', false).lt('data_vencimento', hoje),
         supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
         supabase.from('cobrancas_boletos').select('valor, devedor_id, filial_id').is('data_liquidacao', null),
         supabase.from('cobrancas_devedores').select('id, status_cobranca, filial_id'),
@@ -357,13 +357,19 @@ export default function Dashboard() {
 
       /* ── dados por filial ── */
       const fd = currentFiliais.map(f => {
-        const vH = vHAll.filter(v => v.filial_id === f.id)
-        const vM = vMAll.filter(v => v.filial_id === f.id)
-        const bL = bolAll.filter(b => b.filial_id === f.id)
-        const dL = devsAll.filter(d => d.filial_id === f.id)
+        const vH  = vHAll.filter(v => v.filial_id === f.id)
+        const vM  = vMAll.filter(v => v.filial_id === f.id)
+        const bL  = bolAll.filter(b => b.filial_id === f.id)
+        const dL  = devsAll.filter(d => d.filial_id === f.id)
+        const dFL = dA.filter(d => d.filial_id === f.id)
+        const dFLa = dAtr.filter(d => d.filial_id === f.id)
         return {
           id: f.id, nome: f.nome,
-          stats: calcStats(vH, vM, bL, dL),
+          stats: {
+            ...calcStats(vH, vM, bL, dL),
+            totDespAberto:   dFL.reduce((s, d)  => s + (d.valor || 0), 0), qtdDespAberto:   dFL.length,
+            totDespAtrasado: dFLa.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dFLa.length,
+          },
           chartData: buildChartData(vM),
         }
       })
@@ -453,6 +459,7 @@ export default function Dashboard() {
                   loading={loading}
                   navigate={navigate}
                   mesTit={mesTit}
+                  showDesp
                 />
               ))}
             </>
