@@ -87,8 +87,10 @@ begin;
     end loop;
   end $$;
 
-  -- Apaga os arquivos de documentos de cobrança (metadados no banco).
-  delete from storage.objects where bucket_id = 'cobrancas-documentos';
+  -- OBS.: os ARQUIVOS de documentos (bucket 'cobrancas-documentos') NÃO
+  -- podem ser apagados por SQL — o Supabase bloqueia isso por segurança.
+  -- Esvazie o bucket pela tela: Storage → cobrancas-documentos →
+  -- selecionar tudo → Delete. (Os registros no banco já foram removidos acima.)
 
   -- Apaga os vendedores (todos que NÃO são admin). O login some junto,
   -- pois o perfil é removido em cascata ao apagar o usuário.
