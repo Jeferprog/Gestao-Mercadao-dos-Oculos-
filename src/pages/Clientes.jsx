@@ -11,11 +11,12 @@ const Label = ({ children }) => (
   }}>{children}</label>
 )
 
-const FORM_INIT = { nome: '', cpf: '', telefone: '', endereco: '' }
+const FORM_INIT = { nome: '', cpf: '', telefone: '', endereco: '', filial_id: '' }
 
 export default function Clientes() {
-  const { isAdmin } = useAuth()
+  const { isAdmin, profile } = useAuth()
   const [clientes, setClientes] = useState([])
+  const [filiais, setFiliais] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(FORM_INIT)
@@ -31,34 +32,50 @@ export default function Clientes() {
 
   const carregar = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('clientes').select('*').order('nome', { nullsFirst: false })
+    let q = supabase.from('clientes').select('*').order('nome', { nullsFirst: false })
+    // Vendedor vê só a própria filial (o RLS também garante isso no banco).
+    if (!isAdmin && profile?.filial_id) q = q.eq('filial_id', profile.filial_id)
+    const { data } = await q
     setClientes(data || [])
     setLoading(false)
-  }, [])
+  }, [isAdmin, profile?.filial_id])
 
   useEffect(() => { carregar() }, [carregar])
 
+  useEffect(() => {
+    supabase.from('filiais').select('*').order('nome').then(({ data }) => setFiliais(data || []))
+  }, [])
+
   function abrirNovo() {
-    setForm(FORM_INIT)
+    // Vendedor já entra com a própria filial; admin com filial única pré-selecionada.
+    const filialPadrao = !isAdmin
+      ? (profile?.filial_id || '')
+      : (filiais.length === 1 ? filiais[0].id : '')
+    setForm({ ...FORM_INIT, filial_id: filialPadrao })
     setEditId(null)
     setShowForm(true)
   }
 
   function abrirEdicao(c) {
-    setForm({ nome: c.nome || '', cpf: c.cpf || '', telefone: c.telefone || '', endereco: c.endereco || '' })
+    setForm({ nome: c.nome || '', cpf: c.cpf || '', telefone: c.telefone || '', endereco: c.endereco || '', filial_id: c.filial_id || '' })
     setEditId(c.id)
     setShowForm(true)
   }
 
   async function salvar(e) {
     e.preventDefault()
+    // Vendedor sempre grava na própria filial; admin escolhe no formulário.
+    const filialFinal = isAdmin ? (form.filial_id || null) : (profile?.filial_id || null)
+    if (isAdmin && filiais.length > 1 && !filialFinal) {
+      showToast('Selecione a filial do cliente.', 'err'); return
+    }
     setSaving(true)
     const payload = {
       nome:     form.nome     || null,
       cpf:      form.cpf      || null,
       telefone: form.telefone || null,
       endereco: form.endereco || null,
+      filial_id: filialFinal,
     }
     let error
     if (editId) {
@@ -86,6 +103,8 @@ export default function Clientes() {
       carregar()
     }
   }
+
+  const filialMap = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
 
   const listaFiltrada = clientes.filter(c => {
     if (!busca) return true
@@ -145,6 +164,16 @@ export default function Clientes() {
                   value={form.telefone}
                   onChange={e => setForm(f => ({ ...f, telefone: e.target.value }))} />
               </div>
+              {isAdmin && filiais.length > 1 && (
+                <div>
+                  <Label>Filial</Label>
+                  <select style={inputCss} value={form.filial_id}
+                    onChange={e => setForm(f => ({ ...f, filial_id: e.target.value }))}>
+                    <option value="">Selecione…</option>
+                    {filiais.map(fl => <option key={fl.id} value={fl.id}>{fl.nome}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
             <div>
               <Label>Endereço completo</Label>
@@ -196,7 +225,7 @@ export default function Clientes() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
-                  {['Nome', 'CPF', 'Telefone', 'Endereço', 'Ações'].map(h => (
+                  {['Nome', 'CPF', 'Telefone', 'Endereço', ...(isAdmin ? ['Filial'] : []), 'Ações'].map(h => (
                     <th key={h} style={{
                       padding: '0.6rem 0.875rem', textAlign: 'left', fontSize: '0.7rem',
                       fontWeight: '600', color: C.onSurfaceVariant, textTransform: 'uppercase',
@@ -224,6 +253,11 @@ export default function Clientes() {
                     <td style={{ padding: '0.7rem 0.875rem', color: C.onSurfaceVariant, fontSize: '0.82rem', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: F.body }}>
                       {c.endereco || <span style={{ color: C.outlineVariant }}>—</span>}
                     </td>
+                    {isAdmin && (
+                      <td style={{ padding: '0.7rem 0.875rem', color: C.onSurfaceVariant, fontSize: '0.82rem', whiteSpace: 'nowrap', fontFamily: F.body }}>
+                        {filialMap[c.filial_id] || <span style={{ color: C.outlineVariant }}>—</span>}
+                      </td>
+                    )}
                     <td style={{ padding: '0.7rem 0.875rem' }}>
                       <div style={{ display: 'flex', gap: '0.4rem' }}>
                         <button onClick={() => abrirEdicao(c)}

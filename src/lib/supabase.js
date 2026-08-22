@@ -8,3 +8,12 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+// Cliente isolado, sem persistir sessão, usado apenas para CRIAR usuários.
+// Assim o cadastro de um novo vendedor não substitui (nem desloga) a
+// sessão do administrador que está logado na aba.
+export function createSignupClient() {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+}
