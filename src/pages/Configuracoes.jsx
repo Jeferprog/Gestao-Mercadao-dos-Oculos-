@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, createSignupClient } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 
@@ -452,20 +452,25 @@ function TabVendedores({ showToast }) {
     }
     if (form.senha.length < 6) { setModalError('A senha deve ter pelo menos 6 caracteres.'); return }
     setSaving(true); setModalError('')
-    const { data, error } = await supabase.auth.signUp({
+    // Cria o usuário num cliente isolado, para não substituir a sessão do admin.
+    const signupClient = createSignupClient()
+    const { data, error } = await signupClient.auth.signUp({
       email: form.email.trim(), password: form.senha,
-      options: { data: { nome: form.nome.trim(), papel: form.papel } },
+      options: { data: { nome: form.nome.trim() } },
     })
     if (error) { setModalError('Erro ao criar usuário: ' + error.message); setSaving(false); return }
     if (data.user) {
-      await supabase.from('profiles').update({
+      // O papel/comissão/filial são definidos pelo admin (cliente principal),
+      // pois só o admin tem permissão para gravar esses campos.
+      const { error: upErr } = await supabase.from('profiles').update({
         nome: form.nome.trim(), papel: form.papel,
         comissao_percentual: parseFloat(form.comissao_percentual) || 0,
         filial_id: form.filial_id || null,
       }).eq('id', data.user.id)
+      if (upErr) { setModalError('Usuário criado, mas houve erro ao definir o perfil: ' + upErr.message); setSaving(false); await loadVendedores(); return }
     }
     setSaving(false); fecharModal(); await loadVendedores()
-    showToast('Vendedor criado! Um e-mail de confirmação foi enviado.')
+    showToast('Vendedor criado com sucesso!')
   }
 
   async function handleEdit() {
