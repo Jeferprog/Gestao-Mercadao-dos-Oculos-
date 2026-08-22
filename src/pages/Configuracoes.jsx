@@ -424,7 +424,7 @@ function TabVendedores({ showToast }) {
   const [form, setForm] = useState(FORM_INITIAL)
   const [modalError, setModalError] = useState('')
   const [saving, setSaving] = useState(false)
-  const [mostrarExcluidos, setMostrarExcluidos] = useState(false)
+  const [mostrarInativos, setMostrarInativos] = useState(false)
 
   const loadVendedores = useCallback(async () => {
     const [{ data: perfis }, { data: fils }] = await Promise.all([
@@ -493,31 +493,9 @@ function TabVendedores({ showToast }) {
     showToast(v.ativo ? 'Vendedor desativado.' : 'Vendedor ativado!')
   }
 
-  async function excluir(v) {
-    if (!window.confirm(
-      `Excluir o cadastro de "${v.nome}"?\n\n` +
-      `Ele deixará de aparecer na lista e não poderá mais acessar o sistema.\n` +
-      `As vendas e captações que ele lançou CONTINUAM visíveis para você.\n\n` +
-      `Você pode restaurar o cadastro depois, se precisar.`
-    )) return
-    const { error } = await supabase.from('profiles')
-      .update({ excluido: true, ativo: false }).eq('id', v.id)
-    if (error) { showToast('Erro ao excluir: ' + error.message, 'err'); return }
-    await loadVendedores()
-    showToast('Cadastro excluído. O histórico foi preservado.')
-  }
-
-  async function restaurar(v) {
-    const { error } = await supabase.from('profiles')
-      .update({ excluido: false, ativo: true }).eq('id', v.id)
-    if (error) { showToast('Erro ao restaurar: ' + error.message, 'err'); return }
-    await loadVendedores()
-    showToast('Cadastro restaurado!')
-  }
-
   const filialMap = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
-  const qtdExcluidos = vendedores.filter(v => v.excluido).length
-  const vendedoresVisiveis = mostrarExcluidos ? vendedores : vendedores.filter(v => !v.excluido)
+  const qtdInativos = vendedores.filter(v => !v.ativo).length
+  const vendedoresVisiveis = mostrarInativos ? vendedores : vendedores.filter(v => v.ativo)
 
   if (loading) return <p style={{ color: C.onSurfaceVariant, fontFamily: F.body }}>Carregando vendedores...</p>
 
@@ -528,10 +506,10 @@ function TabVendedores({ showToast }) {
           <p style={{ margin: 0, color: C.onSurfaceVariant, fontSize: '0.875rem', fontFamily: F.body }}>
             {vendedoresVisiveis.length} {vendedoresVisiveis.length === 1 ? 'pessoa' : 'pessoas'}
           </p>
-          {qtdExcluidos > 0 && (
-            <button onClick={() => setMostrarExcluidos(v => !v)}
+          {qtdInativos > 0 && (
+            <button onClick={() => setMostrarInativos(v => !v)}
               style={{ padding: '0.3rem 0.7rem', background: 'none', border: `1.5px solid ${C.borderSubtle}`, borderRadius: '0.5rem', color: C.onSurfaceVariant, fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
-              {mostrarExcluidos ? 'Ocultar excluídos' : `Ver excluídos (${qtdExcluidos})`}
+              {mostrarInativos ? 'Mostrar só ativos' : `Mostrar inativos (${qtdInativos})`}
             </button>
           )}
         </div>
@@ -565,14 +543,11 @@ function TabVendedores({ showToast }) {
               )}
               {vendedoresVisiveis.map((v, i) => (
                 <tr key={v.id}
-                  style={{ borderBottom: i < vendedoresVisiveis.length - 1 ? `1px solid ${C.borderSubtle}` : 'none', transition: 'background 0.1s', opacity: v.excluido ? 0.6 : 1 }}
+                  style={{ borderBottom: i < vendedoresVisiveis.length - 1 ? `1px solid ${C.borderSubtle}` : 'none', transition: 'background 0.1s', opacity: v.ativo ? 1 : 0.6 }}
                   onMouseEnter={e => e.currentTarget.style.background = C.surfaceContainerLow}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  <td style={{ padding: '0.875rem 1rem', fontWeight: '600', color: C.onSurface, fontSize: '0.875rem', fontFamily: F.body }}>
-                    {v.nome}
-                    {v.excluido && <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', fontWeight: '700', color: C.statusDanger, fontFamily: F.body }}>EXCLUÍDO</span>}
-                  </td>
+                  <td style={{ padding: '0.875rem 1rem', fontWeight: '600', color: C.onSurface, fontSize: '0.875rem', fontFamily: F.body }}>{v.nome}</td>
                   <td style={{ padding: '0.875rem 1rem', color: C.onSurfaceVariant, fontSize: '0.875rem', fontFamily: F.body }}>{v.email || '—'}</td>
                   <td style={{ padding: '0.875rem 1rem' }}>
                     <span style={{
@@ -602,27 +577,14 @@ function TabVendedores({ showToast }) {
                   </td>
                   <td style={{ padding: '0.875rem 1rem' }}>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      {v.excluido ? (
-                        <button onClick={() => restaurar(v)}
-                          style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${C.statusSuccessBg}`, borderRadius: '0.5rem', color: C.statusSuccess, fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
-                          Restaurar
-                        </button>
-                      ) : (
-                        <>
-                          <button onClick={() => openEdit(v)}
-                            style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${C.borderSubtle}`, borderRadius: '0.5rem', color: C.onSurfaceVariant, fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
-                            Editar
-                          </button>
-                          <button onClick={() => toggleAtivo(v)}
-                            style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${v.ativo ? C.outlineVariant : C.statusSuccessBg}`, borderRadius: '0.5rem', color: v.ativo ? C.statusDanger : C.statusSuccess, fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
-                            {v.ativo ? 'Desativar' : 'Ativar'}
-                          </button>
-                          <button onClick={() => excluir(v)}
-                            style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${C.outlineVariant}`, borderRadius: '0.5rem', color: C.statusDanger, fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
-                            Excluir
-                          </button>
-                        </>
-                      )}
+                      <button onClick={() => openEdit(v)}
+                        style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${C.borderSubtle}`, borderRadius: '0.5rem', color: C.onSurfaceVariant, fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
+                        Editar
+                      </button>
+                      <button onClick={() => toggleAtivo(v)}
+                        style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${v.ativo ? C.outlineVariant : C.statusSuccessBg}`, borderRadius: '0.5rem', color: v.ativo ? C.statusDanger : C.statusSuccess, fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
+                        {v.ativo ? 'Desativar' : 'Ativar'}
+                      </button>
                     </div>
                   </td>
                 </tr>

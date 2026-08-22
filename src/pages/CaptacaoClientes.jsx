@@ -61,7 +61,7 @@ export default function CaptacaoClientes() {
     async function init() {
       const [{ data: fils }, { data: vends }] = await Promise.all([
         supabase.from('filiais').select('*').order('nome'),
-        supabase.from('profiles').select('id, nome, ativo, excluido').order('nome'),
+        supabase.from('profiles').select('id, nome, ativo').order('nome'),
       ])
       setFiliais(fils || [])
       setVendedores(vends || [])
@@ -158,8 +158,8 @@ export default function CaptacaoClientes() {
   }
 
   const vendedorMap = Object.fromEntries(vendedores.map(v => [v.id, v.nome]))
-  // Só ativos e não excluídos aparecem para novos lançamentos.
-  const vendedoresAtivos = vendedores.filter(v => v.ativo && !v.excluido)
+  // Só ativos aparecem para novos lançamentos.
+  const vendedoresAtivos = vendedores.filter(v => v.ativo)
   const filialMap   = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
 
   return (

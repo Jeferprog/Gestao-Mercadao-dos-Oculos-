@@ -310,7 +310,7 @@ export default function Vendas() {
     async function init() {
       const [{ data: cfgRows }, { data: vends }, { data: fils }] = await Promise.all([
         supabase.from('configuracoes').select('*'),
-        supabase.from('profiles').select('id, nome, ativo, excluido').order('nome'),
+        supabase.from('profiles').select('id, nome, ativo').order('nome'),
         supabase.from('filiais').select('*').order('nome'),
       ])
       if (cfgRows) {
@@ -547,8 +547,8 @@ export default function Vendas() {
   const totDesc = vendasEfetivadas.reduce((s, v) => s + (v.desconto || 0), 0)
   const totFinal = vendasEfetivadas.reduce((s, v) => s + (v.valor_final || 0), 0)
   const vendedorMap = Object.fromEntries(vendedores.map(v => [v.id, v.nome]))
-  // Só vendedores ativos e não excluídos podem receber NOVAS vendas.
-  const vendedoresAtivos = vendedores.filter(v => v.ativo && !v.excluido)
+  // Só vendedores ativos podem receber NOVAS vendas.
+  const vendedoresAtivos = vendedores.filter(v => v.ativo)
   const filialMap = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
 
   function navegarDia(delta) {
