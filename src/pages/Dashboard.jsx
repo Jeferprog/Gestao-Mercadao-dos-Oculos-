@@ -318,13 +318,13 @@ export default function Dashboard() {
           supabase.from('despesas').select('valor').eq('pago', false).eq('filial_id', filtroFilial),
           supabase.from('despesas').select('valor').eq('pago', false).lt('data_vencimento', hoje).eq('filial_id', filtroFilial),
           supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
-          supabase.from('cobrancas_boletos').select('valor, devedor_id').is('data_liquidacao', null).eq('filial_id', filtroFilial),
+          supabase.from('cobrancas_boletos').select('valor, devedor_id, situacao_atual').is('data_liquidacao', null).eq('filial_id', filtroFilial),
           supabase.from('cobrancas_devedores').select('id, status_cobranca').eq('filial_id', filtroFilial),
           supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia, filial_id').gte('data_audiencia', hoje).lte('data_audiencia', em7).order('data_audiencia').limit(8),
         ])
         const vH = rH.data || [], vM = rM.data || []
         const dA = rDA.data || [], dAtr = rDAtr.data || []
-        const bols = rBol.data || [], devs = rDevs.data || []
+        const bols = (rBol.data || []).filter(b => b.situacao_atual !== 'Liquidada'), devs = rDevs.data || []
         const bs = new Set(bols.map(b => b.devedor_id))
         setStats({
           ...calcStats(vH, vM, bols, devs),
@@ -346,14 +346,14 @@ export default function Dashboard() {
         supabase.from('despesas').select('valor, filial_id').eq('pago', false),
         supabase.from('despesas').select('valor, filial_id').eq('pago', false).lt('data_vencimento', hoje),
         supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
-        supabase.from('cobrancas_boletos').select('valor, devedor_id, filial_id').is('data_liquidacao', null),
+        supabase.from('cobrancas_boletos').select('valor, devedor_id, filial_id, situacao_atual').is('data_liquidacao', null),
         supabase.from('cobrancas_devedores').select('id, status_cobranca, filial_id'),
         supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia, filial_id').gte('data_audiencia', hoje).lte('data_audiencia', em7).order('data_audiencia').limit(8),
       ])
 
       const vHAll  = rH.data  || [], vMAll  = rM.data  || []
       const dA     = rDA.data || [], dAtr   = rDAtr.data || []
-      const bolAll = rBol.data || [], devsAll = rDevs.data || []
+      const bolAll = (rBol.data || []).filter(b => b.situacao_atual !== 'Liquidada'), devsAll = rDevs.data || []
 
       /* ── dados por filial ── */
       const fd = currentFiliais.map(f => {

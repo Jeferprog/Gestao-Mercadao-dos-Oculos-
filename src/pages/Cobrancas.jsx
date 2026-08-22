@@ -308,7 +308,7 @@ export default function Cobrancas() {
   const [boletoEdits,      setBoletoEdits]      = useState({})
   const [savingBoleto,     setSavingBoleto]     = useState(new Set())
 
-  const [situacoesCobranca,    setSituacoesCobranca]    = useState(['Pendente','Em negociação','Acordado','Pago','Protestado','Ação judicial','Incobrável'])
+  const [situacoesCobranca,    setSituacoesCobranca]    = useState(['Pendente','Em negociação','Acordado','Liquidada','Protestado','Ação judicial','Incobrável'])
 
   const [importStep,           setImportStep]           = useState('closed') // 'closed' | 'selecting' | 'preview'
   const [importFilialId,       setImportFilialId]       = useState('')
@@ -324,6 +324,12 @@ export default function Cobrancas() {
   })
   const [filtroVencInicio, setFiltroVencInicio] = useState('')
   const [filtroVencFim,    setFiltroVencFim]    = useState('')
+
+  const [filtroBolSitAtual,  setFiltroBolSitAtual]  = useState('')
+  const [filtroBolSitBanco,  setFiltroBolSitBanco]  = useState('')
+  const [filtroBolFilial,    setFiltroBolFilial]    = useState('')
+  const [filtroBolVencInicio,setFiltroBolVencInicio]= useState('')
+  const [filtroBolVencFim,   setFiltroBolVencFim]   = useState('')
 
   const [docs,         setDocs]         = useState([])
   const [loadingDocs,  setLoadingDocs]  = useState(false)
@@ -366,11 +372,12 @@ export default function Cobrancas() {
   useEffect(() => { carregar() }, [carregar])
 
   /* ── helpers derivados ── */
-  function abertos(dev) { return (dev.cobrancas_boletos || []).filter(b => !b.data_liquidacao) }
+  function abertos(dev) { return (dev.cobrancas_boletos || []).filter(b => !b.data_liquidacao && b.situacao_atual !== 'Liquidada') }
   function valorAberto(dev) { return abertos(dev).reduce((s, b) => s + (b.valor || 0), 0) }
 
   /* ── filtros ── */
   const listaFiltrada = devedores.filter(dev => {
+    if (abertos(dev).length === 0) return false
     if (filtros.busca && !dev.nome_pagador.toLowerCase().includes(filtros.busca.toLowerCase())) return false
     if (filtros.status && dev.status_cobranca !== filtros.status) return false
     if (filtros.somenteNovos && dev.status_cobranca !== 'Novo') return false
@@ -629,6 +636,46 @@ export default function Cobrancas() {
   const filialMap = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
   const temFiltrosVenc = filtroVencInicio || filtroVencFim
 
+  /* ── Relação de boletos ── */
+  const todosBoletos = devedores.flatMap(dev =>
+    (dev.cobrancas_boletos || []).map(b => ({
+      ...b,
+      nome_pagador: dev.nome_pagador,
+      filial_id_dev: dev.filial_id,
+      filial_nome: filialMap[dev.filial_id] || '—',
+    }))
+  )
+  const sitsBancoDB = [...new Set(todosBoletos.map(b => b.situacao_boleto).filter(Boolean))].sort()
+  const boletosFiltrados = todosBoletos.filter(b => {
+    if (filtroBolSitAtual && b.situacao_atual !== filtroBolSitAtual) return false
+    if (filtroBolSitBanco && b.situacao_boleto !== filtroBolSitBanco) return false
+    if (filtroBolFilial && b.filial_id_dev !== filtroBolFilial) return false
+    if (filtroBolVencInicio && b.data_vencimento < filtroBolVencInicio) return false
+    if (filtroBolVencFim && b.data_vencimento > filtroBolVencFim) return false
+    return true
+  })
+  const totalBolVal = boletosFiltrados.reduce((s, b) => s + (b.valor || 0), 0)
+
+  function exportarBoletos() {
+    const rows = boletosFiltrados.map(b => ({
+      'Devedor':          b.nome_pagador,
+      'Filial':           b.filial_nome,
+      'Nosso Nº':         b.nosso_numero || '',
+      'Nº Doc':           b.numero_doc   || '',
+      'Vencimento':       fDate(b.data_vencimento),
+      'Valor':            b.valor || 0,
+      'Sit. Banco':       b.situacao_boleto || '',
+      'Situação Atual':   b.situacao_atual  || '',
+      'Motivo':           b.motivo          || '',
+      'Dt. Liquidação':   fDate(b.data_liquidacao),
+      'Vl. Liquidação':   b.valor_liquidacao || '',
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Boletos')
+    XLSX.writeFile(wb, `boletos_${todayISO()}.xlsx`)
+  }
+
   /* ════════════════════ RENDER ════════════════════ */
 
   return (
@@ -840,7 +887,7 @@ export default function Cobrancas() {
                       {[...(modalDev.cobrancas_boletos || [])]
                         .sort((a, b) => (a.data_vencimento || '').localeCompare(b.data_vencimento || ''))
                         .map(b => {
-                          const emAberto = !b.data_liquidacao
+                          const emAberto = !b.data_liquidacao && b.situacao_atual !== 'Liquidada'
                           const edit = boletoEdits[b.id] || { situacao_atual: b.situacao_atual || '', motivo: b.motivo || '', dirty: false }
                           const isSaving = savingBoleto.has(b.id)
                           return (
@@ -1100,6 +1147,10 @@ export default function Cobrancas() {
             onClick={() => setView('audiencias')}
             style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', border: '1.5px solid', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s', fontFamily: F.body, ...(view === 'audiencias' ? { background: C.onSurface, color: C.surfaceContainerLowest, borderColor: C.onSurface } : { background: C.surfaceContainerLowest, color: C.onSurfaceVariant, borderColor: C.borderSubtle }) }}
           >📅 Audiências {comAudiencia.length > 0 && `(${comAudiencia.length})`}</button>
+          <button
+            onClick={() => setView('boletos')}
+            style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', border: '1.5px solid', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s', fontFamily: F.body, ...(view === 'boletos' ? { background: C.onSurface, color: C.surfaceContainerLowest, borderColor: C.onSurface } : { background: C.surfaceContainerLowest, color: C.onSurfaceVariant, borderColor: C.borderSubtle }) }}
+          >🗂️ Relação de Boletos</button>
           <button
             onClick={clickImportar} disabled={importando}
             style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.85rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1, fontFamily: F.body }}
@@ -1378,6 +1429,115 @@ export default function Cobrancas() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ════════ VIEW: RELAÇÃO DE BOLETOS ════════ */}
+      {view === 'boletos' && (
+        <>
+          {/* Filtros */}
+          <div style={{ ...dsCard, marginBottom: '1rem', padding: '1rem 1.25rem' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.625rem', alignItems: 'center' }}>
+              <select
+                value={filtroBolSitAtual} onChange={e => setFiltroBolSitAtual(e.target.value)}
+                style={{ ...inputCss, minWidth: '160px' }}
+              >
+                <option value="">Situação Atual (todas)</option>
+                {situacoesCobranca.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select
+                value={filtroBolSitBanco} onChange={e => setFiltroBolSitBanco(e.target.value)}
+                style={{ ...inputCss, minWidth: '160px' }}
+              >
+                <option value="">Sit. Banco (todas)</option>
+                {sitsBancoDB.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              {isAdmin && (
+                <select
+                  value={filtroBolFilial} onChange={e => setFiltroBolFilial(e.target.value)}
+                  style={{ ...inputCss, minWidth: '150px' }}
+                >
+                  <option value="">Filial (todas)</option>
+                  {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                </select>
+              )}
+              <input
+                type="date" value={filtroBolVencInicio} onChange={e => setFiltroBolVencInicio(e.target.value)}
+                style={{ ...inputCss, width: '140px' }} title="Vencimento de"
+              />
+              <input
+                type="date" value={filtroBolVencFim} onChange={e => setFiltroBolVencFim(e.target.value)}
+                style={{ ...inputCss, width: '140px' }} title="Vencimento até"
+              />
+              <button
+                onClick={() => { setFiltroBolSitAtual(''); setFiltroBolSitBanco(''); setFiltroBolFilial(''); setFiltroBolVencInicio(''); setFiltroBolVencFim('') }}
+                style={{ padding: '0.45rem 0.9rem', borderRadius: '0.5rem', border: `1px solid ${C.borderSubtle}`, background: C.surfaceContainerHigh, color: C.onSurfaceVariant, cursor: 'pointer', fontSize: '0.82rem', fontFamily: F.body }}
+              >Limpar filtros</button>
+              <button
+                onClick={exportarBoletos}
+                style={{ padding: '0.45rem 0.9rem', borderRadius: '0.5rem', border: 'none', background: C.primaryContainer, color: C.onPrimary, cursor: 'pointer', fontSize: '0.82rem', fontWeight: '700', fontFamily: F.body, marginLeft: 'auto' }}
+              >⬇️ Exportar Excel</button>
+            </div>
+          </div>
+
+          {/* Totais */}
+          <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ ...dsCard, flex: '1 1 160px', padding: '0.875rem 1.25rem' }}>
+              <div style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', fontFamily: F.body, marginBottom: '0.25rem' }}>Boletos filtrados</div>
+              <div style={{ fontSize: '1.6rem', fontWeight: '800', color: C.onSurface, fontFamily: F.headline }}>{boletosFiltrados.length}</div>
+            </div>
+            <div style={{ ...dsCard, flex: '1 1 200px', padding: '0.875rem 1.25rem' }}>
+              <div style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em', fontFamily: F.body, marginBottom: '0.25rem' }}>Valor total</div>
+              <div style={{ fontSize: '1.6rem', fontWeight: '800', color: C.primaryContainer, fontFamily: F.headline }}>{fBRL(totalBolVal)}</div>
+            </div>
+          </div>
+
+          {/* Tabela */}
+          <div style={{ ...dsCard, padding: 0, overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto' }}>
+              {boletosFiltrados.length === 0 ? (
+                <div style={{ padding: '3rem', textAlign: 'center', color: C.onSurfaceVariant, fontFamily: F.body }}>
+                  Nenhum boleto encontrado com os filtros selecionados.
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: F.body }}>
+                  <thead>
+                    <tr style={{ background: C.surfaceContainerHigh }}>
+                      {['Devedor', isAdmin ? 'Filial' : null, 'Nosso Nº', 'Vencimento', 'Valor', 'Sit. Banco', 'Situação Atual', 'Motivo', 'Dt. Liquidação'].filter(Boolean).map(h => (
+                        <th key={h} style={{ padding: '0.65rem 0.875rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {boletosFiltrados.map(b => {
+                      const liquidado = !!b.data_liquidacao || b.situacao_atual === 'Liquidada'
+                      return (
+                        <tr key={b.id} style={{ borderBottom: `1px solid ${C.borderSubtle}`, background: liquidado ? C.statusSuccessBg + '33' : 'transparent' }}>
+                          <td style={{ padding: '0.6rem 0.875rem', fontWeight: '600', color: C.onSurface, whiteSpace: 'nowrap' }}>{b.nome_pagador}</td>
+                          {isAdmin && <td style={{ padding: '0.6rem 0.875rem', color: C.onSurfaceVariant, fontSize: '0.82rem', whiteSpace: 'nowrap' }}>{b.filial_nome}</td>}
+                          <td style={{ padding: '0.6rem 0.875rem', fontFamily: F.mono, fontSize: '0.82rem', color: C.onSurfaceVariant }}>{b.nosso_numero || '—'}</td>
+                          <td style={{ padding: '0.6rem 0.875rem', whiteSpace: 'nowrap', color: C.onSurface }}>{fDate(b.data_vencimento)}</td>
+                          <td style={{ padding: '0.6rem 0.875rem', fontWeight: '700', color: liquidado ? C.statusSuccess : C.statusDanger, whiteSpace: 'nowrap', fontFamily: F.mono }}>{fBRL(b.valor)}</td>
+                          <td style={{ padding: '0.6rem 0.875rem' }}>
+                            {b.situacao_boleto ? (
+                              <span style={{ background: C.surfaceContainerHigh, color: C.onSurfaceVariant, borderRadius: '0.35rem', padding: '0.15rem 0.45rem', fontSize: '0.72rem', fontWeight: '600' }}>{b.situacao_boleto}</span>
+                            ) : <span style={{ color: C.outlineVariant }}>—</span>}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.875rem' }}>
+                            {b.situacao_atual ? (
+                              <span style={{ background: b.situacao_atual === 'Liquidada' ? C.statusSuccessBg : C.primaryContainer + '33', color: b.situacao_atual === 'Liquidada' ? C.statusSuccess : C.primaryContainer, borderRadius: '0.35rem', padding: '0.15rem 0.45rem', fontSize: '0.72rem', fontWeight: '700' }}>{b.situacao_atual}</span>
+                            ) : <span style={{ color: C.outlineVariant }}>—</span>}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.875rem', color: C.onSurfaceVariant, fontSize: '0.82rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.motivo || <span style={{ color: C.outlineVariant }}>—</span>}</td>
+                          <td style={{ padding: '0.6rem 0.875rem', whiteSpace: 'nowrap', color: liquidado ? C.statusSuccess : C.outlineVariant, fontWeight: liquidado ? '600' : '400' }}>{fDate(b.data_liquidacao)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
