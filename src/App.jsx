@@ -35,6 +35,15 @@ function ProtectedRoute({ children }) {
   return children
 }
 
+// Rota exclusiva de administradores. Vendedor é redirecionado ao Dashboard.
+function AdminRoute({ children }) {
+  const { session, isAdmin, loading } = useAuth()
+  if (loading) return <Loading />
+  if (!session) return <Navigate to="/login" replace />
+  if (!isAdmin) return <Navigate to="/dashboard" replace />
+  return children
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -50,12 +59,12 @@ function AppRoutes() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="vendas" element={<Vendas />} />
-        <Route path="resumo" element={<Resumo />} />
+        <Route path="resumo" element={<AdminRoute><Resumo /></AdminRoute>} />
         <Route path="vendedores" element={<Vendedores />} />
         <Route path="cobrancas" element={<Cobrancas />} />
         <Route path="clientes" element={<Clientes />} />
         <Route path="captacao" element={<CaptacaoClientes />} />
-        <Route path="configuracoes" element={<Configuracoes />} />
+        <Route path="configuracoes" element={<AdminRoute><Configuracoes /></AdminRoute>} />
       </Route>
     </Routes>
   )

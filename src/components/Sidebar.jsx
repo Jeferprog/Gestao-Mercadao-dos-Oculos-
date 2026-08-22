@@ -17,6 +17,7 @@ const NAV_ITEMS = [
     to: '/resumo',
     label: 'Contas a Pagar',
     icon: 'account_balance_wallet',
+    adminOnly: true,
   },
   {
     to: '/vendedores',
@@ -42,12 +43,16 @@ const NAV_ITEMS = [
     to: '/configuracoes',
     label: 'Configurações',
     icon: 'settings',
+    adminOnly: true,
   },
 ]
 
 export default function Sidebar({ isMobile = false, isOpen = false, onClose = () => {} }) {
   const { profile, signOut } = useAuth()
   const navigate = useNavigate()
+
+  const isAdmin = profile?.papel === 'admin'
+  const navItems = NAV_ITEMS.filter(item => !item.adminOnly || isAdmin)
 
   async function handleSignOut() {
     await signOut()
@@ -170,7 +175,7 @@ export default function Sidebar({ isMobile = false, isOpen = false, onClose = ()
 
       {/* Navegação */}
       <nav style={{ flex: 1, padding: '0.25rem 0.625rem', overflowY: 'auto' }}>
-        {NAV_ITEMS.map(({ to, label, icon }) => (
+        {navItems.map(({ to, label, icon }) => (
           <NavLink
             key={to}
             to={to}
