@@ -61,7 +61,7 @@ export default function CaptacaoClientes() {
     async function init() {
       const [{ data: fils }, { data: vends }] = await Promise.all([
         supabase.from('filiais').select('*').order('nome'),
-        supabase.from('profiles').select('id, nome').eq('ativo', true).order('nome'),
+        supabase.from('profiles').select('id, nome, ativo').order('nome'),
       ])
       setFiliais(fils || [])
       setVendedores(vends || [])
@@ -158,6 +158,8 @@ export default function CaptacaoClientes() {
   }
 
   const vendedorMap = Object.fromEntries(vendedores.map(v => [v.id, v.nome]))
+  // Só ativos aparecem para novos lançamentos.
+  const vendedoresAtivos = vendedores.filter(v => v.ativo)
   const filialMap   = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
 
   return (
@@ -232,7 +234,7 @@ export default function CaptacaoClientes() {
                     value={form.vendedor_id}
                     onChange={e => setForm(f => ({ ...f, vendedor_id: e.target.value }))}>
                     <option value="">Sem vendedor</option>
-                    {vendedores.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
+                    {vendedoresAtivos.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
                   </select>
                 ) : (
                   <input style={{ ...inputCss, background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'default' }}

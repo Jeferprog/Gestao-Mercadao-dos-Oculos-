@@ -424,6 +424,7 @@ function TabVendedores({ showToast }) {
   const [form, setForm] = useState(FORM_INITIAL)
   const [modalError, setModalError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [mostrarInativos, setMostrarInativos] = useState(false)
 
   const loadVendedores = useCallback(async () => {
     const [{ data: perfis }, { data: fils }] = await Promise.all([
@@ -493,15 +494,25 @@ function TabVendedores({ showToast }) {
   }
 
   const filialMap = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
+  const qtdInativos = vendedores.filter(v => !v.ativo).length
+  const vendedoresVisiveis = mostrarInativos ? vendedores : vendedores.filter(v => v.ativo)
 
   if (loading) return <p style={{ color: C.onSurfaceVariant, fontFamily: F.body }}>Carregando vendedores...</p>
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <p style={{ margin: 0, color: C.onSurfaceVariant, fontSize: '0.875rem', fontFamily: F.body }}>
-          {vendedores.length} {vendedores.length === 1 ? 'pessoa cadastrada' : 'pessoas cadastradas'}
-        </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <p style={{ margin: 0, color: C.onSurfaceVariant, fontSize: '0.875rem', fontFamily: F.body }}>
+            {vendedoresVisiveis.length} {vendedoresVisiveis.length === 1 ? 'pessoa' : 'pessoas'}
+          </p>
+          {qtdInativos > 0 && (
+            <button onClick={() => setMostrarInativos(v => !v)}
+              style={{ padding: '0.3rem 0.7rem', background: 'none', border: `1.5px solid ${C.borderSubtle}`, borderRadius: '0.5rem', color: C.onSurfaceVariant, fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
+              {mostrarInativos ? 'Mostrar só ativos' : `Mostrar inativos (${qtdInativos})`}
+            </button>
+          )}
+        </div>
         <button onClick={openAdd} style={btnPrimary}>+ Adicionar Vendedor</button>
       </div>
 
@@ -523,16 +534,16 @@ function TabVendedores({ showToast }) {
               </tr>
             </thead>
             <tbody>
-              {vendedores.length === 0 && (
+              {vendedoresVisiveis.length === 0 && (
                 <tr>
                   <td colSpan={7} style={{ padding: '2.5rem', textAlign: 'center', color: C.outlineVariant, fontSize: '0.9rem', fontFamily: F.body }}>
                     Nenhum vendedor cadastrado ainda.
                   </td>
                 </tr>
               )}
-              {vendedores.map((v, i) => (
+              {vendedoresVisiveis.map((v, i) => (
                 <tr key={v.id}
-                  style={{ borderBottom: i < vendedores.length - 1 ? `1px solid ${C.borderSubtle}` : 'none', transition: 'background 0.1s' }}
+                  style={{ borderBottom: i < vendedoresVisiveis.length - 1 ? `1px solid ${C.borderSubtle}` : 'none', transition: 'background 0.1s', opacity: v.ativo ? 1 : 0.6 }}
                   onMouseEnter={e => e.currentTarget.style.background = C.surfaceContainerLow}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
@@ -565,7 +576,7 @@ function TabVendedores({ showToast }) {
                     </span>
                   </td>
                   <td style={{ padding: '0.875rem 1rem' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                       <button onClick={() => openEdit(v)}
                         style={{ padding: '0.3rem 0.75rem', background: 'none', border: `1.5px solid ${C.borderSubtle}`, borderRadius: '0.5rem', color: C.onSurfaceVariant, fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
                         Editar
