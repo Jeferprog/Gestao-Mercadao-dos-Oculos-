@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss as dsInputCss } from '../lib/ds'
@@ -115,6 +114,9 @@ function detectarColunas(headerRow) {
 
 /* ── parsear arquivo xlsx / csv ── */
 async function parseFile(file) {
+  // Carrega a biblioteca de planilhas só na hora de importar (deixa o app leve).
+  const XLSXmod = await import('xlsx')
+  const XLSX = XLSXmod.default || XLSXmod
   const buf = await file.arrayBuffer()
   const wb = XLSX.read(buf, { type: 'array', cellDates: true })
   const sheet = wb.Sheets[wb.SheetNames[0]]
@@ -656,7 +658,9 @@ export default function Cobrancas() {
   })
   const totalBolVal = boletosFiltrados.reduce((s, b) => s + (b.valor || 0), 0)
 
-  function exportarBoletos() {
+  async function exportarBoletos() {
+    const XLSXmod = await import('xlsx')
+    const XLSX = XLSXmod.default || XLSXmod
     const rows = boletosFiltrados.map(b => ({
       'Devedor':          b.nome_pagador,
       'Filial':           b.filial_nome,
