@@ -35,13 +35,19 @@ function ProtectedRoute({ children }) {
   return children
 }
 
-// Rota exclusiva de administradores. Vendedor é redirecionado ao Dashboard.
+// Rota exclusiva de administradores. Vendedor é redirecionado à tela inicial.
 function AdminRoute({ children }) {
   const { session, isAdmin, loading } = useAuth()
   if (loading) return <Loading />
   if (!session) return <Navigate to="/login" replace />
-  if (!isAdmin) return <Navigate to="/dashboard" replace />
+  if (!isAdmin) return <Navigate to="/vendas" replace />
   return children
+}
+
+// Tela inicial por papel: admin abre no Dashboard; vendedor abre em Vendas.
+function HomeRedirect() {
+  const { isAdmin } = useAuth()
+  return <Navigate to={isAdmin ? '/dashboard' : '/vendas'} replace />
 }
 
 function AppRoutes() {
@@ -56,7 +62,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<HomeRedirect />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="vendas" element={<Vendas />} />
         <Route path="resumo" element={<AdminRoute><Resumo /></AdminRoute>} />

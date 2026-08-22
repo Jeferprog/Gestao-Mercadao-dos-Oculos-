@@ -18,7 +18,7 @@ export default function Login() {
     if (error) {
       setError('E-mail ou senha inválidos. Verifique suas credenciais.')
     } else {
-      navigate('/dashboard')
+      navigate('/')
     }
     setLoading(false)
   }
