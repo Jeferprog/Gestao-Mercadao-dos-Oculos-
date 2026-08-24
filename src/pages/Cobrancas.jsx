@@ -47,6 +47,9 @@ function fDate(iso) {
   const [y, m, d] = String(iso).split('-')
   return `${d}/${m}/${y}`
 }
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
 function fBytes(b) {
   if (!b) return '—'
   if (b < 1048576) return `${(b / 1024).toFixed(0)} KB`
@@ -322,7 +325,9 @@ export default function Cobrancas() {
   const [loadingHistorico,     setLoadingHistorico]     = useState(false)
 
   const [filtros, setFiltros] = useState({
-    busca: '', status: '', somenteNovos: false, somentePC: false, somenteAudiencia: false,
+    busca: '', status: '', somenteNovos: false,
+    pequenasCausas: '', // '' = todos | 'com' | 'sem'
+    audiencia: '',      // '' = todos | 'com' | 'sem'
   })
   const [filtroVencInicio, setFiltroVencInicio] = useState('')
   const [filtroVencFim,    setFiltroVencFim]    = useState('')
@@ -383,8 +388,10 @@ export default function Cobrancas() {
     if (filtros.busca && !dev.nome_pagador.toLowerCase().includes(filtros.busca.toLowerCase())) return false
     if (filtros.status && dev.status_cobranca !== filtros.status) return false
     if (filtros.somenteNovos && dev.status_cobranca !== 'Novo') return false
-    if (filtros.somentePC && !dev.pequenas_causas) return false
-    if (filtros.somenteAudiencia && !dev.data_audiencia) return false
+    if (filtros.pequenasCausas === 'com' && !dev.pequenas_causas) return false
+    if (filtros.pequenasCausas === 'sem' &&  dev.pequenas_causas) return false
+    if (filtros.audiencia === 'com' && !dev.data_audiencia) return false
+    if (filtros.audiencia === 'sem' &&  dev.data_audiencia) return false
     if (filtroVencInicio || filtroVencFim) {
       const match = (dev.cobrancas_boletos || []).some(b => {
         if (!b.data_vencimento) return false
@@ -678,6 +685,101 @@ export default function Cobrancas() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Boletos')
     XLSX.writeFile(wb, `boletos_${todayISO()}.xlsx`)
+  }
+
+  /* ── descrição dos filtros ativos (para o cabeçalho do relatório) ── */
+  function descreverFiltros() {
+    const p = []
+    if (filtros.busca) p.push(`Busca: "${filtros.busca}"`)
+    if (filtros.status) p.push(`Status: ${filtros.status}`)
+    if (filtros.somenteNovos) p.push('Somente novos')
+    if (filtros.pequenasCausas === 'com') p.push('Com pequenas causas')
+    if (filtros.pequenasCausas === 'sem') p.push('Sem pequenas causas')
+    if (filtros.audiencia === 'com') p.push('Com audiência')
+    if (filtros.audiencia === 'sem') p.push('Sem audiência')
+    if (filtroFilial && filialMap[filtroFilial]) p.push(`Filial: ${filialMap[filtroFilial]}`)
+    if (filtroVencInicio) p.push(`Venc. de ${fDate(filtroVencInicio)}`)
+    if (filtroVencFim) p.push(`Venc. até ${fDate(filtroVencFim)}`)
+    return p.length ? p.join(' · ') : 'Todos os devedores'
+  }
+
+  /* ── imprimir relatório dos devedores conforme o filtro atual ── */
+  function imprimirRelatorio() {
+    if (!listaFiltrada.length) return
+    const totalVal = listaFiltrada.reduce((s, dev) => s + valorAberto(dev), 0)
+    const totalAbertos = listaFiltrada.reduce((s, dev) => s + abertos(dev).length, 0)
+    const mostrarFilial = filiais.length > 1
+
+    const linhas = listaFiltrada.map(dev => `
+      <tr>
+        <td>${escHtml(dev.nome_pagador)}</td>
+        ${mostrarFilial ? `<td>${escHtml(filialMap[dev.filial_id] || '—')}</td>` : ''}
+        <td>${escHtml(dev.telefone || '—')}</td>
+        <td class="c">${abertos(dev).length}</td>
+        <td class="n">${fBRL(valorAberto(dev))}</td>
+        <td>${escHtml(dev.status_cobranca || '—')}</td>
+        <td class="c">${dev.pequenas_causas ? 'Sim' : '—'}</td>
+        <td>${dev.data_audiencia ? fDate(dev.data_audiencia) : '—'}</td>
+      </tr>`).join('')
+
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Relatório de Cobranças</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1a0a0e;margin:24px;font-size:12px}
+  .hd{border-bottom:3px solid #9d0518;padding-bottom:10px;margin-bottom:14px}
+  .hd h1{margin:0;font-size:18px;color:#9d0518}
+  .hd .sub{color:#555;font-size:11px;margin-top:3px}
+  .meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:11px;color:#333}
+  .meta b{color:#111}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e2d0d3;vertical-align:top}
+  th{background:#f7f0f1;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#6e4c54}
+  td.n,th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  td.c,th.c{text-align:center}
+  tfoot td{border-top:2px solid #9d0518;font-weight:700;background:#faf4f4}
+  .foot{margin-top:16px;font-size:10px;color:#999;text-align:center}
+  @media print{body{margin:0}}
+</style></head><body>
+  <div class="hd">
+    <h1>Mercadão dos Óculos — Relatório de Cobranças</h1>
+    <div class="sub">Emitido em ${fDate(todayISO())}</div>
+  </div>
+  <div class="meta">
+    <div><b>Filtros:</b> ${escHtml(descreverFiltros())}</div>
+    <div><b>${listaFiltrada.length}</b> devedor(es)</div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Devedor</th>
+        ${mostrarFilial ? '<th>Filial</th>' : ''}
+        <th>Telefone</th>
+        <th class="c">Em aberto</th>
+        <th class="n">Valor em aberto</th>
+        <th>Status</th>
+        <th class="c">P. Causas</th>
+        <th>Audiência</th>
+      </tr>
+    </thead>
+    <tbody>${linhas}</tbody>
+    <tfoot>
+      <tr>
+        <td colspan="${mostrarFilial ? 3 : 2}">TOTAL</td>
+        <td class="c">${totalAbertos}</td>
+        <td class="n">${fBRL(totalVal)}</td>
+        <td colspan="3"></td>
+      </tr>
+    </tfoot>
+  </table>
+  <div class="foot">Relatório gerado pelo sistema de gestão Mercadão dos Óculos</div>
+  <script>window.onload=function(){window.print()}</script>
+</body></html>`
+
+    const w = window.open('', '_blank')
+    if (!w) { alert('Habilite pop-ups para imprimir o relatório.'); return }
+    w.document.write(html)
+    w.document.close()
   }
 
   /* ════════════════════ RENDER ════════════════════ */
@@ -1224,27 +1326,35 @@ export default function Cobrancas() {
                   {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
                 </select>
               )}
-              {[
-                { key: 'somenteNovos',     label: 'Somente novos' },
-                { key: 'somentePC',        label: 'Pequenas causas' },
-                { key: 'somenteAudiencia', label: 'Com audiência' },
-              ].map(({ key, label }) => (
-                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: C.onSurfaceVariant, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', fontFamily: F.body }}>
-                  <input type="checkbox" checked={filtros[key]}
-                    onChange={e => setFiltros(f => {
-                      const next = { ...f, [key]: e.target.checked }
-                      if (key === 'somenteNovos' && e.target.checked) next.status = ''
-                      return next
-                    })} />
-                  {label}
-                </label>
-              ))}
-              {(filtros.busca || filtros.status || filtros.somenteNovos || filtros.somentePC || filtros.somenteAudiencia || temFiltrosVenc) && (
-                <button onClick={() => { setFiltros({ busca: '', status: '', somenteNovos: false, somentePC: false, somenteAudiencia: false }); setFiltroVencInicio(''); setFiltroVencFim('') }}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: C.onSurfaceVariant, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', fontFamily: F.body }}>
+                <input type="checkbox" checked={filtros.somenteNovos}
+                  onChange={e => setFiltros(f => ({ ...f, somenteNovos: e.target.checked, status: e.target.checked ? '' : f.status }))} />
+                Somente novos
+              </label>
+              <select value={filtros.pequenasCausas}
+                onChange={e => setFiltros(f => ({ ...f, pequenasCausas: e.target.value }))}
+                style={{ ...inputCss, minWidth: '150px' }}>
+                <option value="">Pequenas causas: todas</option>
+                <option value="com">Com pequenas causas</option>
+                <option value="sem">Sem pequenas causas</option>
+              </select>
+              <select value={filtros.audiencia}
+                onChange={e => setFiltros(f => ({ ...f, audiencia: e.target.value }))}
+                style={{ ...inputCss, minWidth: '140px' }}>
+                <option value="">Audiência: todas</option>
+                <option value="com">Com audiência</option>
+                <option value="sem">Sem audiência</option>
+              </select>
+              {(filtros.busca || filtros.status || filtros.somenteNovos || filtros.pequenasCausas || filtros.audiencia || temFiltrosVenc) && (
+                <button onClick={() => { setFiltros({ busca: '', status: '', somenteNovos: false, pequenasCausas: '', audiencia: '' }); setFiltroVencInicio(''); setFiltroVencFim('') }}
                   style={{ fontSize: '0.8rem', color: C.statusDanger, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600', padding: '0.3rem 0.5rem', fontFamily: F.body }}>
                   ✕ Limpar
                 </button>
               )}
+              <button onClick={imprimirRelatorio} disabled={loading || listaFiltrada.length === 0}
+                style={{ fontSize: '0.8rem', color: C.onPrimary, background: C.primaryContainer, border: 'none', borderRadius: '0.5rem', cursor: (loading || listaFiltrada.length === 0) ? 'not-allowed' : 'pointer', opacity: (loading || listaFiltrada.length === 0) ? 0.5 : 1, fontWeight: '700', padding: '0.45rem 0.9rem', fontFamily: F.body }}>
+                🖨️ Imprimir
+              </button>
               <span style={{ fontSize: '0.8rem', color: C.onSurfaceVariant, marginLeft: 'auto', fontFamily: F.body }}>
                 {loading ? '…' : `${listaFiltrada.length} devedor${listaFiltrada.length !== 1 ? 'es' : ''}`}
               </span>
