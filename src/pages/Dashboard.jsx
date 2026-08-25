@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard } from '../lib/ds'
+import { logErro } from '../lib/erros'
 
 /* ── helpers ── */
 function todayISO() { return new Date().toISOString().slice(0, 10) }
@@ -306,7 +307,8 @@ export default function Dashboard() {
       /* ── ADMIN: carregar filiais ── */
       let currentFiliais = filiais
       if (currentFiliais.length === 0) {
-        const { data } = await supabase.from('filiais').select('*').order('nome')
+        const { data, error } = await supabase.from('filiais').select('*').order('nome')
+        if (error) logErro('Carregar filiais (dashboard)', error)
         currentFiliais = data || []
         setFiliais(currentFiliais)
       }

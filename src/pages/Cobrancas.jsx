@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss as dsInputCss } from '../lib/ds'
+import { logErro } from '../lib/erros'
 
 /* inputCss sem width — usado em células de tabela com larguras variadas */
 const { width: _w, ...inputCss } = dsInputCss
@@ -372,7 +373,8 @@ export default function Cobrancas() {
       .order('ultima_atualizacao', { ascending: false })
     if (filtroFilial) q = q.eq('filial_id', filtroFilial)
     else if (!isAdmin && profile?.filial_id) q = q.eq('filial_id', profile.filial_id)
-    const { data } = await q
+    const { data, error } = await q
+    if (error) logErro('Carregar devedores', error)
     setDevedores(data || [])
     setLoading(false)
   }, [filtroFilial, isAdmin, profile?.filial_id])
@@ -486,10 +488,11 @@ export default function Cobrancas() {
 
   /* ── lembretes (tarefas do devedor) ── */
   async function carregarLembretes(devedorId) {
-    const { data } = await supabase.from('cobrancas_lembretes')
+    const { data, error } = await supabase.from('cobrancas_lembretes')
       .select('id, data, observacao, concluido')
       .eq('devedor_id', devedorId)
       .order('data', { ascending: true })
+    if (error) logErro('Carregar lembretes', error)
     setLembretes(data || [])
   }
 
@@ -525,11 +528,12 @@ export default function Cobrancas() {
   /* ── importar arquivo ── */
   async function carregarHistorico() {
     setLoadingHistorico(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('cobrancas_importacoes')
       .select('id, created_at, nome_arquivo, filial_id, periodo_inicio, periodo_fim, total_boletos, inseridos, atualizados')
       .order('created_at', { ascending: false })
       .limit(3)
+    if (error) logErro('Carregar histórico de importações', error)
     setHistorico(data || [])
     setLoadingHistorico(false)
   }
@@ -628,11 +632,12 @@ export default function Cobrancas() {
   /* ── documentos ── */
   async function carregarDocs(devedorId) {
     setLoadingDocs(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('cobrancas_documentos')
       .select('id, nome_arquivo, caminho, tipo, tamanho, descricao, created_at')
       .eq('devedor_id', devedorId)
       .order('created_at', { ascending: false })
+    if (error) logErro('Carregar documentos', error)
     setDocs(data || [])
     setLoadingDocs(false)
   }
