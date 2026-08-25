@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss as dsInputCss } from '../lib/ds'
@@ -294,8 +295,12 @@ const STATUS_OPTS = ['Novo', 'Em andamento', 'Negociado', 'Protestado', 'Quitado
 /* ════════════════════════════════ COMPONENTE PRINCIPAL ════════════════════════════════ */
 export default function Cobrancas() {
   const { isAdmin, profile } = useAuth()
+  const location   = useLocation()
   const fileRef    = useRef()
   const docFileRef = useRef()
+
+  // devedor a abrir automaticamente (ex.: veio de um lembrete no Dashboard)
+  const [alvoDevedor, setAlvoDevedor] = useState(location.state?.abrirDevedor || null)
 
   const [view,             setView]             = useState('lista')
   const [devedores,        setDevedores]        = useState([])
@@ -435,6 +440,14 @@ export default function Cobrancas() {
     setModalDev(dev)
     if (isAdmin) carregarDocs(dev.id)
   }
+
+  // Abre automaticamente o devedor indicado pela navegação (lembrete do Dashboard).
+  useEffect(() => {
+    if (!alvoDevedor || loading || !devedores.length) return
+    const dev = devedores.find(d => d.id === alvoDevedor)
+    if (dev) { setView('lista'); abrirModal(dev) }
+    setAlvoDevedor(null)
+  }, [alvoDevedor, loading, devedores]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function fecharModal() {
     setModalDev(null); setBoletoEdits({}); setEditForm({})

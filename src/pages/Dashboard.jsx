@@ -322,7 +322,7 @@ export default function Dashboard() {
           supabase.from('cobrancas_boletos').select('valor, devedor_id, situacao_atual').is('data_liquidacao', null).eq('filial_id', filtroFilial),
           supabase.from('cobrancas_devedores').select('id, status_cobranca').eq('filial_id', filtroFilial),
           supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia, filial_id').gte('data_audiencia', hoje).lte('data_audiencia', em7).order('data_audiencia').limit(8),
-          supabase.from('cobrancas_lembretes').select('id, data, observacao, cobrancas_devedores(nome_pagador)').eq('concluido', false).lte('data', em7).eq('filial_id', filtroFilial).order('data').limit(10),
+          supabase.from('cobrancas_lembretes').select('id, data, observacao, devedor_id, cobrancas_devedores(nome_pagador)').eq('concluido', false).lte('data', em7).eq('filial_id', filtroFilial).order('data').limit(10),
         ])
         const vH = rH.data || [], vM = rM.data || []
         const dA = rDA.data || [], dAtr = rDAtr.data || []
@@ -352,7 +352,7 @@ export default function Dashboard() {
         supabase.from('cobrancas_boletos').select('valor, devedor_id, filial_id, situacao_atual').is('data_liquidacao', null),
         supabase.from('cobrancas_devedores').select('id, status_cobranca, filial_id'),
         supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia, filial_id').gte('data_audiencia', hoje).lte('data_audiencia', em7).order('data_audiencia').limit(8),
-        supabase.from('cobrancas_lembretes').select('id, data, observacao, cobrancas_devedores(nome_pagador)').eq('concluido', false).lte('data', em7).order('data').limit(10),
+        supabase.from('cobrancas_lembretes').select('id, data, observacao, devedor_id, cobrancas_devedores(nome_pagador)').eq('concluido', false).lte('data', em7).order('data').limit(10),
       ])
 
       const vHAll  = rH.data  || [], vMAll  = rM.data  || []
@@ -439,51 +439,8 @@ export default function Dashboard() {
       {/* ════════ ADMIN VIEW ════════ */}
       {isAdmin && (
         <>
-          {modoTodasFiliais ? (
-            /* ── Modo: todas as filiais ── */
-            <>
-              {/* Seção total consolidada */}
-              <FilialSection
-                nome="Total — Todas as Filiais"
-                stats={statsTotal}
-                chartData={chartTotal}
-                loading={loading}
-                navigate={navigate}
-                mesTit={mesTit}
-                showDesp
-                isTotal
-              />
-
-              {/* Uma seção por filial */}
-              {filiaisDash.map(f => (
-                <FilialSection
-                  key={f.id}
-                  nome={f.nome}
-                  stats={f.stats}
-                  chartData={f.chartData}
-                  loading={loading}
-                  navigate={navigate}
-                  mesTit={mesTit}
-                  showDesp
-                />
-              ))}
-            </>
-          ) : (
-            /* ── Modo: filial específica (ou única filial) ── */
-            <FilialSection
-              nome={filialSelecionadaNome || (filiais[0]?.nome || 'Visão Geral')}
-              stats={filtroFilial ? stats : statsTotal}
-              chartData={filtroFilial ? chartData : chartTotal}
-              loading={loading}
-              navigate={navigate}
-              mesTit={mesTit}
-              showDesp
-              isTotal={!filtroFilial}
-            />
-          )}
-
-          {/* ── Lembretes (contas + audiências) ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem', marginTop: '0.25rem' }}>
+          {/* ── Cards de topo: Contas a vencer, Audiências e Tarefas ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
 
             {/* Contas a vencer */}
             <div style={dsCard}>
@@ -585,7 +542,12 @@ export default function Dashboard() {
                     const isHj = l.data === hoje
                     const nome = l.cobrancas_devedores?.nome_pagador
                     return (
-                      <div key={l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.55rem 0', borderBottom: i < lembretes.length - 1 ? `1px solid ${C.borderSubtle}` : 'none', background: atrasado ? C.statusDangerBg : isHj ? C.statusWarningBg : 'transparent', borderRadius: (atrasado || isHj) ? '0.4rem' : 0, paddingLeft: (atrasado || isHj) ? '0.5rem' : 0 }}>
+                      <div key={l.id}
+                        onClick={() => navigate('/cobrancas', { state: { abrirDevedor: l.devedor_id } })}
+                        title="Abrir devedor"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.55rem 0.5rem', cursor: 'pointer', borderBottom: i < lembretes.length - 1 ? `1px solid ${C.borderSubtle}` : 'none', background: atrasado ? C.statusDangerBg : isHj ? C.statusWarningBg : 'transparent', borderRadius: (atrasado || isHj) ? '0.4rem' : 0 }}
+                        onMouseEnter={e => e.currentTarget.style.background = atrasado ? C.statusDangerBg : isHj ? C.statusWarningBg : C.surfaceContainerLow}
+                        onMouseLeave={e => e.currentTarget.style.background = atrasado ? C.statusDangerBg : isHj ? C.statusWarningBg : 'transparent'}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: '600', fontFamily: F.body, fontSize: '0.82rem', color: atrasado ? C.statusDanger : isHj ? C.statusWarning : C.onSurface }}>
                             {l.observacao || 'Lembrete'}
@@ -613,6 +575,49 @@ export default function Dashboard() {
             </div>
 
           </div>
+
+          {modoTodasFiliais ? (
+            /* ── Modo: todas as filiais ── */
+            <>
+              {/* Seção total consolidada */}
+              <FilialSection
+                nome="Total — Todas as Filiais"
+                stats={statsTotal}
+                chartData={chartTotal}
+                loading={loading}
+                navigate={navigate}
+                mesTit={mesTit}
+                showDesp
+                isTotal
+              />
+
+              {/* Uma seção por filial */}
+              {filiaisDash.map(f => (
+                <FilialSection
+                  key={f.id}
+                  nome={f.nome}
+                  stats={f.stats}
+                  chartData={f.chartData}
+                  loading={loading}
+                  navigate={navigate}
+                  mesTit={mesTit}
+                  showDesp
+                />
+              ))}
+            </>
+          ) : (
+            /* ── Modo: filial específica (ou única filial) ── */
+            <FilialSection
+              nome={filialSelecionadaNome || (filiais[0]?.nome || 'Visão Geral')}
+              stats={filtroFilial ? stats : statsTotal}
+              chartData={filtroFilial ? chartData : chartTotal}
+              loading={loading}
+              navigate={navigate}
+              mesTit={mesTit}
+              showDesp
+              isTotal={!filtroFilial}
+            />
+          )}
         </>
       )}
 
