@@ -345,6 +345,11 @@ export default function Cobrancas() {
   const [docDragOver,  setDocDragOver]  = useState(false)
   const [docErr,       setDocErr]       = useState(null)
 
+  const [lembretes,           setLembretes]           = useState([])
+  const [novoLembrete,        setNovoLembrete]        = useState({ data: '', observacao: '' })
+  const [mostrarFormLembrete, setMostrarFormLembrete] = useState(false)
+  const [salvandoLembrete,    setSalvandoLembrete]    = useState(false)
+
   /* ── carregamento ── */
   const carregar = useCallback(async () => {
     setLoading(true)
@@ -355,7 +360,8 @@ export default function Cobrancas() {
         pequenas_causas, data_audiencia, situacao_audiencia, observacoes,
         cobrancas_boletos (
           id, data_vencimento, data_liquidacao, valor, valor_liquidacao,
-          situacao_boleto, situacao_atual, motivo, numero_doc, nosso_numero, carteira
+          situacao_boleto, situacao_atual, motivo, data_atual, valor_atual,
+          numero_doc, nosso_numero, carteira
         )
       `)
       .order('ultima_atualizacao', { ascending: false })
@@ -408,9 +414,16 @@ export default function Cobrancas() {
   function abrirModal(dev) {
     const edits = {}
     ;(dev.cobrancas_boletos || []).forEach(b => {
-      edits[b.id] = { situacao_atual: b.situacao_atual || '', motivo: b.motivo || '', dirty: false }
+      edits[b.id] = {
+        situacao_atual: b.situacao_atual || '',
+        motivo:         b.motivo         || '',
+        data_atual:     b.data_atual     || '',
+        valor_atual:    b.valor_atual != null ? String(b.valor_atual) : '',
+        dirty: false,
+      }
     })
     setBoletoEdits(edits)
+    carregarLembretes(dev.id)
     setEditForm({
       status_cobranca:    dev.status_cobranca    || 'Novo',
       telefone:           dev.telefone           || '',
@@ -426,6 +439,7 @@ export default function Cobrancas() {
   function fecharModal() {
     setModalDev(null); setBoletoEdits({}); setEditForm({})
     setDocs([]); setDocErr(null); setDocDescricao('')
+    setLembretes([]); setNovoLembrete({ data: '', observacao: '' }); setMostrarFormLembrete(false)
   }
 
   function updateBoletoEdit(boletoId, field, value) {
@@ -436,14 +450,18 @@ export default function Cobrancas() {
     const edit = boletoEdits[boletoId]
     if (!edit) return
     setSavingBoleto(prev => new Set(prev).add(boletoId))
-    const { error } = await supabase.from('cobrancas_boletos').update({
+    const valorAtualNum = edit.valor_atual !== '' ? parseBRL(edit.valor_atual) : null
+    const patch = {
       situacao_atual: edit.situacao_atual || null,
       motivo:         edit.motivo         || null,
-    }).eq('id', boletoId)
+      data_atual:     edit.data_atual     || null,
+      valor_atual:    valorAtualNum,
+    }
+    const { error } = await supabase.from('cobrancas_boletos').update(patch).eq('id', boletoId)
     setSavingBoleto(prev => { const s = new Set(prev); s.delete(boletoId); return s })
     if (!error) {
       const patchBoletos = (bols) => (bols || []).map(b =>
-        b.id === boletoId ? { ...b, situacao_atual: edit.situacao_atual || null, motivo: edit.motivo || null } : b
+        b.id === boletoId ? { ...b, ...patch } : b
       )
       setModalDev(prev => prev ? { ...prev, cobrancas_boletos: patchBoletos(prev.cobrancas_boletos) } : null)
       setDevedores(prev => prev.map(d =>
@@ -451,6 +469,44 @@ export default function Cobrancas() {
       ))
       setBoletoEdits(prev => ({ ...prev, [boletoId]: { ...prev[boletoId], dirty: false } }))
     }
+  }
+
+  /* ── lembretes (tarefas do devedor) ── */
+  async function carregarLembretes(devedorId) {
+    const { data } = await supabase.from('cobrancas_lembretes')
+      .select('id, data, observacao, concluido')
+      .eq('devedor_id', devedorId)
+      .order('data', { ascending: true })
+    setLembretes(data || [])
+  }
+
+  async function adicionarLembrete() {
+    if (!novoLembrete.data) return
+    setSalvandoLembrete(true)
+    const { error } = await supabase.from('cobrancas_lembretes').insert({
+      devedor_id:  modalDev.id,
+      filial_id:   modalDev.filial_id || null,
+      data:        novoLembrete.data,
+      observacao:  novoLembrete.observacao || null,
+      created_by:  profile?.id || null,
+    })
+    setSalvandoLembrete(false)
+    if (!error) {
+      setNovoLembrete({ data: '', observacao: '' })
+      setMostrarFormLembrete(false)
+      carregarLembretes(modalDev.id)
+    }
+  }
+
+  async function toggleLembrete(l) {
+    await supabase.from('cobrancas_lembretes').update({ concluido: !l.concluido }).eq('id', l.id)
+    carregarLembretes(modalDev.id)
+  }
+
+  async function excluirLembrete(l) {
+    if (!window.confirm('Excluir este lembrete?')) return
+    await supabase.from('cobrancas_lembretes').delete().eq('id', l.id)
+    carregarLembretes(modalDev.id)
   }
 
   /* ── importar arquivo ── */
@@ -975,90 +1031,197 @@ export default function Cobrancas() {
 
             <div style={{ padding: '1.5rem 1.75rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-              {/* Boletos */}
+              {/* Boletos — cada boleto em um card com linha do BANCO e linha ATUAL */}
               <div>
-                <div style={{ fontWeight: '700', color: C.onSurfaceVariant, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.625rem', fontFamily: F.body }}>
-                  Boletos
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.625rem' }}>
+                  <div style={{ fontWeight: '700', color: C.onSurfaceVariant, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>
+                    Boletos
+                  </div>
+                  {abertos(modalDev).length > 0 && (
+                    <div style={{ fontSize: '0.8rem', fontFamily: F.body }}>
+                      <span style={{ color: C.onSurfaceVariant }}>Total em aberto: </span>
+                      <strong style={{ color: C.statusDanger, fontFamily: F.mono }}>{fBRL(valorAberto(modalDev))}</strong>
+                    </div>
+                  )}
                 </div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                    <thead>
-                      <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
-                        {['Nosso Nº', 'Vencimento', 'Valor', 'Sit. Banco', 'Situação Atual', 'Motivo', 'Data Liquidação', 'Valor Liquidado', ''].map(h => (
-                          <th key={h} style={{ padding: '0.45rem 0.75rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: '600', color: C.onSurfaceVariant, textTransform: 'uppercase', whiteSpace: 'nowrap', fontFamily: F.body }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...(modalDev.cobrancas_boletos || [])]
-                        .sort((a, b) => (a.data_vencimento || '').localeCompare(b.data_vencimento || ''))
-                        .map(b => {
-                          const emAberto = !b.data_liquidacao && b.situacao_atual !== 'Liquidada'
-                          const edit = boletoEdits[b.id] || { situacao_atual: b.situacao_atual || '', motivo: b.motivo || '', dirty: false }
-                          const isSaving = savingBoleto.has(b.id)
-                          return (
-                            <tr key={b.id} style={{ borderBottom: `1px solid ${C.borderSubtle}`, background: emAberto ? 'transparent' : C.statusSuccessBg + '33' }}>
-                              <td style={{ padding: '0.5rem 0.75rem', color: C.onSurfaceVariant, whiteSpace: 'nowrap', fontFamily: F.mono, fontSize: '0.8rem' }}>
-                                {b.nosso_numero || <span style={{ color: C.outlineVariant }}>—</span>}
-                              </td>
-                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600', color: C.onSurface, whiteSpace: 'nowrap', fontFamily: F.mono }}>
-                                {fDate(b.data_vencimento)}
-                              </td>
-                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: emAberto ? C.statusDanger : C.onSurfaceVariant, whiteSpace: 'nowrap', fontFamily: F.mono }}>
-                                {fBRL(b.valor)}
-                              </td>
-                              {/* Situação (banco) — somente leitura */}
-                              <td style={{ padding: '0.5rem 0.75rem', minWidth: '120px' }}>
-                                {b.situacao_boleto
-                                  ? <span style={{ display: 'inline-block', background: C.surfaceContainerHigh, color: C.onSurfaceVariant, borderRadius: '0.3rem', padding: '0.15rem 0.5rem', fontSize: '0.73rem', fontWeight: '500', fontFamily: F.body, whiteSpace: 'nowrap' }}>{b.situacao_boleto}</span>
-                                  : <span style={{ color: C.outlineVariant, fontSize: '0.8rem' }}>—</span>
-                                }
-                              </td>
-                              {/* Situação Atual — editável pelo usuário */}
-                              <td style={{ padding: '0.4rem 0.5rem', minWidth: '150px' }}>
-                                <select value={edit.situacao_atual}
-                                  onChange={e => updateBoletoEdit(b.id, 'situacao_atual', e.target.value)}
-                                  style={{ ...inputCss, padding: '0.3rem 0.5rem', fontSize: '0.78rem', width: '100%' }}>
-                                  <option value="">—</option>
-                                  {situacoesCobranca.map(s => <option key={s} value={s}>{s}</option>)}
-                                  {edit.situacao_atual && !situacoesCobranca.includes(edit.situacao_atual) && (
-                                    <option value={edit.situacao_atual}>{edit.situacao_atual}</option>
-                                  )}
-                                </select>
-                              </td>
-                              <td style={{ padding: '0.4rem 0.5rem', minWidth: '160px' }}>
-                                <input value={edit.motivo}
-                                  onChange={e => updateBoletoEdit(b.id, 'motivo', e.target.value)}
-                                  placeholder="Motivo..."
-                                  style={{ ...inputCss, padding: '0.3rem 0.5rem', fontSize: '0.78rem', width: '100%' }} />
-                              </td>
-                              <td style={{ padding: '0.5rem 0.75rem', color: C.onSurfaceVariant, whiteSpace: 'nowrap', fontFamily: F.mono }}>{fDate(b.data_liquidacao)}</td>
-                              <td style={{ padding: '0.5rem 0.75rem', fontWeight: '600', color: C.statusSuccess, whiteSpace: 'nowrap', fontFamily: F.mono }}>
-                                {b.valor_liquidacao != null ? fBRL(b.valor_liquidacao) : <span style={{ color: C.outlineVariant }}>—</span>}
-                              </td>
-                              <td style={{ padding: '0.4rem 0.5rem' }}>
-                                {edit.dirty && (
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {[...(modalDev.cobrancas_boletos || [])]
+                    .sort((a, b) => (a.data_vencimento || '').localeCompare(b.data_vencimento || ''))
+                    .map(b => {
+                      const emAberto = !b.data_liquidacao && b.situacao_atual !== 'Liquidada'
+                      const edit = boletoEdits[b.id] || { situacao_atual: b.situacao_atual || '', motivo: b.motivo || '', data_atual: b.data_atual || '', valor_atual: b.valor_atual != null ? String(b.valor_atual) : '', dirty: false }
+                      const isSaving = savingBoleto.has(b.id)
+                      const lblCss = { fontSize: '0.62rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', color: C.onSurfaceVariant, marginBottom: '0.2rem', fontFamily: F.body }
+                      const fieldCss = { ...inputCss, padding: '0.35rem 0.5rem', fontSize: '0.8rem', width: '100%' }
+                      return (
+                        <div key={b.id} style={{ border: `1px solid ${C.borderSubtle}`, borderRadius: '0.6rem', overflow: 'hidden', background: emAberto ? C.surfaceContainerLowest : C.statusSuccessBg + '22' }}>
+                          {/* Cabeçalho do boleto */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', padding: '0.6rem 0.875rem', borderBottom: `1px solid ${C.borderSubtle}`, background: C.surfaceContainerLow }}>
+                            <div>
+                              <span style={{ ...lblCss, display: 'inline' }}>Vencimento </span>
+                              <strong style={{ color: C.onSurface, fontFamily: F.mono, fontSize: '0.9rem' }}>{fDate(b.data_vencimento)}</strong>
+                            </div>
+                            <div>
+                              <span style={{ ...lblCss, display: 'inline' }}>Valor </span>
+                              <strong style={{ color: emAberto ? C.statusDanger : C.onSurfaceVariant, fontFamily: F.mono, fontSize: '0.9rem' }}>{fBRL(b.valor)}</strong>
+                            </div>
+                            {b.nosso_numero && (
+                              <div style={{ color: C.onSurfaceVariant, fontFamily: F.mono, fontSize: '0.78rem' }}>Nosso nº {b.nosso_numero}</div>
+                            )}
+                            <span style={{ marginLeft: 'auto', background: emAberto ? C.statusDangerBg : C.statusSuccessBg, color: emAberto ? C.statusDanger : C.statusSuccess, borderRadius: '9999px', padding: '0.15rem 0.6rem', fontSize: '0.72rem', fontWeight: '700', fontFamily: F.body }}>
+                              {emAberto ? 'Em aberto' : 'Quitado'}
+                            </span>
+                          </div>
+
+                          {/* Duas linhas: Banco / Atual */}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem', padding: '0.75rem 0.875rem' }}>
+                            {/* Linha BANCO (somente leitura) */}
+                            <div style={{ background: C.surfaceContainerHigh, borderRadius: '0.5rem', padding: '0.6rem 0.75rem' }}>
+                              <div style={{ fontSize: '0.66rem', fontWeight: '800', letterSpacing: '0.6px', color: C.onSurfaceVariant, marginBottom: '0.5rem', fontFamily: F.body }}>🏦 BANCO (do relatório)</div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem 1.25rem' }}>
+                                <div>
+                                  <div style={lblCss}>Situação</div>
+                                  {b.situacao_boleto
+                                    ? <span style={{ display: 'inline-block', background: C.surfaceContainerLowest, color: C.onSurfaceVariant, borderRadius: '0.3rem', padding: '0.1rem 0.45rem', fontSize: '0.75rem', fontWeight: '500', fontFamily: F.body }}>{b.situacao_boleto}</span>
+                                    : <span style={{ color: C.outlineVariant }}>—</span>}
+                                </div>
+                                <div>
+                                  <div style={lblCss}>Liquidação</div>
+                                  <span style={{ fontFamily: F.mono, fontSize: '0.8rem', color: C.onSurface }}>{fDate(b.data_liquidacao)}</span>
+                                </div>
+                                <div>
+                                  <div style={lblCss}>Valor liquidado</div>
+                                  <span style={{ fontFamily: F.mono, fontSize: '0.8rem', color: b.valor_liquidacao != null ? C.statusSuccess : C.outlineVariant }}>
+                                    {b.valor_liquidacao != null ? fBRL(b.valor_liquidacao) : '—'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Linha ATUAL (editável) */}
+                            <div style={{ background: C.primaryContainer + '11', border: `1px solid ${C.primaryContainer}33`, borderRadius: '0.5rem', padding: '0.6rem 0.75rem' }}>
+                              <div style={{ fontSize: '0.66rem', fontWeight: '800', letterSpacing: '0.6px', color: C.primaryContainer, marginBottom: '0.5rem', fontFamily: F.body }}>✏️ ATUAL (controle interno)</div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                                <div>
+                                  <div style={lblCss}>Situação atual</div>
+                                  <select value={edit.situacao_atual}
+                                    onChange={e => updateBoletoEdit(b.id, 'situacao_atual', e.target.value)}
+                                    style={fieldCss}>
+                                    <option value="">—</option>
+                                    {situacoesCobranca.map(s => <option key={s} value={s}>{s}</option>)}
+                                    {edit.situacao_atual && !situacoesCobranca.includes(edit.situacao_atual) && (
+                                      <option value={edit.situacao_atual}>{edit.situacao_atual}</option>
+                                    )}
+                                  </select>
+                                </div>
+                                <div>
+                                  <div style={lblCss}>Data atual</div>
+                                  <input type="date" value={edit.data_atual}
+                                    onChange={e => updateBoletoEdit(b.id, 'data_atual', e.target.value)}
+                                    style={fieldCss} />
+                                </div>
+                                <div>
+                                  <div style={lblCss}>Valor atual</div>
+                                  <input inputMode="decimal" value={edit.valor_atual}
+                                    onChange={e => updateBoletoEdit(b.id, 'valor_atual', e.target.value)}
+                                    placeholder="0,00"
+                                    style={{ ...fieldCss, fontFamily: F.mono }} />
+                                </div>
+                                <div>
+                                  <div style={lblCss}>Motivo</div>
+                                  <input value={edit.motivo}
+                                    onChange={e => updateBoletoEdit(b.id, 'motivo', e.target.value)}
+                                    placeholder="Motivo..."
+                                    style={fieldCss} />
+                                </div>
+                              </div>
+                              {edit.dirty && (
+                                <div style={{ marginTop: '0.5rem', textAlign: 'right' }}>
                                   <button onClick={() => salvarBoleto(b.id)} disabled={isSaving}
-                                    style={{ padding: '0.3rem 0.65rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', borderRadius: '0.4rem', fontSize: '0.75rem', fontWeight: '700', cursor: isSaving ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: isSaving ? 0.7 : 1, fontFamily: F.body }}>
-                                    {isSaving ? '…' : 'Salvar'}
+                                    style={{ padding: '0.35rem 0.9rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', borderRadius: '0.4rem', fontSize: '0.78rem', fontWeight: '700', cursor: isSaving ? 'not-allowed' : 'pointer', opacity: isSaving ? 0.7 : 1, fontFamily: F.body }}>
+                                    {isSaving ? 'Salvando…' : 'Salvar'}
                                   </button>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                    </tbody>
-                    {abertos(modalDev).length > 0 && (
-                      <tfoot>
-                        <tr style={{ borderTop: `2px solid ${C.borderSubtle}`, background: C.surfaceContainerLow }}>
-                          <td colSpan={2} style={{ padding: '0.5rem 0.75rem', fontWeight: '700', color: C.onSurface, fontSize: '0.75rem', fontFamily: F.body }}>TOTAL EM ABERTO</td>
-                          <td style={{ padding: '0.5rem 0.75rem', fontWeight: '800', color: C.statusDanger, whiteSpace: 'nowrap', fontFamily: F.mono }}>{fBRL(valorAberto(modalDev))}</td>
-                          <td colSpan={6} />
-                        </tr>
-                      </tfoot>
-                    )}
-                  </table>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  {(modalDev.cobrancas_boletos || []).length === 0 && (
+                    <div style={{ textAlign: 'center', color: C.onSurfaceVariant, padding: '1.5rem 0', fontFamily: F.body, fontSize: '0.85rem' }}>Nenhum boleto para este devedor.</div>
+                  )}
                 </div>
+              </div>
+
+              {/* Lembretes (tarefas) */}
+              <div style={{ borderTop: `1px solid ${C.borderSubtle}`, paddingTop: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <div style={{ fontWeight: '700', color: C.onSurfaceVariant, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>
+                    Lembretes {lembretes.length > 0 && `(${lembretes.filter(l => !l.concluido).length} pendente${lembretes.filter(l => !l.concluido).length !== 1 ? 's' : ''})`}
+                  </div>
+                  {isAdmin && !mostrarFormLembrete && (
+                    <button onClick={() => { setMostrarFormLembrete(true); setNovoLembrete({ data: todayISO(), observacao: '' }) }}
+                      style={{ padding: '0.35rem 0.8rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', borderRadius: '0.5rem', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer', fontFamily: F.body }}>
+                      + Adicionar lembrete
+                    </button>
+                  )}
+                </div>
+
+                {mostrarFormLembrete && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'flex-end', background: C.surfaceContainerLow, border: `1px solid ${C.borderSubtle}`, borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '0.75rem' }}>
+                    <div>
+                      <div style={{ fontSize: '0.68rem', fontWeight: '700', color: C.onSurfaceVariant, marginBottom: '0.2rem', fontFamily: F.body }}>Data</div>
+                      <input type="date" value={novoLembrete.data}
+                        onChange={e => setNovoLembrete(l => ({ ...l, data: e.target.value }))}
+                        style={{ ...inputCss, padding: '0.4rem 0.6rem', fontSize: '0.82rem' }} />
+                    </div>
+                    <div style={{ flex: '1 1 200px' }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: '700', color: C.onSurfaceVariant, marginBottom: '0.2rem', fontFamily: F.body }}>Observação</div>
+                      <input value={novoLembrete.observacao}
+                        onChange={e => setNovoLembrete(l => ({ ...l, observacao: e.target.value }))}
+                        placeholder="Ex.: ligar para negociar…"
+                        style={{ ...inputCss, padding: '0.4rem 0.6rem', fontSize: '0.82rem', width: '100%' }} />
+                    </div>
+                    <button onClick={adicionarLembrete} disabled={!novoLembrete.data || salvandoLembrete}
+                      style={{ padding: '0.45rem 0.9rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', borderRadius: '0.5rem', fontSize: '0.8rem', fontWeight: '700', cursor: (!novoLembrete.data || salvandoLembrete) ? 'not-allowed' : 'pointer', opacity: (!novoLembrete.data || salvandoLembrete) ? 0.6 : 1, fontFamily: F.body }}>
+                      {salvandoLembrete ? '…' : 'Salvar'}
+                    </button>
+                    <button onClick={() => { setMostrarFormLembrete(false); setNovoLembrete({ data: '', observacao: '' }) }}
+                      style={{ padding: '0.45rem 0.8rem', background: 'none', border: `1.5px solid ${C.borderSubtle}`, color: C.onSurfaceVariant, borderRadius: '0.5rem', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+
+                {lembretes.length === 0 ? (
+                  <div style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', fontFamily: F.body }}>Nenhum lembrete para este devedor.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    {lembretes.map(l => {
+                      const atrasado = !l.concluido && l.data < todayISO()
+                      const hoje = !l.concluido && l.data === todayISO()
+                      return (
+                        <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', padding: '0.5rem 0.75rem', borderRadius: '0.5rem', border: `1px solid ${C.borderSubtle}`, background: l.concluido ? C.surfaceContainerLow : atrasado ? C.statusDangerBg + '55' : hoje ? C.statusWarningBg + '55' : C.surfaceContainerLowest, opacity: l.concluido ? 0.7 : 1 }}>
+                          <input type="checkbox" checked={l.concluido} onChange={() => toggleLembrete(l)} disabled={!isAdmin} style={{ cursor: isAdmin ? 'pointer' : 'default', flexShrink: 0 }} />
+                          <div style={{ minWidth: '78px', fontFamily: F.mono, fontSize: '0.8rem', fontWeight: '700', color: l.concluido ? C.onSurfaceVariant : atrasado ? C.statusDanger : hoje ? C.statusWarning : C.onSurface }}>
+                            {fDate(l.data)}
+                          </div>
+                          <div style={{ flex: 1, fontSize: '0.85rem', color: C.onSurface, textDecoration: l.concluido ? 'line-through' : 'none', fontFamily: F.body }}>
+                            {l.observacao || <span style={{ color: C.outlineVariant }}>—</span>}
+                            {atrasado && <span style={{ marginLeft: '0.5rem', fontSize: '0.68rem', fontWeight: '700', color: C.statusDanger }}>ATRASADO</span>}
+                            {hoje && <span style={{ marginLeft: '0.5rem', fontSize: '0.68rem', fontWeight: '700', color: C.statusWarning }}>HOJE</span>}
+                          </div>
+                          {isAdmin && (
+                            <button onClick={() => excluirLembrete(l)} title="Excluir"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.outlineVariant, fontSize: '1rem', flexShrink: 0 }}>✕</button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Formulário de cobrança */}

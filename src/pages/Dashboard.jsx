@@ -278,6 +278,7 @@ export default function Dashboard() {
 
   const [despProximas, setDespProximas] = useState([])
   const [audiencias,   setAudiencias]   = useState([])
+  const [lembretes,    setLembretes]    = useState([])
 
   useEffect(() => {
     if (!profile) return
@@ -312,7 +313,7 @@ export default function Dashboard() {
 
       /* ── ADMIN filial específica ── */
       if (filtroFilial) {
-        const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud] = await Promise.all([
+        const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud, rLem] = await Promise.all([
           supabase.from('vendas').select('valor_final').eq('data_venda', hoje).eq('efetivada', true).eq('filial_id', filtroFilial),
           supabase.from('vendas').select('data_venda, valor_final').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true).eq('filial_id', filtroFilial),
           supabase.from('despesas').select('valor').eq('pago', false).eq('filial_id', filtroFilial),
@@ -321,6 +322,7 @@ export default function Dashboard() {
           supabase.from('cobrancas_boletos').select('valor, devedor_id, situacao_atual').is('data_liquidacao', null).eq('filial_id', filtroFilial),
           supabase.from('cobrancas_devedores').select('id, status_cobranca').eq('filial_id', filtroFilial),
           supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia, filial_id').gte('data_audiencia', hoje).lte('data_audiencia', em7).order('data_audiencia').limit(8),
+          supabase.from('cobrancas_lembretes').select('id, data, observacao, cobrancas_devedores(nome_pagador)').eq('concluido', false).lte('data', em7).eq('filial_id', filtroFilial).order('data').limit(10),
         ])
         const vH = rH.data || [], vM = rM.data || []
         const dA = rDA.data || [], dAtr = rDAtr.data || []
@@ -335,12 +337,13 @@ export default function Dashboard() {
         setChartData(buildChartData(vM))
         setDespProximas(rDPrx.data || [])
         setAudiencias(rAud.data || [])
+        setLembretes(rLem.data || [])
         setLoading(false)
         return
       }
 
       /* ── ADMIN: todas as filiais ── */
-      const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud] = await Promise.all([
+      const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud, rLem] = await Promise.all([
         supabase.from('vendas').select('valor_final, filial_id').eq('data_venda', hoje).eq('efetivada', true),
         supabase.from('vendas').select('data_venda, valor_final, filial_id').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true),
         supabase.from('despesas').select('valor, filial_id').eq('pago', false),
@@ -349,6 +352,7 @@ export default function Dashboard() {
         supabase.from('cobrancas_boletos').select('valor, devedor_id, filial_id, situacao_atual').is('data_liquidacao', null),
         supabase.from('cobrancas_devedores').select('id, status_cobranca, filial_id'),
         supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia, filial_id').gte('data_audiencia', hoje).lte('data_audiencia', em7).order('data_audiencia').limit(8),
+        supabase.from('cobrancas_lembretes').select('id, data, observacao, cobrancas_devedores(nome_pagador)').eq('concluido', false).lte('data', em7).order('data').limit(10),
       ])
 
       const vHAll  = rH.data  || [], vMAll  = rM.data  || []
@@ -386,6 +390,7 @@ export default function Dashboard() {
       setChartTotal(buildChartData(vMAll))
       setDespProximas(rDPrx.data || [])
       setAudiencias(rAud.data || [])
+      setLembretes(rLem.data || [])
       setLoading(false)
     }
 
@@ -560,6 +565,47 @@ export default function Dashboard() {
                     <button onClick={() => navigate('/cobrancas')}
                       style={{ background: 'none', border: 'none', color: C.statusDanger, fontFamily: F.body, fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', padding: 0 }}>
                       Ver todas →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Lembretes / Tarefas pendentes */}
+            <div style={dsCard}>
+              <div style={{ fontWeight: '700', fontFamily: F.headline, color: C.onSurface, fontSize: '0.88rem', marginBottom: '0.875rem' }}>
+                📌 Tarefas pendentes
+              </div>
+              {loading ? <LembreteShimmer /> : lembretes.length === 0 ? (
+                <p style={{ color: C.onSurfaceVariant, fontFamily: F.body, fontSize: '0.82rem', margin: 0 }}>Nenhuma tarefa pendente.</p>
+              ) : (
+                <div>
+                  {lembretes.map((l, i) => {
+                    const atrasado = l.data < hoje
+                    const isHj = l.data === hoje
+                    const nome = l.cobrancas_devedores?.nome_pagador
+                    return (
+                      <div key={l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', padding: '0.55rem 0', borderBottom: i < lembretes.length - 1 ? `1px solid ${C.borderSubtle}` : 'none', background: atrasado ? C.statusDangerBg : isHj ? C.statusWarningBg : 'transparent', borderRadius: (atrasado || isHj) ? '0.4rem' : 0, paddingLeft: (atrasado || isHj) ? '0.5rem' : 0 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: '600', fontFamily: F.body, fontSize: '0.82rem', color: atrasado ? C.statusDanger : isHj ? C.statusWarning : C.onSurface }}>
+                            {l.observacao || 'Lembrete'}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', fontFamily: F.body, color: C.onSurfaceVariant, marginTop: '1px' }}>
+                            {nome ? `${nome} · ` : ''}{fDateBR(l.data)}{isHj ? ' — hoje' : atrasado ? ' — atrasado' : ''}
+                          </div>
+                        </div>
+                        {(atrasado || isHj) && (
+                          <span style={{ background: atrasado ? C.statusDanger : C.statusWarning, color: '#fff', borderRadius: '9999px', fontSize: '0.62rem', fontFamily: F.body, fontWeight: '800', padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            {atrasado ? 'ATRASADO' : 'HOJE'}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <div style={{ marginTop: '0.75rem', textAlign: 'right' }}>
+                    <button onClick={() => navigate('/cobrancas')}
+                      style={{ background: 'none', border: 'none', color: C.primaryContainer, fontFamily: F.body, fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', padding: 0 }}>
+                      Ver cobranças →
                     </button>
                   </div>
                 </div>
