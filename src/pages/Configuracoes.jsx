@@ -75,6 +75,8 @@ function TabSistema({ showToast }) {
   const [novaCategoria, setNovaCategoria] = useState('')
   const [situacoes, setSituacoes] = useState([])
   const [novaSituacao, setNovaSituacao] = useState('')
+  const [parcelasSemJuros, setParcelasSemJuros] = useState('3')
+  const [jurosPercent, setJurosPercent] = useState('0')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -86,9 +88,22 @@ function TabSistema({ showToast }) {
       setFormas((map.formas_pagamento || '').split(',').filter(Boolean))
       setCategorias((map.categorias_despesa || '').split(',').filter(Boolean))
       setSituacoes((map.situacoes_cobranca || '').split(',').filter(Boolean))
+      if (map.parcelas_sem_juros != null) setParcelasSemJuros(String(map.parcelas_sem_juros))
+      if (map.juros_parcela_percent != null) setJurosPercent(String(map.juros_parcela_percent))
     }
     setLoading(false)
   }, [])
+
+  async function salvarParcelamento() {
+    setSaving(true)
+    const { error } = await supabase.from('configuracoes').upsert([
+      { chave: 'parcelas_sem_juros',    valor: String(parseInt(parcelasSemJuros) || 0) },
+      { chave: 'juros_parcela_percent', valor: String(parseFloat(String(jurosPercent).replace(',', '.')) || 0) },
+    ], { onConflict: 'chave' })
+    if (error) logErro('Salvar parcelamento', error)
+    showToast(error ? 'Erro ao salvar parcelamento.' : 'Configuração de parcelamento salva!')
+    setSaving(false)
+  }
 
   useEffect(() => { loadConfig() }, [loadConfig])
 
@@ -255,6 +270,40 @@ function TabSistema({ showToast }) {
         </div>
         <button onClick={salvarSituacoes} disabled={saving || situacoes.length === 0} style={btnPrimary}>
           {saving ? 'Salvando...' : 'Salvar Situações de Cobrança'}
+        </button>
+      </div>
+
+      {/* Parcelamento (juros) */}
+      <div style={cardMb}>
+        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>
+          Parcelamento e Juros
+        </h3>
+        <p style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5', fontFamily: F.body }}>
+          Defina até quantas parcelas são aceitas <strong>sem juros</strong> e o <strong>percentual de juros ao mês</strong> aplicado acima disso.
+          No cadastro de venda, as parcelas acima do limite são calculadas automaticamente com juros (tabela Price).
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', fontFamily: F.body }}>
+              Parcelas sem juros (até)
+            </label>
+            <input type="number" min="1" max="36" step="1" value={parcelasSemJuros}
+              onChange={e => setParcelasSemJuros(e.target.value)}
+              onFocus={e => e.target.select()}
+              style={inputCss} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', fontFamily: F.body }}>
+              Juros ao mês (%) acima do limite
+            </label>
+            <input type="number" min="0" step="0.1" value={jurosPercent}
+              onChange={e => setJurosPercent(e.target.value)}
+              onFocus={e => e.target.select()}
+              placeholder="Ex: 2,5" style={inputCss} />
+          </div>
+        </div>
+        <button onClick={salvarParcelamento} disabled={saving} style={btnPrimary}>
+          {saving ? 'Salvando...' : 'Salvar Parcelamento'}
         </button>
       </div>
     </>

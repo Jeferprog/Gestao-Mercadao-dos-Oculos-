@@ -19,26 +19,47 @@ function firstOfMonthISO() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
-function addDiasISO(iso, dias) {
-  const base = iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : todayISO()
-  const d = new Date(base + 'T00:00:00')
-  d.setDate(d.getDate() + dias)
-  return d.toISOString().slice(0, 10)
-}
 function num(v) { return parseFloat(String(v ?? '').replace(',', '.')) || 0 }
-// Gera N parcelas com valores divididos igualmente (sobra na última) e
-// vencimentos mensais a partir da data base (1ª = entrada, na data da venda).
-function distribuirParcelas(n, total, dataBase) {
-  const qtd = Math.max(1, Math.min(parseInt(n) || 1, 36))
-  const base = Math.floor((total / qtd) * 100) / 100
+function round2(x) { return Math.round(x * 100) / 100 }
+
+// Soma "meses" mantendo o mesmo dia (27/09 → 27/10). Se o mês destino não
+// tiver aquele dia (ex.: 31), usa o último dia do mês.
+function addMesesISO(iso, meses) {
+  const base = iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : todayISO()
+  const [y, m, d] = base.split('-').map(Number)
+  const dt = new Date(y, (m - 1) + meses, d)
+  if (dt.getDate() !== d) dt.setDate(0) // estourou o mês → último dia do mês pretendido
+  const pad = x => String(x).padStart(2, '0')
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
+}
+
+// Calcula os valores das parcelas. Acima do nº de parcelas sem juros,
+// aplica juros compostos (tabela Price) sobre o valor final.
+function valoresParcelas(qtd, valorFinal, semJuros, jurosPct) {
+  const i = (parseFloat(jurosPct) || 0) / 100
+  const aplica = qtd > (parseInt(semJuros) || 0) && i > 0
+  if (aplica && valorFinal > 0) {
+    const pmt = round2(valorFinal * i / (1 - Math.pow(1 + i, -qtd)))
+    const total = round2(pmt * qtd)
+    const arr = Array(qtd).fill(pmt)
+    arr[qtd - 1] = round2(total - pmt * (qtd - 1))
+    return { valores: arr, comJuros: true, total }
+  }
+  const base = Math.floor((valorFinal / qtd) * 100) / 100
   const arr = []
   let acc = 0
-  for (let i = 0; i < qtd; i++) {
-    const valor = i === qtd - 1 ? Math.round((total - acc) * 100) / 100 : base
-    acc += valor
-    arr.push({ n: i + 1, data: addDiasISO(dataBase, 30 * i), valor: valor.toFixed(2) })
+  for (let k = 0; k < qtd; k++) {
+    const v = k === qtd - 1 ? round2(valorFinal - acc) : base
+    acc += v; arr.push(v)
   }
-  return arr
+  return { valores: arr, comJuros: false, total: round2(valorFinal) }
+}
+
+// Gera as parcelas (nº, data mensal a partir da data base, valor).
+function gerarParcelas(qtd, valorFinal, dataBase, semJuros, jurosPct) {
+  const q = Math.max(1, Math.min(parseInt(qtd) || 1, 36))
+  const { valores } = valoresParcelas(q, valorFinal, semJuros, jurosPct)
+  return valores.map((v, k) => ({ n: k + 1, data: addMesesISO(dataBase, k), valor: v.toFixed(2) }))
 }
 
 const Label = ({ children }) => (
@@ -67,7 +88,7 @@ const FORM_INIT = {
 }
 
 /* ── FormVenda ── */
-function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedores, filiais, formasPagamento, isAdmin, onSubmit, onCancel, saving, editando }) {
+function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedores, filiais, formasPagamento, parcelasSemJuros, jurosPercent, isAdmin, onSubmit, onCancel, saving, editando }) {
   function handleBrutoDesc(field, val) {
     const next = { ...form, [field]: val }
     const bruto = parseFloat(String(next.valor_bruto).replace(',', '.')) || 0
@@ -81,24 +102,34 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   const final = num(form.valor_final)
   const isGrau = form.tipo_venda === 'Grau'
 
-  const nParc = Math.max(1, parseInt(form.num_parcelas) || 1)
+  const nParc = Math.max(1, Math.min(parseInt(form.num_parcelas) || 1, 36))
   const parcelas = form.parcelas || []
   const somaParc = parcelas.reduce((s, p) => s + num(p.valor), 0)
-  const parcelasOk = nParc < 2 || Math.abs(somaParc - final) < 0.01
+  const infoJuros = valoresParcelas(nParc, final, parcelasSemJuros, jurosPercent)
+  const totalEsperado = infoJuros.total
+  const comJuros = infoJuros.comJuros
+  const parcelasOk = nParc < 2 || Math.abs(somaParc - totalEsperado) < 0.02
   const formaConhecida = (formasPagamento || []).includes(form.forma_pagamento)
+  const primeiraData = parcelas[0]?.data || form.data_venda || todayISO()
 
-  function mudarNumParcelas(valor) {
-    const nn = Math.max(1, Math.min(parseInt(valor) || 1, 36))
+  function mudarNumParcelas(raw) {
+    if (raw === '') { onChange({ ...form, num_parcelas: '', parcelas: [] }); return }
+    const nn = Math.max(1, Math.min(parseInt(raw) || 1, 36))
     onChange({
       ...form,
       num_parcelas: nn,
-      parcelas: nn >= 2 ? distribuirParcelas(nn, final, form.data_venda || todayISO()) : [],
+      parcelas: nn >= 2 ? gerarParcelas(nn, final, form.data_venda || todayISO(), parcelasSemJuros, jurosPercent) : [],
     })
   }
   function redividir() {
-    onChange({ ...form, parcelas: distribuirParcelas(nParc, final, form.data_venda || todayISO()) })
+    onChange({ ...form, parcelas: gerarParcelas(nParc, final, primeiraData, parcelasSemJuros, jurosPercent) })
   }
   function updateParcela(i, campo, valor) {
+    // Ao mudar a data da 1ª parcela, recalcula as datas das demais (mensal).
+    if (i === 0 && campo === 'data') {
+      onChange({ ...form, parcelas: parcelas.map((p, idx) => ({ ...p, data: addMesesISO(valor, idx) })) })
+      return
+    }
     onChange({ ...form, parcelas: parcelas.map((p, idx) => idx === i ? { ...p, [campo]: valor } : p) })
   }
 
@@ -240,10 +271,12 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
           <Label>Número de parcelas</Label>
           <input style={inputCss} type="number" min="1" max="36" step="1"
             value={form.num_parcelas}
-            onChange={e => mudarNumParcelas(e.target.value)} />
+            onFocus={e => e.target.select()}
+            onChange={e => mudarNumParcelas(e.target.value)}
+            onBlur={() => { if (form.num_parcelas === '' || parseInt(form.num_parcelas) < 1) mudarNumParcelas('1') }} />
           {nParc >= 2 && final > 0 && (
-            <span style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body }}>
-              {nParc}× de {fBRL(final / nParc)}
+            <span style={{ fontSize: '0.75rem', color: comJuros ? C.statusWarning : C.onSurfaceVariant, fontFamily: F.body }}>
+              {nParc}× de {fBRL(totalEsperado / nParc)}{comJuros ? ` (com juros — total ${fBRL(totalEsperado)})` : ' sem juros'}
             </span>
           )}
         </div>
@@ -276,13 +309,18 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
             ))}
           </div>
 
+          {comJuros && (
+            <div style={{ color: C.statusWarning, fontFamily: F.body, fontSize: '0.78rem', fontWeight: '600' }}>
+              Juros aplicados (acima de {parcelasSemJuros}× sem juros): à vista {fBRL(final)} · total parcelado {fBRL(totalEsperado)}
+            </div>
+          )}
           {parcelasOk ? (
             <div style={{ color: C.statusSuccess, fontFamily: F.body, fontSize: '0.82rem', fontWeight: '600' }}>
-              ✓ Soma das parcelas ({fBRL(somaParc)}) confere com o Valor Final ({fBRL(final)})
+              ✓ Soma das parcelas ({fBRL(somaParc)}) confere com o total {comJuros ? 'parcelado' : 'da venda'} ({fBRL(totalEsperado)})
             </div>
           ) : (
             <div style={{ color: C.error, fontFamily: F.body, fontSize: '0.82rem', fontWeight: '600' }}>
-              ⚠ Soma das parcelas ({fBRL(somaParc)}) deve ser igual ao Valor Final ({fBRL(final)})
+              ⚠ Soma das parcelas ({fBRL(somaParc)}) deve ser igual a {fBRL(totalEsperado)}
             </div>
           )}
         </div>
@@ -329,6 +367,8 @@ export default function Vendas() {
   const [diasComVendas, setDiasComVendas] = useState([])
   const [loading, setLoading] = useState(true)
   const [formasPagamento, setFormasPagamento] = useState([])
+  const [parcelasSemJuros, setParcelasSemJuros] = useState(0)
+  const [jurosPercent, setJurosPercent] = useState(0)
   const [vendedores, setVendedores] = useState([])
   const [filiais, setFiliais] = useState([])
   const [filtroFilial, setFiltroFilial] = useState('')
@@ -354,6 +394,8 @@ export default function Vendas() {
       if (cfgRows) {
         const map = Object.fromEntries(cfgRows.map(r => [r.chave, r.valor]))
         setFormasPagamento((map.formas_pagamento || '').split(',').filter(Boolean))
+        setParcelasSemJuros(parseInt(map.parcelas_sem_juros) || 0)
+        setJurosPercent(parseFloat(String(map.juros_parcela_percent).replace(',', '.')) || 0)
       }
       if (vends) setVendedores(vends)
       if (fils) setFiliais(fils)
@@ -517,8 +559,9 @@ export default function Vendas() {
       }
       if (parc.some(p => !p.data)) return showToast('Preencha a data de todas as parcelas.', 'err')
       const soma = parc.reduce((s, p) => s + p.valor, 0)
-      if (Math.abs(soma - final) >= 0.01) {
-        return showToast(`A soma das parcelas (${fBRL(soma)}) deve ser igual ao Valor Final (${fBRL(final)}).`, 'err')
+      const totalEsperado = valoresParcelas(nParc, final, parcelasSemJuros, jurosPercent).total
+      if (Math.abs(soma - totalEsperado) >= 0.02) {
+        return showToast(`A soma das parcelas (${fBRL(soma)}) deve ser igual a ${fBRL(totalEsperado)}.`, 'err')
       }
       parcelasPayload = parc
     }
@@ -710,6 +753,8 @@ export default function Vendas() {
               vendedores={vendedoresAtivos}
               filiais={filiais}
               formasPagamento={formasPagamento}
+              parcelasSemJuros={parcelasSemJuros}
+              jurosPercent={jurosPercent}
               isAdmin={isAdmin}
               onSubmit={salvar}
               onCancel={() => setShowForm(false)}
