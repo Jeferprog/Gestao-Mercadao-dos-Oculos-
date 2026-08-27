@@ -19,6 +19,27 @@ function firstOfMonthISO() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
+function addDiasISO(iso, dias) {
+  const base = iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : todayISO()
+  const d = new Date(base + 'T00:00:00')
+  d.setDate(d.getDate() + dias)
+  return d.toISOString().slice(0, 10)
+}
+function num(v) { return parseFloat(String(v ?? '').replace(',', '.')) || 0 }
+// Gera N parcelas com valores divididos igualmente (sobra na última) e
+// vencimentos mensais a partir da data base (1ª = entrada, na data da venda).
+function distribuirParcelas(n, total, dataBase) {
+  const qtd = Math.max(1, Math.min(parseInt(n) || 1, 36))
+  const base = Math.floor((total / qtd) * 100) / 100
+  const arr = []
+  let acc = 0
+  for (let i = 0; i < qtd; i++) {
+    const valor = i === qtd - 1 ? Math.round((total - acc) * 100) / 100 : base
+    acc += valor
+    arr.push({ n: i + 1, data: addDiasISO(dataBase, 30 * i), valor: valor.toFixed(2) })
+  }
+  return arr
+}
 
 const Label = ({ children }) => (
   <label style={{
@@ -38,11 +59,9 @@ const FORM_INIT = {
   valor_bruto: '',
   desconto: '0',
   valor_final: '',
-  forma_pagamento: 'Entrada e Saldo',
-  entrada_valor: '',
-  entrada_forma: '',
-  saldo_valor: '',
-  saldo_forma: '',
+  forma_pagamento: '',
+  num_parcelas: 1,
+  parcelas: [],
   efetivada: true,
   motivo_nao_efetivada: '',
 }
@@ -57,15 +76,31 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
     onChange(next)
   }
 
-  const bruto = parseFloat(String(form.valor_bruto).replace(',', '.')) || 0
-  const desc = parseFloat(String(form.desconto).replace(',', '.')) || 0
-  const final = parseFloat(String(form.valor_final).replace(',', '.')) || 0
+  const bruto = num(form.valor_bruto)
+  const desc = num(form.desconto)
+  const final = num(form.valor_final)
   const isGrau = form.tipo_venda === 'Grau'
-  const isEntradaSaldo = form.forma_pagamento === 'Entrada e Saldo'
 
-  const entV = parseFloat(String(form.entrada_valor).replace(',', '.')) || 0
-  const salV = parseFloat(String(form.saldo_valor).replace(',', '.')) || 0
-  const entradaSaldoOk = !isEntradaSaldo || Math.abs(entV + salV - final) < 0.01
+  const nParc = Math.max(1, parseInt(form.num_parcelas) || 1)
+  const parcelas = form.parcelas || []
+  const somaParc = parcelas.reduce((s, p) => s + num(p.valor), 0)
+  const parcelasOk = nParc < 2 || Math.abs(somaParc - final) < 0.01
+  const formaConhecida = (formasPagamento || []).includes(form.forma_pagamento)
+
+  function mudarNumParcelas(valor) {
+    const nn = Math.max(1, Math.min(parseInt(valor) || 1, 36))
+    onChange({
+      ...form,
+      num_parcelas: nn,
+      parcelas: nn >= 2 ? distribuirParcelas(nn, final, form.data_venda || todayISO()) : [],
+    })
+  }
+  function redividir() {
+    onChange({ ...form, parcelas: distribuirParcelas(nParc, final, form.data_venda || todayISO()) })
+  }
+  function updateParcela(i, campo, valor) {
+    onChange({ ...form, parcelas: parcelas.map((p, idx) => idx === i ? { ...p, [campo]: valor } : p) })
+  }
 
   return (
     <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -82,10 +117,10 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
           </select>
         </div>
 
-        {/* O.S. — somente para Grau */}
+        {/* Número da Venda — somente para Grau */}
         {isGrau && (
           <div>
-            <Label>Nº O.S.</Label>
+            <Label>Nº Venda</Label>
             <input style={{ ...inputCss, background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'default' }}
               value={form.os_numero} readOnly />
           </div>
@@ -189,62 +224,65 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
           <Label>Forma de Pagamento</Label>
           <select style={inputCss} required
             value={form.forma_pagamento}
-            onChange={e => onChange({ ...form, forma_pagamento: e.target.value, entrada_valor: '', entrada_forma: '', saldo_valor: '', saldo_forma: '' })}>
+            onChange={e => onChange({ ...form, forma_pagamento: e.target.value })}>
             <option value="">Selecione...</option>
             {formasPagamento.map(f => (
               <option key={f} value={f}>{f}</option>
             ))}
-            <option value="Entrada e Saldo">Entrada e Saldo</option>
+            {form.forma_pagamento && !formaConhecida && (
+              <option value={form.forma_pagamento}>{form.forma_pagamento}</option>
+            )}
           </select>
+        </div>
+
+        {/* Número de parcelas */}
+        <div>
+          <Label>Número de parcelas</Label>
+          <input style={inputCss} type="number" min="1" max="36" step="1"
+            value={form.num_parcelas}
+            onChange={e => mudarNumParcelas(e.target.value)} />
+          {nParc >= 2 && final > 0 && (
+            <span style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body }}>
+              {nParc}× de {fBRL(final / nParc)}
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Bloco Entrada e Saldo */}
-      {isEntradaSaldo && (
-        <div style={{ background: C.statusDangerBg, border: `1.5px solid ${C.outlineVariant}`, borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <div style={{ fontSize: '0.8rem', fontWeight: '700', fontFamily: F.body, color: C.statusDanger, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Entrada e Saldo
+      {/* Bloco de Parcelas */}
+      {nParc >= 2 && (
+        <div style={{ background: C.surfaceContainerLow, border: `1.5px solid ${C.outlineVariant}`, borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: '700', fontFamily: F.body, color: C.onSurface, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Parcelas ({nParc}×)
+            </div>
+            <button type="button" onClick={redividir}
+              style={{ padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600', borderRadius: '0.5rem', border: `1.5px solid ${C.borderSubtle}`, background: C.surfaceContainerLowest, color: C.onSurfaceVariant, cursor: 'pointer' }}>
+              ↺ Redividir igualmente
+            </button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div>
-              <Label>Entrada — Valor (R$)</Label>
-              <input style={inputCss} type="number" min="0" step="0.01" placeholder="0,00" required={isEntradaSaldo}
-                value={form.entrada_valor}
-                onChange={e => onChange({ ...form, entrada_valor: e.target.value })} />
-            </div>
-            <div>
-              <Label>Entrada — Forma</Label>
-              <select style={inputCss} required={isEntradaSaldo}
-                value={form.entrada_forma}
-                onChange={e => onChange({ ...form, entrada_forma: e.target.value })}>
-                <option value="">Selecione...</option>
-                {formasPagamento.map(f => <option key={f} value={f}>{f}</option>)}
-              </select>
-            </div>
-            <div>
-              <Label>Saldo — Valor (R$)</Label>
-              <input style={inputCss} type="number" min="0" step="0.01" placeholder="0,00" required={isEntradaSaldo}
-                value={form.saldo_valor}
-                onChange={e => onChange({ ...form, saldo_valor: e.target.value })} />
-            </div>
-            <div>
-              <Label>Saldo — Forma</Label>
-              <select style={inputCss} required={isEntradaSaldo}
-                value={form.saldo_forma}
-                onChange={e => onChange({ ...form, saldo_forma: e.target.value })}>
-                <option value="">Selecione...</option>
-                {formasPagamento.map(f => <option key={f} value={f}>{f}</option>)}
-              </select>
-            </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {parcelas.map((p, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr', gap: '0.5rem', alignItems: 'center' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: '700', fontFamily: F.body, color: i === 0 ? C.statusDanger : C.onSurfaceVariant }}>
+                  {i === 0 ? '1ª / Entrada' : `${p.n}ª`}
+                </div>
+                <input type="date" style={{ ...inputCss, padding: '0.4rem 0.6rem' }}
+                  value={p.data || ''} onChange={e => updateParcela(i, 'data', e.target.value)} />
+                <input type="number" min="0" step="0.01" placeholder="0,00" style={{ ...inputCss, padding: '0.4rem 0.6rem', fontFamily: F.mono }}
+                  value={p.valor} onChange={e => updateParcela(i, 'valor', e.target.value)} />
+              </div>
+            ))}
           </div>
-          {!entradaSaldoOk && entV + salV > 0 && (
-            <div style={{ color: C.error, fontFamily: F.body, fontSize: '0.82rem', fontWeight: '600' }}>
-              ⚠ Entrada ({fBRL(entV)}) + Saldo ({fBRL(salV)}) = {fBRL(entV + salV)} — deve ser igual ao Valor Final ({fBRL(final)})
-            </div>
-          )}
-          {entradaSaldoOk && entV + salV > 0 && (
+
+          {parcelasOk ? (
             <div style={{ color: C.statusSuccess, fontFamily: F.body, fontSize: '0.82rem', fontWeight: '600' }}>
-              ✓ Soma confere com o Valor Final ({fBRL(final)})
+              ✓ Soma das parcelas ({fBRL(somaParc)}) confere com o Valor Final ({fBRL(final)})
+            </div>
+          ) : (
+            <div style={{ color: C.error, fontFamily: F.body, fontSize: '0.82rem', fontWeight: '600' }}>
+              ⚠ Soma das parcelas ({fBRL(somaParc)}) deve ser igual ao Valor Final ({fBRL(final)})
             </div>
           )}
         </div>
@@ -427,15 +465,32 @@ export default function Vendas() {
       desconto: v.desconto || 0,
       valor_final: v.valor_final,
       forma_pagamento: v.forma_pagamento,
-      entrada_valor: v.entrada_valor || '',
-      entrada_forma: v.entrada_forma || '',
-      saldo_valor: v.saldo_valor || '',
-      saldo_forma: v.saldo_forma || '',
+      ...carregarParcelas(v),
       efetivada: v.efetivada !== false,
       motivo_nao_efetivada: v.motivo_nao_efetivada || '',
     })
     setEditId(v.id)
     setShowForm(true)
+  }
+
+  // Monta num_parcelas/parcelas a partir da venda (converte entrada/saldo antigos).
+  function carregarParcelas(v) {
+    if (Array.isArray(v.parcelas) && v.parcelas.length) {
+      return {
+        num_parcelas: v.num_parcelas || v.parcelas.length,
+        parcelas: v.parcelas.map(p => ({ n: p.n, data: p.data || '', valor: p.valor != null ? String(p.valor) : '' })),
+      }
+    }
+    if (v.entrada_valor != null || v.saldo_valor != null) {
+      return {
+        num_parcelas: 2,
+        parcelas: [
+          { n: 1, data: v.data_venda || '', valor: v.entrada_valor != null ? String(v.entrada_valor) : '' },
+          { n: 2, data: '', valor: v.saldo_valor != null ? String(v.saldo_valor) : '' },
+        ],
+      }
+    }
+    return { num_parcelas: v.num_parcelas || 1, parcelas: [] }
   }
 
   async function salvar(e) {
@@ -446,25 +501,29 @@ export default function Vendas() {
     if (bruto <= 0) return showToast('Valor Bruto deve ser maior que zero.', 'err')
     if (desc > bruto) return showToast('Desconto não pode ser maior que o Valor Bruto.', 'err')
     if (form.tipo_venda === 'Grau' && !form.os_numero) {
-      return showToast('Número de O.S. é obrigatório para vendas de Óculos de Grau.', 'err')
+      return showToast('Número da Venda é obrigatório para vendas de Óculos de Grau.', 'err')
     }
 
     if (!form.efetivada && !form.motivo_nao_efetivada?.trim()) {
       return showToast('Informe o motivo da venda não efetivada.', 'err')
     }
 
-    if (form.forma_pagamento === 'Entrada e Saldo') {
-      const entV = parseFloat(String(form.entrada_valor).replace(',', '.')) || 0
-      const salV = parseFloat(String(form.saldo_valor).replace(',', '.')) || 0
-      if (Math.abs(entV + salV - final) >= 0.01) {
-        return showToast(`Entrada + Saldo (${fBRL(entV + salV)}) deve ser igual ao Valor Final (${fBRL(final)}).`, 'err')
+    const nParc = Math.max(1, parseInt(form.num_parcelas) || 1)
+    let parcelasPayload = null
+    if (nParc >= 2) {
+      const parc = (form.parcelas || []).map(p => ({ n: p.n, data: p.data || null, valor: num(p.valor) }))
+      if (parc.length !== nParc) {
+        return showToast('Ajuste o número de parcelas (clique em "Redividir igualmente").', 'err')
       }
-      if (!form.entrada_forma) return showToast('Selecione a forma de pagamento da Entrada.', 'err')
-      if (!form.saldo_forma) return showToast('Selecione a forma de pagamento do Saldo.', 'err')
+      if (parc.some(p => !p.data)) return showToast('Preencha a data de todas as parcelas.', 'err')
+      const soma = parc.reduce((s, p) => s + p.valor, 0)
+      if (Math.abs(soma - final) >= 0.01) {
+        return showToast(`A soma das parcelas (${fBRL(soma)}) deve ser igual ao Valor Final (${fBRL(final)}).`, 'err')
+      }
+      parcelasPayload = parc
     }
 
     setSaving(true)
-    const isEntradaSaldo = form.forma_pagamento === 'Entrada e Saldo'
     const payload = {
       tipo_venda: form.tipo_venda || 'Grau',
       os_numero: form.tipo_venda === 'Grau' ? (form.os_numero || null) : null,
@@ -477,10 +536,12 @@ export default function Vendas() {
       desconto: desc,
       valor_final: final,
       forma_pagamento: form.forma_pagamento,
-      entrada_valor: isEntradaSaldo ? (parseFloat(String(form.entrada_valor).replace(',', '.')) || null) : null,
-      entrada_forma: isEntradaSaldo ? (form.entrada_forma || null) : null,
-      saldo_valor: isEntradaSaldo ? (parseFloat(String(form.saldo_valor).replace(',', '.')) || null) : null,
-      saldo_forma: isEntradaSaldo ? (form.saldo_forma || null) : null,
+      num_parcelas: nParc,
+      parcelas: parcelasPayload,
+      entrada_valor: null,
+      entrada_forma: null,
+      saldo_valor: null,
+      saldo_forma: null,
       efetivada: form.efetivada !== false,
       motivo_nao_efetivada: !form.efetivada ? (form.motivo_nao_efetivada || null) : null,
     }
@@ -802,7 +863,7 @@ export default function Vendas() {
               <thead>
                 <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
                   {[
-                    'Tipo', 'O.S.', 'N. Fiscal', 'Cliente', 'Data', 'Vendedor',
+                    'Tipo', 'Nº Venda', 'N. Fiscal', 'Cliente', 'Data', 'Vendedor',
                     ...(filiais.length > 1 ? ['Filial'] : []),
                     ...(isAdmin ? ['Conf.'] : []),
                     'Valor Bruto', 'Desconto', 'Valor Final', 'Pagamento', 'Ações',
@@ -875,7 +936,12 @@ export default function Vendas() {
                         {fBRL(v.valor_final)}
                       </td>
                       <td style={{ padding: '0.65rem 0.75rem', fontFamily: F.body, color: C.onSurfaceVariant }}>
-                        {v.forma_pagamento === 'Entrada e Saldo' ? (
+                        {v.num_parcelas >= 2 ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                            <span style={{ background: C.surfaceContainerHigh, borderRadius: '0.375rem', padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontWeight: '600' }}>{v.forma_pagamento || '—'}</span>
+                            <span style={{ background: C.statusInfoBg, color: C.statusInfo, borderRadius: '0.375rem', padding: '0.2rem 0.5rem', fontSize: '0.73rem', fontWeight: '700' }}>{v.num_parcelas}×</span>
+                          </div>
+                        ) : v.forma_pagamento === 'Entrada e Saldo' ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                             <span style={{ background: C.statusDangerBg, borderRadius: '0.375rem', padding: '0.15rem 0.45rem', fontSize: '0.73rem', fontWeight: '600', color: C.statusDanger, display: 'inline-block' }}>
                               Entrada {fBRL(v.entrada_valor)} — {v.entrada_forma}
@@ -888,7 +954,7 @@ export default function Vendas() {
                           <span style={{
                             background: C.surfaceContainerHigh, borderRadius: '0.375rem',
                             padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600',
-                          }}>{v.forma_pagamento}</span>
+                          }}>{v.forma_pagamento || '—'}</span>
                         )}
                       </td>
                       <td style={{ padding: '0.65rem 0.75rem' }}>

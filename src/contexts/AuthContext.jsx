@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { logErro } from '../lib/erros'
 
 const AuthContext = createContext(null)
 
@@ -33,13 +34,15 @@ export function AuthProvider({ children }) {
 
   async function loadProfile(userId) {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single()
+      if (error) logErro('Carregar perfil do usuário', error)
       setProfile(data)
-    } catch (_) {
+    } catch (e) {
+      logErro('Carregar perfil do usuário', e)
       setProfile(null)
     }
     setLoading(false)

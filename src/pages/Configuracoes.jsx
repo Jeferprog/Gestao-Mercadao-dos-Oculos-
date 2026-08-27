@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, createSignupClient } from '../lib/supabase'
+import { logErro } from '../lib/erros'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 
@@ -78,7 +79,8 @@ function TabSistema({ showToast }) {
   const [saving, setSaving] = useState(false)
 
   const loadConfig = useCallback(async () => {
-    const { data } = await supabase.from('configuracoes').select('*')
+    const { data, error } = await supabase.from('configuracoes').select('*')
+    if (error) logErro('Carregar configurações', error)
     if (data) {
       const map = Object.fromEntries(data.map(r => [r.chave, r.valor]))
       setFormas((map.formas_pagamento || '').split(',').filter(Boolean))
@@ -270,7 +272,8 @@ function TabFiliais({ showToast }) {
   const [saving, setSaving] = useState(false)
 
   const loadFiliais = useCallback(async () => {
-    const { data } = await supabase.from('filiais').select('*').order('nome')
+    const { data, error } = await supabase.from('filiais').select('*').order('nome')
+    if (error) logErro('Carregar filiais (configurações)', error)
     setFiliais(data || [])
     setLoading(false)
   }, [])
