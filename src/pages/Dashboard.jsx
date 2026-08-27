@@ -198,7 +198,7 @@ function FilialSection({ nome, stats, chartData, loading, navigate, mesTit, show
           icon="💰" bg={C.statusDangerBg} color={C.statusDanger}
           label="Vendas Hoje"
           value={fBRL(stats.totHoje)}
-          sub={stats.qtdHoje > 0 ? `${stats.qtdHoje} O.S.` : 'Sem vendas hoje'}
+          sub={stats.qtdHoje > 0 ? `${stats.qtdHoje} venda${stats.qtdHoje !== 1 ? 's' : ''}` : 'Sem vendas hoje'}
           shimmer={loading}
           onClick={() => navigate('/vendas')}
         />
@@ -206,7 +206,7 @@ function FilialSection({ nome, stats, chartData, loading, navigate, mesTit, show
           icon="📈" bg={C.statusSuccessBg} color={C.statusSuccess}
           label="Vendas do Mês"
           value={fBRL(stats.totMes)}
-          sub={stats.qtdMes > 0 ? `${stats.qtdMes} O.S. no mês` : 'Sem vendas no mês'}
+          sub={stats.qtdMes > 0 ? `${stats.qtdMes} venda${stats.qtdMes !== 1 ? 's' : ''} no mês` : 'Sem vendas no mês'}
           shimmer={loading}
           onClick={() => navigate('/vendas')}
         />
@@ -631,7 +631,7 @@ export default function Dashboard() {
               icon="💰" bg={C.statusDangerBg} color={C.statusDanger}
               label="Minhas Vendas Hoje"
               value={fBRL(stats.totHoje)}
-              sub={stats.qtdHoje > 0 ? `${stats.qtdHoje} O.S.` : 'Sem vendas hoje'}
+              sub={stats.qtdHoje > 0 ? `${stats.qtdHoje} venda${stats.qtdHoje !== 1 ? 's' : ''}` : 'Sem vendas hoje'}
               shimmer={loading}
               onClick={() => navigate('/vendas')}
             />
@@ -639,7 +639,7 @@ export default function Dashboard() {
               icon="📈" bg={C.statusSuccessBg} color={C.statusSuccess}
               label="Minhas Vendas do Mês"
               value={fBRL(stats.totMes)}
-              sub={stats.qtdMes > 0 ? `${stats.qtdMes} O.S. no mês` : 'Sem vendas no mês'}
+              sub={stats.qtdMes > 0 ? `${stats.qtdMes} venda${stats.qtdMes !== 1 ? 's' : ''} no mês` : 'Sem vendas no mês'}
               shimmer={loading}
               onClick={() => navigate('/vendas')}
             />
