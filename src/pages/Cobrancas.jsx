@@ -461,6 +461,17 @@ export default function Cobrancas() {
     setBoletoEdits(prev => ({ ...prev, [boletoId]: { ...prev[boletoId], [field]: value, dirty: true } }))
   }
 
+  // Registra a data de hoje como "última atualização" do devedor.
+  // Chamado sempre que algo é registrado/editado para o devedor.
+  async function tocarDevedor(devedorId) {
+    if (!devedorId) return
+    const hoje = todayISO()
+    const { error } = await supabase.from('cobrancas_devedores').update({ ultima_atualizacao: hoje }).eq('id', devedorId)
+    if (error) { logErro('Atualizar data do devedor', error); return }
+    setModalDev(prev => prev && prev.id === devedorId ? { ...prev, ultima_atualizacao: hoje } : prev)
+    setDevedores(prev => prev.map(d => d.id === devedorId ? { ...d, ultima_atualizacao: hoje } : d))
+  }
+
   async function salvarBoleto(boletoId) {
     const edit = boletoEdits[boletoId]
     if (!edit) return
@@ -483,6 +494,7 @@ export default function Cobrancas() {
         d.id === modalDev?.id ? { ...d, cobrancas_boletos: patchBoletos(d.cobrancas_boletos) } : d
       ))
       setBoletoEdits(prev => ({ ...prev, [boletoId]: { ...prev[boletoId], dirty: false } }))
+      tocarDevedor(modalDev?.id)
     }
   }
 
@@ -511,18 +523,21 @@ export default function Cobrancas() {
       setNovoLembrete({ data: '', observacao: '' })
       setMostrarFormLembrete(false)
       carregarLembretes(modalDev.id)
+      tocarDevedor(modalDev.id)
     }
   }
 
   async function toggleLembrete(l) {
     await supabase.from('cobrancas_lembretes').update({ concluido: !l.concluido }).eq('id', l.id)
     carregarLembretes(modalDev.id)
+    tocarDevedor(modalDev.id)
   }
 
   async function excluirLembrete(l) {
     if (!window.confirm('Excluir este lembrete?')) return
     await supabase.from('cobrancas_lembretes').delete().eq('id', l.id)
     carregarLembretes(modalDev.id)
+    tocarDevedor(modalDev.id)
   }
 
   /* ── importar arquivo ── */
@@ -676,6 +691,7 @@ export default function Cobrancas() {
       if (dbErr) throw new Error(dbErr.message)
       setDocDescricao('')
       await carregarDocs(modalDev.id)
+      tocarDevedor(modalDev.id)
     } catch (err) {
       setDocErr(err.message)
     } finally {
@@ -700,6 +716,7 @@ export default function Cobrancas() {
     const { error: dbErr } = await supabase.from('cobrancas_documentos').delete().eq('id', doc.id)
     if (dbErr) return setDocErr('Erro ao excluir registro: ' + dbErr.message)
     setDocs(prev => prev.filter(d => d.id !== doc.id))
+    tocarDevedor(modalDev?.id)
   }
 
   /* ── copiar cobrança ── */
