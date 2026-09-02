@@ -62,6 +62,10 @@ function gerarParcelas(qtd, valorFinal, dataBase, semJuros, jurosPct) {
   return valores.map((v, k) => ({ n: k + 1, data: addMesesISO(dataBase, k), valor: v.toFixed(2) }))
 }
 
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
 const Label = ({ children }) => (
   <label style={{
     display: 'block', fontSize: '0.8rem', fontWeight: '600', fontFamily: F.body,
@@ -425,16 +429,16 @@ export default function Vendas() {
   /* vendas do dia ou período selecionado */
   const carregarVendas = useCallback(async () => {
     setLoading(true)
-    let q = supabase
-      .from('vendas')
-      .select('*')
-      .order('data_venda', { ascending: false })
-      .order('os_numero', { nullsLast: true })
+    let q = supabase.from('vendas').select('*')
 
     if (viewMode === 'dia') {
       q = q.eq('data_venda', dataSel)
+        .order('data_venda', { ascending: false })
+        .order('os_numero', { nullsLast: true })
     } else {
+      // Período: ordena pelo Nº da Venda em ordem crescente.
       q = q.gte('data_venda', periodoInicio).lte('data_venda', periodoFim)
+        .order('os_numero', { ascending: true, nullsFirst: false })
     }
 
     if (filtroFilial) q = q.eq('filial_id', filtroFilial)
@@ -669,6 +673,86 @@ export default function Vendas() {
 
   const colsFixas = 6 + (filiais.length > 1 ? 1 : 0) + (isAdmin ? 1 : 0)
 
+  /* ── imprimir relatório de vendas conforme o filtro atual ── */
+  function imprimirVendas() {
+    if (!vendas.length) return
+    const mostrarFilial = filiais.length > 1
+    const periodoTxt = viewMode === 'dia'
+      ? `Dia ${fDateBR(dataSel)}`
+      : `Período de ${fDateBR(periodoInicio)} a ${fDateBR(periodoFim)}`
+    const filialTxt = filtroFilial && filialMap[filtroFilial] ? ` · Filial: ${filialMap[filtroFilial]}` : ''
+
+    const linhas = vendas.map(v => {
+      const pag = v.num_parcelas >= 2 ? `${v.forma_pagamento || '—'} (${v.num_parcelas}×)` : (v.forma_pagamento || '—')
+      const naoEf = v.efetivada === false
+      return `
+      <tr${naoEf ? ' class="ne"' : ''}>
+        <td class="n">${v.os_numero != null ? v.os_numero : '—'}</td>
+        <td>${escHtml(v.tipo_venda || 'Grau')}</td>
+        <td>${fDateBR(v.data_venda)}</td>
+        <td>${escHtml(v.nome_cliente || '—')}</td>
+        <td>${escHtml(vendedorMap[v.vendedor_id] || '—')}</td>
+        ${mostrarFilial ? `<td>${escHtml(filialMap[v.filial_id] || '—')}</td>` : ''}
+        <td class="v">${fBRL(v.valor_final)}</td>
+        <td>${escHtml(pag)}</td>
+        <td>${naoEf ? 'Não efetivada' : 'OK'}</td>
+      </tr>`
+    }).join('')
+
+    const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Relatório de Vendas</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1a0a0e;margin:24px;font-size:12px}
+  .hd{border-bottom:3px solid #9d0518;padding-bottom:10px;margin-bottom:14px}
+  .hd h1{margin:0;font-size:18px;color:#9d0518}
+  .hd .sub{color:#555;font-size:11px;margin-top:3px}
+  .meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:11px;color:#333}
+  .meta b{color:#111}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e2d0d3;vertical-align:top}
+  th{background:#f7f0f1;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#6e4c54}
+  td.n,th.n,td.v,th.v{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  tr.ne td{color:#999;text-decoration:line-through}
+  tfoot td{border-top:2px solid #9d0518;font-weight:700;background:#faf4f4}
+  .foot{margin-top:16px;font-size:10px;color:#999;text-align:center}
+  @media print{body{margin:0}}
+</style></head><body>
+  <div class="hd">
+    <h1>Mercadão dos Óculos — Relatório de Vendas</h1>
+    <div class="sub">Emitido em ${fDateBR(hoje)}</div>
+  </div>
+  <div class="meta">
+    <div><b>${escHtml(periodoTxt)}</b>${escHtml(filialTxt)}</div>
+    <div><b>${vendas.length}</b> venda(s)</div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th class="n">Nº Venda</th><th>Tipo</th><th>Data</th><th>Cliente</th><th>Vendedor</th>
+        ${mostrarFilial ? '<th>Filial</th>' : ''}
+        <th class="v">Valor Final</th><th>Pagamento</th><th>Situação</th>
+      </tr>
+    </thead>
+    <tbody>${linhas}</tbody>
+    <tfoot>
+      <tr>
+        <td colspan="${mostrarFilial ? 6 : 5}">TOTAL EFETIVADO — ${vendasEfetivadas.length} venda(s)</td>
+        <td class="v">${fBRL(totFinal)}</td>
+        <td colspan="2"></td>
+      </tr>
+    </tfoot>
+  </table>
+  <div class="foot">Relatório gerado pelo sistema de gestão Mercadão dos Óculos</div>
+  <script>window.onload=function(){window.print()}</script>
+</body></html>`
+
+    const w = window.open('', '_blank')
+    if (!w) { showToast('Habilite pop-ups para imprimir o relatório.', 'err'); return }
+    w.document.write(html)
+    w.document.close()
+  }
+
   return (
     <div className="pg">
       {/* Toast */}
@@ -770,9 +854,15 @@ export default function Vendas() {
         <h1 style={{ fontSize: '1.4rem', fontWeight: '800', fontFamily: F.headline, color: C.onSurface, margin: 0, letterSpacing: '-0.3px' }}>
           Vendas Diárias
         </h1>
-        <button style={btnPrimary} onClick={abrirNovaVenda}>
-          + Nova Venda
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button style={btnSecondary} onClick={imprimirVendas} disabled={loading || vendas.length === 0}
+            title="Imprimir o relatório conforme o filtro atual">
+            🖨️ Imprimir
+          </button>
+          <button style={btnPrimary} onClick={abrirNovaVenda}>
+            + Nova Venda
+          </button>
+        </div>
       </div>
 
       {/* Filtro de filial (admin + múltiplas filiais) */}
