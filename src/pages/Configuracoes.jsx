@@ -311,7 +311,7 @@ function TabSistema({ showToast }) {
 }
 
 /* ── Aba: Filiais ── */
-const FILIAL_INIT = { nome: '', os_numero_inicial: '1' }
+const FILIAL_INIT = { nome: '', os_numero_inicial: '1', sequencia_vendas: true }
 
 function TabFiliais({ showToast }) {
   const [filiais, setFiliais] = useState([])
@@ -331,14 +331,14 @@ function TabFiliais({ showToast }) {
 
   function openAdd() { setForm(FILIAL_INIT); setModal('add') }
   function openEdit(f) {
-    setForm({ nome: f.nome, os_numero_inicial: String(f.os_numero_inicial || 1) })
+    setForm({ nome: f.nome, os_numero_inicial: String(f.os_numero_inicial || 1), sequencia_vendas: f.sequencia_vendas !== false })
     setModal({ type: 'edit', data: f })
   }
 
   async function handleSave() {
     if (!form.nome.trim()) return showToast('Erro: informe o nome da filial.')
     setSaving(true)
-    const payload = { nome: form.nome.trim(), os_numero_inicial: parseInt(form.os_numero_inicial) || 1 }
+    const payload = { nome: form.nome.trim(), os_numero_inicial: parseInt(form.os_numero_inicial) || 1, sequencia_vendas: !!form.sequencia_vendas }
     let error
     if (modal === 'add') {
       ;({ error } = await supabase.from('filiais').insert(payload))
@@ -384,7 +384,7 @@ function TabFiliais({ showToast }) {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: C.tableHeader, borderBottom: `1px solid ${C.borderSubtle}` }}>
-              {['Nome', 'N.º O.S. Inicial', 'Ações'].map(col => (
+              {['Nome', 'N.º Venda Inicial', 'Sequência', 'Ações'].map(col => (
                 <th key={col} style={{
                   textAlign: 'left', padding: '0.875rem 1rem',
                   fontSize: '0.7rem', fontWeight: '600', color: C.onSurfaceVariant,
@@ -396,7 +396,7 @@ function TabFiliais({ showToast }) {
           <tbody>
             {filiais.length === 0 && (
               <tr>
-                <td colSpan={3} style={{ padding: '2.5rem', textAlign: 'center', color: C.outlineVariant, fontSize: '0.9rem', fontFamily: F.body }}>
+                <td colSpan={4} style={{ padding: '2.5rem', textAlign: 'center', color: C.outlineVariant, fontSize: '0.9rem', fontFamily: F.body }}>
                   Nenhuma filial cadastrada. Clique em "+ Nova Filial" para começar.
                 </td>
               </tr>
@@ -409,6 +409,16 @@ function TabFiliais({ showToast }) {
               >
                 <td style={{ padding: '0.875rem 1rem', fontWeight: '600', color: C.onSurface, fontFamily: F.body }}>{f.nome}</td>
                 <td style={{ padding: '0.875rem 1rem', color: C.onSurfaceVariant, fontFamily: F.mono }}>{f.os_numero_inicial}</td>
+                <td style={{ padding: '0.875rem 1rem' }}>
+                  <span style={{
+                    display: 'inline-block', padding: '0.2rem 0.625rem', borderRadius: '999px',
+                    fontSize: '0.75rem', fontWeight: '600', fontFamily: F.body,
+                    background: f.sequencia_vendas !== false ? C.statusSuccessBg : C.surfaceContainerLow,
+                    color: f.sequencia_vendas !== false ? C.statusSuccess : C.onSurfaceVariant,
+                  }}>
+                    {f.sequencia_vendas !== false ? 'Automática' : 'Manual'}
+                  </span>
+                </td>
                 <td style={{ padding: '0.875rem 1rem' }}>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button onClick={() => openEdit(f)}
@@ -448,7 +458,22 @@ function TabFiliais({ showToast }) {
                 value={form.os_numero_inicial}
                 onChange={e => setForm(p => ({ ...p, os_numero_inicial: e.target.value }))} />
               <p style={{ margin: '0.3rem 0 0', color: C.onSurfaceVariant, fontSize: '0.75rem', fontFamily: F.body }}>
-                O próximo número será sempre o maior já registrado nesta filial + 1 (ou este valor se não houver nenhum).
+                Usado quando a numeração é automática: próximo número = maior já registrado + 1 (ou este valor se não houver nenhum).
+              </p>
+            </div>
+            <div>
+              <Label>Numeração do Nº da Venda</Label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', userSelect: 'none' }}>
+                <input type="checkbox"
+                  checked={!!form.sequencia_vendas}
+                  onChange={e => setForm(p => ({ ...p, sequencia_vendas: e.target.checked }))}
+                  style={{ width: '1rem', height: '1rem', accentColor: '#9d0518' }} />
+                <span style={{ fontSize: '0.88rem', fontFamily: F.body, color: C.onSurface }}>
+                  Seguir sequência automática
+                </span>
+              </label>
+              <p style={{ margin: '0.3rem 0 0', color: C.onSurfaceVariant, fontSize: '0.75rem', fontFamily: F.body }}>
+                Marcado: o sistema sugere o próximo número (você ainda pode alterar). Desmarcado: o número fica em branco para digitação livre.
               </p>
             </div>
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>

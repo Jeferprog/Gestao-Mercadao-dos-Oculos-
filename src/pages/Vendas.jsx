@@ -152,8 +152,9 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
         {isGrau && (
           <div>
             <Label>Nº Venda</Label>
-            <input style={{ ...inputCss, background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'default' }}
-              value={form.os_numero} readOnly />
+            <input style={inputCss} inputMode="numeric" placeholder="Número da venda"
+              value={form.os_numero}
+              onChange={e => onChange({ ...form, os_numero: e.target.value })} />
           </div>
         )}
 
@@ -464,19 +465,18 @@ export default function Vendas() {
     }
   }
 
-  /* próximo O.S. por filial — respeita os_numero_inicial como piso mínimo */
+  /* próximo Nº da Venda por filial — só quando a filial segue sequência automática */
   async function getProximoOs(filialId) {
-    if (filialId) {
-      const [{ data: fil }, { data: maxRow }] = await Promise.all([
-        supabase.from('filiais').select('os_numero_inicial').eq('id', filialId).maybeSingle(),
-        supabase.from('vendas').select('os_numero').eq('filial_id', filialId)
-          .not('os_numero', 'is', null).order('os_numero', { ascending: false }).limit(1).maybeSingle(),
-      ])
-      const inicial = fil?.os_numero_inicial || 1
-      if (maxRow) return Math.max(maxRow.os_numero + 1, inicial)
-      return inicial
-    }
-    return 1
+    if (!filialId) return ''
+    const [{ data: fil }, { data: maxRow }] = await Promise.all([
+      supabase.from('filiais').select('os_numero_inicial, sequencia_vendas').eq('id', filialId).maybeSingle(),
+      supabase.from('vendas').select('os_numero').eq('filial_id', filialId)
+        .not('os_numero', 'is', null).order('os_numero', { ascending: false }).limit(1).maybeSingle(),
+    ])
+    if (fil && fil.sequencia_vendas === false) return '' // numeração manual → deixa em branco
+    const inicial = fil?.os_numero_inicial || 1
+    if (maxRow) return Math.max(maxRow.os_numero + 1, inicial)
+    return inicial
   }
 
   async function abrirNovaVenda() {
@@ -569,7 +569,7 @@ export default function Vendas() {
     setSaving(true)
     const payload = {
       tipo_venda: form.tipo_venda || 'Grau',
-      os_numero: form.tipo_venda === 'Grau' ? (form.os_numero || null) : null,
+      os_numero: form.tipo_venda === 'Grau' ? (parseInt(form.os_numero) || null) : null,
       nota_fiscal: form.nota_fiscal || null,
       nome_cliente: form.nome_cliente || null,
       data_venda: form.data_venda,
