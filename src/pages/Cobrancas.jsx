@@ -46,7 +46,9 @@ function fBRL(v) {
 }
 function fDate(iso) {
   if (!iso) return '—'
-  const [y, m, d] = String(iso).split('-')
+  // Pega só a parte da data (YYYY-MM-DD), mesmo se vier com hora (timestamp).
+  const [y, m, d] = String(iso).slice(0, 10).split('-')
+  if (!y || !m || !d) return '—'
   return `${d}/${m}/${y}`
 }
 function escHtml(s) {
