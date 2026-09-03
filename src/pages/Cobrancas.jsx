@@ -207,18 +207,12 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
   }
 
   const idsExistentes = existentesDB?.map(d => d.id) || []
-  if (idsExistentes.length > 0) {
-    if (filialId) {
-      // vincula à filial os devedores que ainda não têm filial; os demais só atualiza data
-      const semFilial = existentesDB.filter(d => !d.filial_id).map(d => d.id)
-      const comFilial = existentesDB.filter(d =>  d.filial_id).map(d => d.id)
-      if (semFilial.length > 0)
-        await supabase.from('cobrancas_devedores').update({ ultima_atualizacao: hoje, filial_id: filialId }).in('id', semFilial)
-      if (comFilial.length > 0)
-        await supabase.from('cobrancas_devedores').update({ ultima_atualizacao: hoje }).in('id', comFilial)
-    } else {
-      await supabase.from('cobrancas_devedores').update({ ultima_atualizacao: hoje }).in('id', idsExistentes)
-    }
+  // A importação NÃO altera a "última atualização" dos devedores já existentes.
+  // Só vincula à filial os que ainda não têm filial (sem tocar na data).
+  if (idsExistentes.length > 0 && filialId) {
+    const semFilial = existentesDB.filter(d => !d.filial_id).map(d => d.id)
+    if (semFilial.length > 0)
+      await supabase.from('cobrancas_devedores').update({ filial_id: filialId }).in('id', semFilial)
   }
 
   const nossoNums = boletos.map(b => b.nosso_numero).filter(Boolean)
@@ -294,6 +288,7 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
 }
 
 const STATUS_OPTS = ['Novo', 'Em andamento', 'Negociado', 'Protestado', 'Quitado']
+const PC_STATUS_OPTS = ['Encaminhar documentos', 'Documentação enviada', 'Aguardando a audiência', 'Processo concluído']
 
 /* ════════════════════════════════ COMPONENTE PRINCIPAL ════════════════════════════════ */
 export default function Cobrancas() {
@@ -365,7 +360,7 @@ export default function Cobrancas() {
       .from('cobrancas_devedores')
       .select(`
         id, nome_pagador, telefone, filial_id, status_cobranca, primeiro_registro, ultima_atualizacao,
-        pequenas_causas, data_audiencia, situacao_audiencia, observacoes,
+        pequenas_causas, status_pequenas_causas, data_audiencia, situacao_audiencia, observacoes,
         cobrancas_boletos (
           id, data_vencimento, data_liquidacao, valor, valor_liquidacao,
           situacao_boleto, situacao_atual, motivo, data_atual, valor_atual,
@@ -437,6 +432,7 @@ export default function Cobrancas() {
       status_cobranca:    dev.status_cobranca    || 'Novo',
       telefone:           dev.telefone           || '',
       pequenas_causas:    dev.pequenas_causas    || false,
+      status_pequenas_causas: dev.status_pequenas_causas || '',
       data_audiencia:     dev.data_audiencia     || '',
       situacao_audiencia: dev.situacao_audiencia || '',
       observacoes:        dev.observacoes        || '',
@@ -615,6 +611,7 @@ export default function Cobrancas() {
       status_cobranca:    editForm.status_cobranca,
       telefone:           editForm.telefone || null,
       pequenas_causas:    editForm.pequenas_causas,
+      status_pequenas_causas: editForm.pequenas_causas ? (editForm.status_pequenas_causas || null) : null,
       data_audiencia:     editForm.data_audiencia || null,
       situacao_audiencia: editForm.situacao_audiencia || null,
       observacoes:        editForm.observacoes || null,
@@ -640,6 +637,7 @@ export default function Cobrancas() {
       status_cobranca:    editForm.status_cobranca,
       telefone:           editForm.telefone || null,
       pequenas_causas:    editForm.pequenas_causas,
+      status_pequenas_causas: editForm.pequenas_causas ? (editForm.status_pequenas_causas || null) : null,
       data_audiencia:     editForm.data_audiencia || null,
       situacao_audiencia: editForm.situacao_audiencia || null,
       observacoes:        editForm.observacoes || null,
@@ -1291,6 +1289,20 @@ export default function Cobrancas() {
                       style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: C.primaryContainer }} />
                     <label htmlFor="pc-check-modal" style={{ fontSize: '0.875rem', fontWeight: '600', color: C.onSurfaceVariant, cursor: 'pointer', fontFamily: F.body }}>⚖️ Pequenas causas</label>
                   </div>
+                  {editForm.pequenas_causas && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>Status pequenas causas</label>
+                      <select value={editForm.status_pequenas_causas || ''}
+                        onChange={e => setEditForm(f => ({ ...f, status_pequenas_causas: e.target.value }))}
+                        style={{ ...inputCss, width: '100%' }}>
+                        <option value="">—</option>
+                        {PC_STATUS_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
+                        {editForm.status_pequenas_causas && !PC_STATUS_OPTS.includes(editForm.status_pequenas_causas) && (
+                          <option value={editForm.status_pequenas_causas}>{editForm.status_pequenas_causas}</option>
+                        )}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>Situação da audiência</label>
                     <input type="text" placeholder="Ex: Aguardando pauta, Realizada..." value={editForm.situacao_audiencia || ''}
