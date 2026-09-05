@@ -80,7 +80,7 @@ export default function CaptacaoClientes() {
       .order('data_consulta', { ascending: false })
       .order('created_at', { ascending: false })
 
-    if (!isAdmin) q = q.eq('vendedor_id', profile?.id || '')
+    if (!isAdmin) q = q.eq('filial_id', profile?.filial_id || '')
     if (filtroFilial) q = q.eq('filial_id', filtroFilial)
 
     const { data, error } = await q
@@ -154,7 +154,7 @@ export default function CaptacaoClientes() {
   }
 
   function podeAlterar(r) {
-    return isAdmin || r.vendedor_id === profile?.id
+    return isAdmin || r.filial_id === profile?.filial_id
   }
 
   const vendedorMap = Object.fromEntries(vendedores.map(v => [v.id, v.nome]))
