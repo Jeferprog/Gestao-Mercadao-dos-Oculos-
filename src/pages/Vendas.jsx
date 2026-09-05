@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
+import { logErro } from '../lib/erros'
 
 /* ── helpers ── */
 function fBRL(v) {
@@ -607,10 +608,14 @@ export default function Vendas() {
       showToast(editId ? 'Venda atualizada!' : 'Venda registrada!')
       if (form.nome_cliente?.trim()) {
         const n = form.nome_cliente.trim()
+        const filialCliente = form.filial_id || profile?.filial_id || null
         const { data: exist } = await supabase.from('clientes').select('id').ilike('nome', n).limit(1)
         if (!exist?.length) {
-          const { error: errCli } = await supabase.from('clientes').insert({ nome: n })
-          if (errCli) showToast('Aviso: não foi possível sincronizar com Clientes.', 'err')
+          const { error: errCli } = await supabase.from('clientes').insert({ nome: n, filial_id: filialCliente })
+          if (errCli) {
+            logErro('Sincronizar cliente da venda', errCli)
+            showToast('Venda registrada. (O cliente não foi adicionado ao cadastro de Clientes.)', 'ok')
+          }
         }
       }
       setShowForm(false)
