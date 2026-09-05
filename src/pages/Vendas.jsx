@@ -419,7 +419,7 @@ export default function Vendas() {
       .gte('data_venda', `${mes}-01`)
       .lte('data_venda', `${mes}-31`)
     if (filtroFilial) q = q.eq('filial_id', filtroFilial)
-    else if (!isAdmin) q = q.eq('vendedor_id', profile?.id || '')
+    else if (!isAdmin) q = q.eq('filial_id', profile?.filial_id || '')
     const { data } = await q
     if (data) {
       const unique = [...new Set(data.map(r => r.data_venda))].sort()
@@ -443,7 +443,7 @@ export default function Vendas() {
     }
 
     if (filtroFilial) q = q.eq('filial_id', filtroFilial)
-    else if (!isAdmin) q = q.eq('vendedor_id', profile?.id || '')
+    else if (!isAdmin) q = q.eq('filial_id', profile?.filial_id || '')
     const { data, error } = await q
     if (!error && data) setVendas(data)
     setLoading(false)
@@ -651,7 +651,7 @@ export default function Vendas() {
   }
 
   function podeAlterar(v) {
-    return isAdmin || v.vendedor_id === profile?.id
+    return isAdmin || v.filial_id === profile?.filial_id
   }
 
   /* totais apenas das vendas efetivadas */
