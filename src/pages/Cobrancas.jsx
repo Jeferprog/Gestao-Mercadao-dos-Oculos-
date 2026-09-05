@@ -202,7 +202,7 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
     inseridos?.forEach(d => { mapId[d.nome_normalizado] = d.id })
 
     if (novosNomes.length > 0) {
-      await supabase.from('clientes').insert(novosNomes.map(nome => ({ nome })))
+      await supabase.from('clientes').insert(novosNomes.map(nome => ({ nome, filial_id: filialId || null })))
     }
   }
 
@@ -626,7 +626,7 @@ export default function Cobrancas() {
           await supabase.from('clientes').update({ telefone: editForm.telefone }).eq('id', cli[0].id)
         }
       } else {
-        await supabase.from('clientes').insert({ nome: nomeDev, telefone: editForm.telefone || null })
+        await supabase.from('clientes').insert({ nome: nomeDev, telefone: editForm.telefone || null, filial_id: modalDev.filial_id || null })
       }
     }
 
