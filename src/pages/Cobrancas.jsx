@@ -290,6 +290,17 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
 const STATUS_OPTS = ['Novo', 'Em andamento', 'Negociado', 'Protestado', 'Quitado']
 const PC_STATUS_OPTS = ['Encaminhar documentos', 'Documentação enviada', 'Aguardando a audiência', 'Processo concluído']
 
+const novoBoletoVazio = () => ({
+  data_vencimento: '', valor: '', nosso_numero: '', numero_doc: '',
+  situacao_boleto: '', situacao_atual: '', data_liquidacao: '', valor_liquidacao: '', motivo: '',
+})
+const novoDevVazio = (filialId = '') => ({
+  nome_pagador: '', documento: '', telefone: '', filial_id: filialId,
+  status_cobranca: 'Novo', pequenas_causas: false, status_pequenas_causas: '',
+  data_audiencia: '', situacao_audiencia: '', observacoes: '',
+  boletos: [novoBoletoVazio()],
+})
+
 /* ════════════════════════════════ COMPONENTE PRINCIPAL ════════════════════════════════ */
 export default function Cobrancas() {
   const { isAdmin, profile } = useAuth()
@@ -317,6 +328,11 @@ export default function Cobrancas() {
   const [savingBoleto,     setSavingBoleto]     = useState(new Set())
 
   const [situacoesCobranca,    setSituacoesCobranca]    = useState(['Pendente','Em negociação','Acordado','Liquidada','Protestado','Ação judicial','Incobrável'])
+
+  const [novoDevOpen,          setNovoDevOpen]          = useState(false)
+  const [novoDev,              setNovoDev]              = useState(novoDevVazio())
+  const [salvandoNovoDev,      setSalvandoNovoDev]      = useState(false)
+  const [novoDevErro,          setNovoDevErro]          = useState('')
 
   const [importStep,           setImportStep]           = useState('closed') // 'closed' | 'selecting' | 'preview'
   const [importFilialId,       setImportFilialId]       = useState('')
@@ -536,6 +552,93 @@ export default function Cobrancas() {
     await supabase.from('cobrancas_lembretes').delete().eq('id', l.id)
     carregarLembretes(modalDev.id)
     tocarDevedor(modalDev.id)
+  }
+
+  /* ── adicionar devedor manualmente ── */
+  function abrirNovoDev() {
+    const filialPadrao = filtroFilial || (!isAdmin ? (profile?.filial_id || '') : (filiais.length === 1 ? filiais[0].id : ''))
+    setNovoDev(novoDevVazio(filialPadrao))
+    setNovoDevErro('')
+    setNovoDevOpen(true)
+  }
+  function setND(patch) { setNovoDev(prev => ({ ...prev, ...patch })) }
+  function addBoletoND() { setNovoDev(prev => ({ ...prev, boletos: [...prev.boletos, novoBoletoVazio()] })) }
+  function removeBoletoND(i) { setNovoDev(prev => ({ ...prev, boletos: prev.boletos.filter((_, idx) => idx !== i) })) }
+  function updateBoletoND(i, campo, valor) {
+    setNovoDev(prev => ({ ...prev, boletos: prev.boletos.map((b, idx) => idx === i ? { ...b, [campo]: valor } : b) }))
+  }
+
+  async function salvarNovoDev() {
+    setNovoDevErro('')
+    const nome = novoDev.nome_pagador.trim()
+    if (!nome) { setNovoDevErro('Informe o nome do devedor.'); return }
+    if (isAdmin && filiais.length > 1 && !novoDev.filial_id) { setNovoDevErro('Selecione a filial.'); return }
+    const filialId = novoDev.filial_id || (!isAdmin ? profile?.filial_id : null) || null
+    const norm = normalizarNome(nome)
+
+    setSalvandoNovoDev(true)
+    // Evita duplicar: verifica se já existe devedor com o mesmo nome normalizado.
+    const { data: existe } = await supabase.from('cobrancas_devedores')
+      .select('id').eq('nome_normalizado', norm).limit(1)
+    if (existe?.length) {
+      setSalvandoNovoDev(false)
+      setNovoDevErro('Já existe um devedor com esse nome. Abra o devedor existente para editar.')
+      return
+    }
+
+    const hoje = todayISO()
+    const { data: devIns, error: eDev } = await supabase.from('cobrancas_devedores').insert({
+      nome_pagador:       nome,
+      nome_normalizado:   norm,
+      documento:          novoDev.documento || null,
+      telefone:           novoDev.telefone || null,
+      filial_id:          filialId,
+      status_cobranca:    novoDev.status_cobranca || 'Novo',
+      pequenas_causas:    novoDev.pequenas_causas,
+      ...(novoDev.pequenas_causas ? { status_pequenas_causas: novoDev.status_pequenas_causas || null } : {}),
+      data_audiencia:     novoDev.data_audiencia || null,
+      situacao_audiencia: novoDev.situacao_audiencia || null,
+      observacoes:        novoDev.observacoes || null,
+      primeiro_registro:  hoje,
+      ultima_atualizacao: hoje,
+    }).select('id').single()
+
+    if (eDev) { setSalvandoNovoDev(false); setNovoDevErro('Erro ao salvar devedor: ' + eDev.message); return }
+
+    // Boletos: só os que têm ao menos vencimento ou valor.
+    const boletosValidos = novoDev.boletos.filter(b => b.data_vencimento || b.valor)
+    if (boletosValidos.length > 0) {
+      const linhas = boletosValidos.map(b => ({
+        devedor_id:       devIns.id,
+        filial_id:        filialId,
+        data_vencimento:  b.data_vencimento || null,
+        valor:            b.valor !== '' ? parseBRL(b.valor) : null,
+        nosso_numero:     b.nosso_numero || null,
+        numero_doc:       b.numero_doc || null,
+        situacao_boleto:  b.situacao_boleto || null,
+        situacao_atual:   b.situacao_atual || null,
+        data_liquidacao:  b.data_liquidacao || null,
+        valor_liquidacao: b.valor_liquidacao !== '' ? parseBRL(b.valor_liquidacao) : null,
+        motivo:           b.motivo || null,
+      }))
+      const { error: eBol } = await supabase.from('cobrancas_boletos').insert(linhas)
+      if (eBol) {
+        setSalvandoNovoDev(false)
+        setNovoDevErro('Devedor criado, mas houve erro ao salvar boletos: ' + eBol.message)
+        await carregar()
+        return
+      }
+    }
+
+    // Sincroniza com Clientes (mesma filial), sem duplicar.
+    const { data: cli } = await supabase.from('clientes').select('id').ilike('nome', nome).limit(1)
+    if (!cli?.length) {
+      await supabase.from('clientes').insert({ nome, telefone: novoDev.telefone || null, filial_id: filialId })
+    }
+
+    setSalvandoNovoDev(false)
+    setNovoDevOpen(false)
+    await carregar()
   }
 
   /* ── importar arquivo ── */
@@ -875,8 +978,164 @@ export default function Cobrancas() {
 
   /* ════════════════════ RENDER ════════════════════ */
 
+  const lblNovo = { display: 'block', fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.4px', color: C.onSurfaceVariant, marginBottom: '0.25rem', fontFamily: F.body }
+
   return (
     <div className="pg">
+
+      {/* ── Modal: adicionar devedor manualmente ── */}
+      {novoDevOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(15,45,74,0.50)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '1.5rem', overflowY: 'auto' }}
+          onClick={() => !salvandoNovoDev && setNovoDevOpen(false)}>
+          <div style={{ ...dsCard, width: '100%', maxWidth: '860px', padding: 0, overflow: 'hidden', margin: 'auto' }} onClick={e => e.stopPropagation()}>
+            {/* Cabeçalho */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: `1px solid ${C.borderSubtle}`, background: C.surfaceContainerLow }}>
+              <div style={{ fontWeight: '800', color: C.onSurface, fontSize: '1.05rem', fontFamily: F.headline }}>Adicionar devedor</div>
+              <button onClick={() => setNovoDevOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.onSurfaceVariant, fontSize: '1.25rem', lineHeight: 1 }}>✕</button>
+            </div>
+
+            <div style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* Dados do devedor */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.875rem 1rem' }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={lblNovo}>Nome do devedor *</label>
+                  <input value={novoDev.nome_pagador} onChange={e => setND({ nome_pagador: e.target.value })}
+                    placeholder="Nome do pagador" autoFocus style={{ ...inputCss, width: '100%' }} />
+                </div>
+                <div>
+                  <label style={lblNovo}>Documento (CPF/CNPJ)</label>
+                  <input value={novoDev.documento} onChange={e => setND({ documento: e.target.value })}
+                    placeholder="Opcional" style={{ ...inputCss, width: '100%' }} />
+                </div>
+                <div>
+                  <label style={lblNovo}>Telefone</label>
+                  <input value={novoDev.telefone} onChange={e => setND({ telefone: e.target.value })}
+                    placeholder="(00) 00000-0000" style={{ ...inputCss, width: '100%' }} />
+                </div>
+                {isAdmin && filiais.length > 1 && (
+                  <div>
+                    <label style={lblNovo}>Filial *</label>
+                    <select value={novoDev.filial_id} onChange={e => setND({ filial_id: e.target.value })} style={{ ...inputCss, width: '100%' }}>
+                      <option value="">Selecione…</option>
+                      {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label style={lblNovo}>Status</label>
+                  <select value={novoDev.status_cobranca} onChange={e => setND({ status_cobranca: e.target.value })} style={{ ...inputCss, width: '100%' }}>
+                    {STATUS_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingTop: '1.3rem' }}>
+                  <input type="checkbox" id="nd-pc" checked={novoDev.pequenas_causas}
+                    onChange={e => setND({ pequenas_causas: e.target.checked })}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: C.primaryContainer }} />
+                  <label htmlFor="nd-pc" style={{ fontSize: '0.875rem', fontWeight: '600', color: C.onSurfaceVariant, cursor: 'pointer', fontFamily: F.body }}>⚖️ Pequenas causas</label>
+                </div>
+                {novoDev.pequenas_causas && (
+                  <div>
+                    <label style={lblNovo}>Status pequenas causas</label>
+                    <select value={novoDev.status_pequenas_causas} onChange={e => setND({ status_pequenas_causas: e.target.value })} style={{ ...inputCss, width: '100%' }}>
+                      <option value="">—</option>
+                      {PC_STATUS_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label style={lblNovo}>Data da audiência</label>
+                  <input type="date" value={novoDev.data_audiencia} onChange={e => setND({ data_audiencia: e.target.value })} style={{ ...inputCss, width: '100%' }} />
+                </div>
+                <div>
+                  <label style={lblNovo}>Situação da audiência</label>
+                  <input value={novoDev.situacao_audiencia} onChange={e => setND({ situacao_audiencia: e.target.value })}
+                    placeholder="Ex: Aguardando pauta" style={{ ...inputCss, width: '100%' }} />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={lblNovo}>Observações</label>
+                  <textarea rows={2} value={novoDev.observacoes} onChange={e => setND({ observacoes: e.target.value })}
+                    placeholder="Anotações..." style={{ ...inputCss, width: '100%', resize: 'vertical', fontFamily: F.body }} />
+                </div>
+              </div>
+
+              {/* Boletos */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <div style={{ fontWeight: '700', color: C.onSurfaceVariant, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>Boletos</div>
+                  <button onClick={addBoletoND} style={{ padding: '0.35rem 0.8rem', background: C.surfaceContainerLowest, color: C.primaryContainer, border: `1.5px solid ${C.primaryContainer}`, borderRadius: '0.5rem', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer', fontFamily: F.body }}>+ Adicionar boleto</button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                  {novoDev.boletos.map((b, i) => (
+                    <div key={i} style={{ border: `1px solid ${C.borderSubtle}`, borderRadius: '0.6rem', padding: '0.75rem', background: C.surfaceContainerLowest }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: '700', color: C.onSurfaceVariant, fontFamily: F.body }}>Boleto {i + 1}</span>
+                        {novoDev.boletos.length > 1 && (
+                          <button onClick={() => removeBoletoND(i)} title="Remover" style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.statusDanger, fontSize: '0.95rem' }}>✕</button>
+                        )}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.5rem 0.75rem' }}>
+                        <div>
+                          <label style={lblNovo}>Vencimento</label>
+                          <input type="date" value={b.data_vencimento} onChange={e => updateBoletoND(i, 'data_vencimento', e.target.value)} style={{ ...inputCss, width: '100%', padding: '0.35rem 0.5rem' }} />
+                        </div>
+                        <div>
+                          <label style={lblNovo}>Valor (R$)</label>
+                          <input inputMode="decimal" value={b.valor} onChange={e => updateBoletoND(i, 'valor', e.target.value)} placeholder="0,00" style={{ ...inputCss, width: '100%', padding: '0.35rem 0.5rem', fontFamily: F.mono }} />
+                        </div>
+                        <div>
+                          <label style={lblNovo}>Nosso Nº</label>
+                          <input value={b.nosso_numero} onChange={e => updateBoletoND(i, 'nosso_numero', e.target.value)} placeholder="Opcional" style={{ ...inputCss, width: '100%', padding: '0.35rem 0.5rem' }} />
+                        </div>
+                        <div>
+                          <label style={lblNovo}>Nº Doc</label>
+                          <input value={b.numero_doc} onChange={e => updateBoletoND(i, 'numero_doc', e.target.value)} placeholder="Opcional" style={{ ...inputCss, width: '100%', padding: '0.35rem 0.5rem' }} />
+                        </div>
+                        <div>
+                          <label style={lblNovo}>Sit. Banco</label>
+                          <input value={b.situacao_boleto} onChange={e => updateBoletoND(i, 'situacao_boleto', e.target.value)} placeholder="Opcional" style={{ ...inputCss, width: '100%', padding: '0.35rem 0.5rem' }} />
+                        </div>
+                        <div>
+                          <label style={lblNovo}>Situação Atual</label>
+                          <select value={b.situacao_atual} onChange={e => updateBoletoND(i, 'situacao_atual', e.target.value)} style={{ ...inputCss, width: '100%', padding: '0.35rem 0.5rem' }}>
+                            <option value="">—</option>
+                            {situacoesCobranca.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={lblNovo}>Data Liquidação</label>
+                          <input type="date" value={b.data_liquidacao} onChange={e => updateBoletoND(i, 'data_liquidacao', e.target.value)} style={{ ...inputCss, width: '100%', padding: '0.35rem 0.5rem' }} />
+                        </div>
+                        <div>
+                          <label style={lblNovo}>Valor Liquidado (R$)</label>
+                          <input inputMode="decimal" value={b.valor_liquidacao} onChange={e => updateBoletoND(i, 'valor_liquidacao', e.target.value)} placeholder="0,00" style={{ ...inputCss, width: '100%', padding: '0.35rem 0.5rem', fontFamily: F.mono }} />
+                        </div>
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <label style={lblNovo}>Motivo</label>
+                          <input value={b.motivo} onChange={e => updateBoletoND(i, 'motivo', e.target.value)} placeholder="Opcional" style={{ ...inputCss, width: '100%', padding: '0.35rem 0.5rem' }} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {novoDevErro && (
+                <div style={{ background: C.statusDangerBg, color: C.statusDanger, borderRadius: '0.5rem', padding: '0.6rem 0.85rem', fontSize: '0.85rem', fontFamily: F.body }}>{novoDevErro}</div>
+              )}
+            </div>
+
+            {/* Rodapé */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', padding: '1rem 1.5rem', borderTop: `1px solid ${C.borderSubtle}`, background: C.surfaceContainerLow }}>
+              <button onClick={() => setNovoDevOpen(false)} disabled={salvandoNovoDev}
+                style={{ padding: '0.6rem 1.1rem', background: 'none', border: `1.5px solid ${C.borderSubtle}`, borderRadius: '0.6rem', color: C.onSurfaceVariant, fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}>Cancelar</button>
+              <button onClick={salvarNovoDev} disabled={salvandoNovoDev}
+                style={{ padding: '0.6rem 1.25rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', borderRadius: '0.6rem', fontSize: '0.875rem', fontWeight: '700', cursor: salvandoNovoDev ? 'not-allowed' : 'pointer', opacity: salvandoNovoDev ? 0.7 : 1, fontFamily: F.body }}>
+                {salvandoNovoDev ? 'Salvando…' : 'Salvar devedor'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal de importação (selecionar / preview) ── */}
       {importStep !== 'closed' && (
@@ -1469,6 +1728,12 @@ export default function Cobrancas() {
             onClick={() => setView('boletos')}
             style={{ padding: '0.55rem 1rem', borderRadius: '0.6rem', border: '1.5px solid', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s', fontFamily: F.body, ...(view === 'boletos' ? { background: C.onSurface, color: C.surfaceContainerLowest, borderColor: C.onSurface } : { background: C.surfaceContainerLowest, color: C.onSurfaceVariant, borderColor: C.borderSubtle }) }}
           >🗂️ Relação de Boletos</button>
+          {isAdmin && (
+            <button
+              onClick={abrirNovoDev}
+              style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.surfaceContainerLowest, color: C.primaryContainer, border: `1.5px solid ${C.primaryContainer}`, fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer', fontFamily: F.body }}
+            >➕ Adicionar devedor</button>
+          )}
           <button
             onClick={clickImportar} disabled={importando}
             style={{ padding: '0.55rem 1.1rem', borderRadius: '0.6rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', fontSize: '0.85rem', fontWeight: '700', cursor: importando ? 'not-allowed' : 'pointer', opacity: importando ? 0.7 : 1, fontFamily: F.body }}
