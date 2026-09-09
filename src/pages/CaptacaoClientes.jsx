@@ -218,9 +218,9 @@ export default function CaptacaoClientes() {
                   onChange={e => setForm(f => ({ ...f, nome_cliente: e.target.value }))} />
               </div>
 
-              {/* Nº da O.S. */}
+              {/* Número da Venda */}
               <div>
-                <Label>Nº da O.S.</Label>
+                <Label>Número da Venda</Label>
                 <input style={inputCss} placeholder="Opcional"
                   value={form.numero_os}
                   onChange={e => setForm(f => ({ ...f, numero_os: e.target.value }))} />
@@ -323,7 +323,7 @@ export default function CaptacaoClientes() {
               <thead>
                 <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
                   {[
-                    'Data da Consulta', 'Nome do Cliente', 'Nº O.S.', 'Vendedor',
+                    'Data da Consulta', 'Nome do Cliente', 'Nº Venda', 'Vendedor',
                     ...(filiais.length > 1 ? ['Filial'] : []),
                     'Ações',
                   ].map(h => (

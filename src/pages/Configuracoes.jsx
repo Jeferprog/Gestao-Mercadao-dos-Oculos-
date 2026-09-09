@@ -77,6 +77,8 @@ function TabSistema({ showToast }) {
   const [novaSituacao, setNovaSituacao] = useState('')
   const [parcelasSemJuros, setParcelasSemJuros] = useState('3')
   const [jurosPercent, setJurosPercent] = useState('0')
+  const [comissaoComVenda, setComissaoComVenda] = useState('10')
+  const [comissaoSemVenda, setComissaoSemVenda] = useState('5')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -90,6 +92,8 @@ function TabSistema({ showToast }) {
       setSituacoes((map.situacoes_cobranca || '').split(',').filter(Boolean))
       if (map.parcelas_sem_juros != null) setParcelasSemJuros(String(map.parcelas_sem_juros))
       if (map.juros_parcela_percent != null) setJurosPercent(String(map.juros_parcela_percent))
+      if (map.comissao_captacao_com_venda != null) setComissaoComVenda(String(map.comissao_captacao_com_venda))
+      if (map.comissao_captacao_sem_venda != null) setComissaoSemVenda(String(map.comissao_captacao_sem_venda))
     }
     setLoading(false)
   }, [])
@@ -102,6 +106,17 @@ function TabSistema({ showToast }) {
     ], { onConflict: 'chave' })
     if (error) logErro('Salvar parcelamento', error)
     showToast(error ? 'Erro ao salvar parcelamento.' : 'Configuração de parcelamento salva!')
+    setSaving(false)
+  }
+
+  async function salvarComissaoCaptacao() {
+    setSaving(true)
+    const { error } = await supabase.from('configuracoes').upsert([
+      { chave: 'comissao_captacao_com_venda', valor: String(parseFloat(String(comissaoComVenda).replace(',', '.')) || 0) },
+      { chave: 'comissao_captacao_sem_venda', valor: String(parseFloat(String(comissaoSemVenda).replace(',', '.')) || 0) },
+    ], { onConflict: 'chave' })
+    if (error) logErro('Salvar comissão de captação', error)
+    showToast(error ? 'Erro ao salvar comissão de captação.' : 'Comissão de captação salva!')
     setSaving(false)
   }
 
@@ -304,6 +319,41 @@ function TabSistema({ showToast }) {
         </div>
         <button onClick={salvarParcelamento} disabled={saving} style={btnPrimary}>
           {saving ? 'Salvando...' : 'Salvar Parcelamento'}
+        </button>
+      </div>
+
+      {/* Comissão de Captação */}
+      <div style={cardMb}>
+        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>
+          Comissão de Captação
+        </h3>
+        <p style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5', fontFamily: F.body }}>
+          Valor pago ao vendedor por cada captação registrada na aba Captação de Clientes.
+          Quando a captação tem <strong>número da venda</strong> preenchido, vale o primeiro valor;
+          quando <strong>não tem</strong>, vale o segundo. Esses totais aparecem na aba Comissões.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', fontFamily: F.body }}>
+              Com número da venda (R$)
+            </label>
+            <input type="number" min="0" step="0.01" value={comissaoComVenda}
+              onChange={e => setComissaoComVenda(e.target.value)}
+              onFocus={e => e.target.select()}
+              placeholder="Ex: 10" style={inputCss} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', fontFamily: F.body }}>
+              Sem número da venda (R$)
+            </label>
+            <input type="number" min="0" step="0.01" value={comissaoSemVenda}
+              onChange={e => setComissaoSemVenda(e.target.value)}
+              onFocus={e => e.target.select()}
+              placeholder="Ex: 5" style={inputCss} />
+          </div>
+        </div>
+        <button onClick={salvarComissaoCaptacao} disabled={saving} style={btnPrimary}>
+          {saving ? 'Salvando...' : 'Salvar Comissão de Captação'}
         </button>
       </div>
     </>
