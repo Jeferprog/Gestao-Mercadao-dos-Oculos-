@@ -21,6 +21,11 @@ function firstOfMonthISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 function num(v) { return parseFloat(String(v ?? '').replace(',', '.')) || 0 }
+
+// Mesma normalização usada na aba Cobranças (para casar o devedor pelo nome).
+function normalizarNome(nome) {
+  return String(nome || '').trim().toUpperCase().replace(/\s+/g, ' ')
+}
 function round2(x) { return Math.round(x * 100) / 100 }
 
 // Soma "meses" mantendo o mesmo dia (27/09 → 27/10). Se o mês destino não
@@ -595,10 +600,13 @@ export default function Vendas() {
     }
 
     let error
+    let vendaId = editId
     if (editId) {
       ;({ error } = await supabase.from('vendas').update(payload).eq('id', editId))
     } else {
-      ;({ error } = await supabase.from('vendas').insert(payload))
+      const { data: ins, error: eIns } = await supabase.from('vendas').insert(payload).select('id').single()
+      error = eIns
+      vendaId = ins?.id
     }
 
     setSaving(false)
@@ -606,6 +614,12 @@ export default function Vendas() {
       showToast('Erro ao salvar: ' + error.message, 'err')
     } else {
       showToast(editId ? 'Venda atualizada!' : 'Venda registrada!')
+
+      // Venda parcelada → gera/atualiza as parcelas na aba Cobranças.
+      if (vendaId) {
+        await sincronizarCobranca(vendaId, payload, parcelasPayload)
+      }
+
       if (form.nome_cliente?.trim()) {
         const n = form.nome_cliente.trim()
         const filialCliente = form.filial_id || profile?.filial_id || null
@@ -621,6 +635,96 @@ export default function Vendas() {
       setShowForm(false)
       carregarVendas()
       carregarDias()
+    }
+  }
+
+  // Reflete as parcelas da venda na aba Cobranças, para controlar o que
+  // está em aberto. Cria 1 boleto por parcela (entrada + demais). A parcela
+  // cuja data é hoje entra como PAGA. Reeditar a venda atualiza os boletos
+  // (sem duplicar) e preserva parcelas já quitadas manualmente. Só vale para
+  // vendas parceladas (2+), efetivadas e com nome do cliente.
+  async function sincronizarCobranca(vendaId, payload, parcelasPayload) {
+    try {
+      const filialId = payload.filial_id || profile?.filial_id || null
+      const nome = (payload.nome_cliente || '').trim()
+      const geraCobranca = !!parcelasPayload && parcelasPayload.length >= 2 && payload.efetivada !== false && !!nome
+
+      // Sem cobrança a gerar (à vista, não efetivada ou sem cliente):
+      // remove qualquer boleto que esta venda tenha gerado antes.
+      if (!geraCobranca) {
+        await supabase.from('cobrancas_boletos').delete().eq('venda_id', vendaId)
+        return
+      }
+
+      // Acha o devedor pelo nome (normalizado, igual à aba Cobranças) ou cria.
+      const norm = normalizarNome(nome)
+      let devedorId
+      const { data: devs } = await supabase
+        .from('cobrancas_devedores').select('id').eq('nome_normalizado', norm).limit(1)
+      if (devs?.length) {
+        devedorId = devs[0].id
+      } else {
+        const hoje = todayISO()
+        const { data: novoDev, error: eDev } = await supabase.from('cobrancas_devedores').insert({
+          nome_pagador:       nome,
+          nome_normalizado:   norm,
+          filial_id:          filialId,
+          status_cobranca:    'Novo',
+          primeiro_registro:  hoje,
+          ultima_atualizacao: hoje,
+        }).select('id').single()
+        if (eDev) { logErro('Cobrança: criar devedor da venda', eDev); return }
+        devedorId = novoDev.id
+      }
+
+      // Boletos já gerados por esta venda (para atualizar sem duplicar).
+      const { data: existentes } = await supabase
+        .from('cobrancas_boletos')
+        .select('id, parcela_num, data_liquidacao, situacao_atual')
+        .eq('venda_id', vendaId)
+      const porNum = {}
+      ;(existentes || []).forEach(b => { porNum[b.parcela_num] = b })
+
+      const hoje = todayISO()
+      const total = parcelasPayload.length
+      for (const p of parcelasPayload) {
+        const ex = porNum[p.n]
+        if (ex) {
+          // Atualiza vencimento/valor; não mexe em parcela já quitada.
+          await supabase.from('cobrancas_boletos').update({
+            devedor_id:      devedorId,
+            filial_id:       filialId,
+            data_vencimento: p.data,
+            valor:           p.valor,
+            numero_doc:      `Parcela ${p.n}/${total}`,
+          }).eq('id', ex.id)
+        } else {
+          const pagaHoje = p.data === hoje
+          await supabase.from('cobrancas_boletos').insert({
+            devedor_id:      devedorId,
+            venda_id:        vendaId,
+            parcela_num:     p.n,
+            filial_id:       filialId,
+            data_vencimento: p.data,
+            valor:           p.valor,
+            numero_doc:      `Parcela ${p.n}/${total}`,
+            ...(pagaHoje ? {
+              data_liquidacao:  hoje,
+              valor_liquidacao: p.valor,
+              situacao_atual:   'Liquidada',
+            } : {}),
+          })
+        }
+      }
+
+      // Remove boletos de parcelas que não existem mais (ex.: reduziu o nº).
+      const nsAtuais = parcelasPayload.map(p => p.n)
+      const remover = (existentes || []).filter(b => !nsAtuais.includes(b.parcela_num)).map(b => b.id)
+      if (remover.length) {
+        await supabase.from('cobrancas_boletos').delete().in('id', remover)
+      }
+    } catch (err) {
+      logErro('Cobrança: sincronizar parcelas da venda', err)
     }
   }
 
@@ -651,6 +755,8 @@ export default function Vendas() {
   }
 
   function podeAlterar(v) {
+    // Depois de conferida, só o administrador pode alterar a venda.
+    if (v.conferido && !isAdmin) return false
     return isAdmin || v.filial_id === profile?.filial_id
   }
 
@@ -1098,7 +1204,7 @@ export default function Vendas() {
                         )}
                       </td>
                       <td style={{ padding: '0.65rem 0.75rem' }}>
-                        {podeAlterar(v) && (
+                        {podeAlterar(v) ? (
                           <div style={{ display: 'flex', gap: '0.4rem' }}>
                             <button onClick={() => abrirEdicao(v)}
                               style={{
@@ -1113,7 +1219,13 @@ export default function Vendas() {
                                 background: C.statusDangerBg, color: C.statusDanger, cursor: 'pointer',
                               }}>Excluir</button>
                           </div>
-                        )}
+                        ) : (v.conferido && !isAdmin) ? (
+                          <span title="Venda conferida — somente o administrador pode alterar"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                              fontSize: '0.75rem', fontFamily: F.body, fontWeight: '600', color: C.onSurfaceVariant,
+                            }}>🔒 Conferida</span>
+                        ) : null}
                       </td>
                     </tr>
                   )
