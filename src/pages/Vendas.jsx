@@ -755,6 +755,8 @@ export default function Vendas() {
   }
 
   function podeAlterar(v) {
+    // Depois de conferida, só o administrador pode alterar a venda.
+    if (v.conferido && !isAdmin) return false
     return isAdmin || v.filial_id === profile?.filial_id
   }
 
@@ -1202,7 +1204,7 @@ export default function Vendas() {
                         )}
                       </td>
                       <td style={{ padding: '0.65rem 0.75rem' }}>
-                        {podeAlterar(v) && (
+                        {podeAlterar(v) ? (
                           <div style={{ display: 'flex', gap: '0.4rem' }}>
                             <button onClick={() => abrirEdicao(v)}
                               style={{
@@ -1217,7 +1219,13 @@ export default function Vendas() {
                                 background: C.statusDangerBg, color: C.statusDanger, cursor: 'pointer',
                               }}>Excluir</button>
                           </div>
-                        )}
+                        ) : (v.conferido && !isAdmin) ? (
+                          <span title="Venda conferida — somente o administrador pode alterar"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                              fontSize: '0.75rem', fontFamily: F.body, fontWeight: '600', color: C.onSurfaceVariant,
+                            }}>🔒 Conferida</span>
+                        ) : null}
                       </td>
                     </tr>
                   )
