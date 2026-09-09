@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
@@ -388,6 +388,7 @@ export default function Vendas() {
   const [editId, setEditId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
+  const [expandedId, setExpandedId] = useState(null) // venda com detalhes abertos
 
   function showToast(msg, tipo = 'ok') {
     setToast({ msg, tipo })
@@ -1125,19 +1126,26 @@ export default function Vendas() {
               <tbody>
                 {vendas.map(v => {
                   const naoEfetivada = v.efetivada === false
+                  const aberto = expandedId === v.id
                   return (
-                    <tr key={v.id}
-                      style={{ borderBottom: `1px solid ${C.borderSubtle}`, opacity: naoEfetivada ? 0.55 : 1 }}
+                    <Fragment key={v.id}>
+                    <tr
+                      onClick={() => setExpandedId(aberto ? null : v.id)}
+                      title={aberto ? 'Clique para recolher' : 'Clique para ver os detalhes'}
+                      style={{ borderBottom: `1px solid ${C.borderSubtle}`, opacity: naoEfetivada ? 0.55 : 1, cursor: 'pointer', background: aberto ? C.surfaceContainerLow : 'transparent' }}
                       onMouseEnter={e => e.currentTarget.style.background = C.surfaceContainerLow}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      onMouseLeave={e => e.currentTarget.style.background = aberto ? C.surfaceContainerLow : 'transparent'}>
                       <td style={{ padding: '0.65rem 0.75rem' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span style={{ color: C.onSurfaceVariant, fontSize: '0.7rem', transition: 'transform 0.2s', transform: aberto ? 'rotate(90deg)' : 'none', display: 'inline-block' }}>▸</span>
                           <span style={{
                             background: v.tipo_venda === 'Solar' ? C.statusWarningBg : C.statusInfoBg,
                             color: v.tipo_venda === 'Solar' ? C.statusWarning : C.statusInfo,
                             borderRadius: '0.375rem', padding: '0.2rem 0.55rem',
                             fontSize: '0.75rem', fontFamily: F.body, fontWeight: '600', display: 'inline-block',
                           }}>{v.tipo_venda || 'Grau'}</span>
+                          </span>
                           {naoEfetivada && (
                             <span style={{
                               background: C.statusDangerBg, color: C.statusDanger,
@@ -1162,7 +1170,7 @@ export default function Vendas() {
                       {isAdmin && (
                         <td style={{ padding: '0.65rem 0.75rem' }}>
                           <button
-                            onClick={() => toggleConferido(v)}
+                            onClick={e => { e.stopPropagation(); toggleConferido(v) }}
                             title={v.conferido ? `Conferido em ${v.conferido_em ? new Date(v.conferido_em).toLocaleString('pt-BR') : ''}` : 'Marcar como conferido'}
                             style={{
                               width: '2rem', height: '2rem', borderRadius: '0.375rem', border: 'none',
@@ -1206,13 +1214,13 @@ export default function Vendas() {
                       <td style={{ padding: '0.65rem 0.75rem' }}>
                         {podeAlterar(v) ? (
                           <div style={{ display: 'flex', gap: '0.4rem' }}>
-                            <button onClick={() => abrirEdicao(v)}
+                            <button onClick={e => { e.stopPropagation(); abrirEdicao(v) }}
                               style={{
                                 padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600',
                                 borderRadius: '0.375rem', border: `1.5px solid ${C.borderSubtle}`,
                                 background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'pointer',
                               }}>Editar</button>
-                            <button onClick={() => excluir(v.id)}
+                            <button onClick={e => { e.stopPropagation(); excluir(v.id) }}
                               style={{
                                 padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600',
                                 borderRadius: '0.375rem', border: `1.5px solid ${C.outlineVariant}`,
@@ -1228,6 +1236,72 @@ export default function Vendas() {
                         ) : null}
                       </td>
                     </tr>
+
+                    {/* Linha de detalhes — desliza para baixo ao clicar na venda */}
+                    <tr>
+                      <td colSpan={colsFixas + 5} style={{ padding: 0, border: 'none' }}>
+                        <div style={{ display: 'grid', gridTemplateRows: aberto ? '1fr' : '0fr', transition: 'grid-template-rows 0.25s ease' }}>
+                          <div style={{ overflow: 'hidden' }}>
+                            <div style={{
+                              margin: '0 0.5rem 0.75rem', padding: '1rem 1.25rem',
+                              background: C.surfaceContainerLow, borderLeft: `4px solid ${C.primary}`,
+                              borderRadius: '0 0.5rem 0.5rem 0',
+                            }}>
+                              <div style={{ fontFamily: F.body, fontWeight: '700', color: C.onSurface, fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+                                Resumo da venda {v.os_numero ? `#${v.os_numero}` : ''}
+                              </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.6rem 1.25rem' }}>
+                                {[
+                                  ['Tipo', v.tipo_venda || 'Grau'],
+                                  ['Nº da Venda', v.os_numero ? `#${v.os_numero}` : '—'],
+                                  ['Nota Fiscal', v.nota_fiscal || '—'],
+                                  ['Cliente', v.nome_cliente || '—'],
+                                  ['Data', fDateBR(v.data_venda)],
+                                  ['Vendedor', vendedorMap[v.vendedor_id] || '—'],
+                                  ...(filiais.length > 1 ? [['Filial', filialMap[v.filial_id] || '—']] : []),
+                                  ['Forma de pagamento', v.num_parcelas >= 2 ? `${v.forma_pagamento || '—'} (${v.num_parcelas}×)` : (v.forma_pagamento || '—')],
+                                  ['Valor bruto', fBRL(v.valor_bruto)],
+                                  ['Desconto', v.desconto > 0 ? `- ${fBRL(v.desconto)}` : '—'],
+                                  ['Valor final', fBRL(v.valor_final)],
+                                  ['Conferido', v.conferido ? `Sim${v.conferido_em ? ' — ' + new Date(v.conferido_em).toLocaleString('pt-BR') : ''}` : 'Não'],
+                                ].map(([rotulo, valor]) => (
+                                  <div key={rotulo}>
+                                    <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.onSurfaceVariant, fontFamily: F.body, fontWeight: '600' }}>{rotulo}</div>
+                                    <div style={{ fontSize: '0.85rem', color: C.onSurface, fontFamily: F.body, marginTop: '0.15rem' }}>{valor}</div>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {naoEfetivada && (
+                                <div style={{ marginTop: '0.75rem', fontSize: '0.82rem', color: C.statusDanger, fontFamily: F.body }}>
+                                  <strong>Não efetivada:</strong> {v.motivo_nao_efetivada || '—'}
+                                </div>
+                              )}
+
+                              {Array.isArray(v.parcelas) && v.parcelas.length > 0 && (
+                                <div style={{ marginTop: '0.9rem' }}>
+                                  <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.onSurfaceVariant, fontFamily: F.body, fontWeight: '600', marginBottom: '0.4rem' }}>Parcelas</div>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                    {v.parcelas.map(p => (
+                                      <span key={p.n} style={{
+                                        background: C.surfaceContainerHigh, borderRadius: '0.375rem',
+                                        padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontFamily: F.body,
+                                        color: C.onSurface, display: 'inline-flex', gap: '0.4rem', alignItems: 'center',
+                                      }}>
+                                        <strong>{p.n}ª</strong>
+                                        <span style={{ color: C.onSurfaceVariant }}>{fDateBR(p.data)}</span>
+                                        <span style={{ fontFamily: F.mono }}>{fBRL(p.valor)}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    </Fragment>
                   )
                 })}
               </tbody>
