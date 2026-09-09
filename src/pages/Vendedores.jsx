@@ -36,6 +36,9 @@ export default function Vendedores() {
   const [dataFim, setDataFim] = useState(lastOfMonth())
   const [vendedores, setVendedores] = useState([])
   const [vendas, setVendas] = useState([])
+  const [captacoes, setCaptacoes] = useState([])
+  const [comissaoComVenda, setComissaoComVenda] = useState(10)
+  const [comissaoSemVenda, setComissaoSemVenda] = useState(5)
   const [filiais, setFiliais] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [filtroVendedor, setFiltroVendedor] = useState('')
@@ -53,14 +56,27 @@ export default function Vendedores() {
       .eq('efetivada', true)
     if (filtroFilial) qVendas = qVendas.eq('filial_id', filtroFilial)
 
-    const [{ data: perfis }, { data: vendasData }, { data: fils }] = await Promise.all([
+    let qCapt = supabase
+      .from('captacao_clientes')
+      .select('id, numero_os, vendedor_id, filial_id, data_consulta')
+      .gte('data_consulta', dataInicio)
+      .lte('data_consulta', dataFim)
+    if (filtroFilial) qCapt = qCapt.eq('filial_id', filtroFilial)
+
+    const [{ data: perfis }, { data: vendasData }, { data: captData }, { data: fils }, { data: cfg }] = await Promise.all([
       supabase.from('profiles').select('id, nome, comissao_percentual, ativo').eq('ativo', true).order('nome'),
       qVendas,
+      qCapt,
       supabase.from('filiais').select('*').order('nome'),
+      supabase.from('configuracoes').select('chave, valor').in('chave', ['comissao_captacao_com_venda', 'comissao_captacao_sem_venda']),
     ])
     setVendedores(perfis || [])
     setVendas(vendasData || [])
+    setCaptacoes(captData || [])
     setFiliais(fils || [])
+    const cfgMap = Object.fromEntries((cfg || []).map(r => [r.chave, r.valor]))
+    if (cfgMap.comissao_captacao_com_venda != null) setComissaoComVenda(parseFloat(String(cfgMap.comissao_captacao_com_venda).replace(',', '.')) || 0)
+    if (cfgMap.comissao_captacao_sem_venda != null) setComissaoSemVenda(parseFloat(String(cfgMap.comissao_captacao_sem_venda).replace(',', '.')) || 0)
     setLoading(false)
   }, [dataInicio, dataFim, filtroFilial])
 
@@ -74,10 +90,19 @@ export default function Vendedores() {
     statsMap[v.vendedor_id].total += v.valor_final || 0
   })
 
+  // Captações por vendedor: quantidade e comissão (R$ com/sem número da venda).
+  const captMap = {}
+  captacoes.forEach(c => {
+    if (!captMap[c.vendedor_id]) captMap[c.vendedor_id] = { qtd: 0, comissao: 0 }
+    captMap[c.vendedor_id].qtd++
+    captMap[c.vendedor_id].comissao += c.numero_os ? comissaoComVenda : comissaoSemVenda
+  })
+
   const linhas = (isAdmin ? vendedores : vendedores.filter(v => v.id === profile?.id))
     .filter(v => !filtroVendedor || v.id === filtroVendedor)
     .map(v => {
       const s = statsMap[v.id] || { qtd: 0, total: 0 }
+      const cap = captMap[v.id] || { qtd: 0, comissao: 0 }
       const pct = v.comissao_percentual || 0
       return {
         id: v.id,
@@ -86,12 +111,16 @@ export default function Vendedores() {
         qtd: s.qtd,
         totalVendido: s.total,
         comissao: s.total * (pct / 100),
+        captQtd: cap.qtd,
+        captComissao: cap.comissao,
       }
     })
 
   const totVendido = linhas.reduce((s, r) => s + r.totalVendido, 0)
   const totComissao = linhas.reduce((s, r) => s + r.comissao, 0)
   const totQtd = linhas.reduce((s, r) => s + r.qtd, 0)
+  const totCaptQtd = linhas.reduce((s, r) => s + r.captQtd, 0)
+  const totCaptComissao = linhas.reduce((s, r) => s + r.captComissao, 0)
 
   const selectedVendedor = vendedores.find(v => v.id === selectedId)
   const selectedVendas = selectedId
@@ -170,7 +199,7 @@ export default function Vendedores() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
-                  {['Vendedor', 'Qtd. O.S.', 'Total Vendido', '% Comissão', 'Comissão a Receber'].map(h => (
+                  {['Vendedor', 'Qtd. Vendas', 'Total Vendido', '% Comissão', 'Comissão a Receber', 'Captações', 'Comissão Captação'].map(h => (
                     <th key={h} style={{
                       padding: '0.65rem 0.875rem', textAlign: 'left', fontSize: '0.7rem',
                       fontFamily: F.body, fontWeight: '600', color: C.onSurfaceVariant,
@@ -230,6 +259,12 @@ export default function Vendedores() {
                       <td style={{ padding: '0.8rem 0.875rem', fontFamily: F.mono, fontWeight: '800', color: row.comissao > 0 ? C.statusDanger : C.borderSubtle, whiteSpace: 'nowrap', fontSize: '0.95rem' }}>
                         {row.pct > 0 ? fBRL(row.comissao) : '—'}
                       </td>
+                      <td style={{ padding: '0.8rem 0.875rem', fontFamily: F.mono, color: row.captQtd === 0 ? C.borderSubtle : C.statusInfo, fontWeight: '700', fontSize: '1rem' }}>
+                        {row.captQtd}
+                      </td>
+                      <td style={{ padding: '0.8rem 0.875rem', fontFamily: F.mono, fontWeight: '800', color: row.captComissao > 0 ? C.statusDanger : C.borderSubtle, whiteSpace: 'nowrap', fontSize: '0.95rem' }}>
+                        {row.captComissao > 0 ? fBRL(row.captComissao) : '—'}
+                      </td>
                     </tr>
                   )
                 })}
@@ -252,6 +287,12 @@ export default function Vendedores() {
                     <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.mono, fontWeight: '800', color: C.statusDanger, whiteSpace: 'nowrap' }}>
                       {fBRL(totComissao)}
                     </td>
+                    <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.mono, fontWeight: '700', color: C.onSurface }}>
+                      {totCaptQtd}
+                    </td>
+                    <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.mono, fontWeight: '800', color: C.statusDanger, whiteSpace: 'nowrap' }}>
+                      {fBRL(totCaptComissao)}
+                    </td>
                   </tr>
                 </tfoot>
               )}
@@ -271,7 +312,7 @@ export default function Vendedores() {
               </div>
               <div style={{ fontSize: '0.8rem', fontFamily: F.body, color: C.onSurfaceVariant, marginTop: '2px' }}>
                 {fDateBR(dataInicio)} a {fDateBR(dataFim)}
-                {selectedVendas.length > 0 && ` · ${selectedVendas.length} O.S.`}
+                {selectedVendas.length > 0 && ` · ${selectedVendas.length} venda${selectedVendas.length !== 1 ? 's' : ''}`}
               </div>
             </div>
             <button
@@ -296,7 +337,7 @@ export default function Vendedores() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                 <thead>
                   <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
-                    {['Tipo', 'O.S.', 'Data', 'Valor Final', 'Forma de Pagamento'].map(h => (
+                    {['Tipo', 'Nº Venda', 'Data', 'Valor Final', 'Forma de Pagamento'].map(h => (
                       <th key={h} style={{
                         padding: '0.55rem 0.75rem', textAlign: 'left', fontSize: '0.7rem',
                         fontFamily: F.body, fontWeight: '600', color: C.onSurfaceVariant,
