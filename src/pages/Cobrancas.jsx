@@ -288,7 +288,7 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
 }
 
 const STATUS_OPTS = ['Novo', 'Em andamento', 'Negociado', 'Protestado', 'Quitado']
-const PC_STATUS_OPTS = ['Encaminhar documentos', 'Documentação enviada', 'Aguardando a audiência', 'Processo concluído']
+const PC_STATUS_OPTS = ['Encaminhar documentos', 'Documentação enviada', 'Aguardando a audiência', 'Processo em andamento', 'Processo concluído']
 
 const novoBoletoVazio = () => ({
   data_vencimento: '', valor: '', nosso_numero: '', numero_doc: '',
