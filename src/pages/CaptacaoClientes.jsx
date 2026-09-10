@@ -226,21 +226,15 @@ export default function CaptacaoClientes() {
                   onChange={e => setForm(f => ({ ...f, numero_os: e.target.value }))} />
               </div>
 
-              {/* Vendedor */}
+              {/* Vendedor — qualquer usuário pode lançar para outro vendedor */}
               <div>
                 <Label>Vendedor</Label>
-                {isAdmin ? (
-                  <select style={inputCss}
-                    value={form.vendedor_id}
-                    onChange={e => setForm(f => ({ ...f, vendedor_id: e.target.value }))}>
-                    <option value="">Sem vendedor</option>
-                    {vendedoresAtivos.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
-                  </select>
-                ) : (
-                  <input style={{ ...inputCss, background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'default' }}
-                    value={vendedorMap[form.vendedor_id] || profile?.nome || ''}
-                    readOnly />
-                )}
+                <select style={inputCss}
+                  value={form.vendedor_id}
+                  onChange={e => setForm(f => ({ ...f, vendedor_id: e.target.value }))}>
+                  <option value="">Sem vendedor</option>
+                  {vendedoresAtivos.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
+                </select>
               </div>
 
               {/* Filial */}

@@ -75,6 +75,8 @@ function TabSistema({ showToast }) {
   const [novaCategoria, setNovaCategoria] = useState('')
   const [situacoes, setSituacoes] = useState([])
   const [novaSituacao, setNovaSituacao] = useState('')
+  const [tiposVenda, setTiposVenda] = useState([])
+  const [novoTipoVenda, setNovoTipoVenda] = useState('')
   const [parcelasSemJuros, setParcelasSemJuros] = useState('3')
   const [jurosPercent, setJurosPercent] = useState('0')
   const [comissaoComVenda, setComissaoComVenda] = useState('10')
@@ -90,6 +92,8 @@ function TabSistema({ showToast }) {
       setFormas((map.formas_pagamento || '').split(',').filter(Boolean))
       setCategorias((map.categorias_despesa || '').split(',').filter(Boolean))
       setSituacoes((map.situacoes_cobranca || '').split(',').filter(Boolean))
+      const tipos = (map.tipos_venda || '').split(',').map(t => t.trim()).filter(Boolean)
+      setTiposVenda(tipos.length ? tipos : ['Óculos de Grau', 'Solar'])
       if (map.parcelas_sem_juros != null) setParcelasSemJuros(String(map.parcelas_sem_juros))
       if (map.juros_parcela_percent != null) setJurosPercent(String(map.juros_parcela_percent))
       if (map.comissao_captacao_com_venda != null) setComissaoComVenda(String(map.comissao_captacao_com_venda))
@@ -173,10 +177,65 @@ function TabSistema({ showToast }) {
   }
   function removeSituacao(s) { setSituacoes(prev => prev.filter(x => x !== s)) }
 
+  async function salvarTiposVenda() {
+    if (tiposVenda.length === 0) return
+    setSaving(true)
+    const { error } = await supabase
+      .from('configuracoes')
+      .upsert({ chave: 'tipos_venda', valor: tiposVenda.join(',') }, { onConflict: 'chave' })
+    if (error) logErro('Salvar tipos de venda', error)
+    showToast(error ? 'Erro ao salvar tipos de venda.' : 'Tipos de venda salvos!')
+    setSaving(false)
+  }
+
+  function addTipoVenda() {
+    const t = novoTipoVenda.trim()
+    if (t && !tiposVenda.includes(t)) { setTiposVenda(prev => [...prev, t]); setNovoTipoVenda('') }
+  }
+  function removeTipoVenda(t) { setTiposVenda(prev => prev.filter(x => x !== t)) }
+
   if (loading) return <p style={{ color: C.onSurfaceVariant, fontFamily: F.body }}>Carregando configurações...</p>
 
   return (
     <>
+      {/* Tipos de Venda (Produtos) */}
+      <div style={cardMb}>
+        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>
+          Tipos de Venda (Produtos)
+        </h3>
+        <p style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5', fontFamily: F.body }}>
+          Produtos que aparecem no campo <strong>Tipo de Venda</strong> ao registrar uma venda.
+          Tipos que contenham a palavra <strong>"Grau"</strong> usam o <strong>Número da Venda</strong> automático; os demais não.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem', minHeight: '36px' }}>
+          {tiposVenda.map(t => (
+            <span key={t} style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
+              background: C.statusInfoBg, color: C.statusInfo,
+              padding: '0.3rem 0.75rem', borderRadius: '999px',
+              fontSize: '0.82rem', fontWeight: '500', fontFamily: F.body,
+            }}>
+              {t}
+              <button onClick={() => removeTipoVenda(t)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.statusInfo, fontSize: '1rem', lineHeight: 1, padding: 0, opacity: 0.6 }}
+                title={`Remover ${t}`}>×</button>
+            </span>
+          ))}
+          {tiposVenda.length === 0 && (
+            <span style={{ color: C.outlineVariant, fontSize: '0.85rem', fontFamily: F.body }}>Nenhum tipo cadastrado.</span>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+          <input type="text" value={novoTipoVenda} onChange={e => setNovoTipoVenda(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addTipoVenda())}
+            placeholder="Ex: Lentes de contato" style={{ ...inputCss, flex: 1 }} />
+          <button onClick={addTipoVenda} style={btnSecondary}>+ Adicionar</button>
+        </div>
+        <button onClick={salvarTiposVenda} disabled={saving || tiposVenda.length === 0} style={btnPrimary}>
+          {saving ? 'Salvando...' : 'Salvar Tipos de Venda'}
+        </button>
+      </div>
+
       {/* Formas de Pagamento */}
       <div style={cardMb}>
         <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>

@@ -26,6 +26,15 @@ function num(v) { return parseFloat(String(v ?? '').replace(',', '.')) || 0 }
 function normalizarNome(nome) {
   return String(nome || '').trim().toUpperCase().replace(/\s+/g, ' ')
 }
+
+// Tipos de venda "de grau" usam o Número da Venda (sequência automática).
+// Vale para "Grau" (dados antigos) e "Óculos de Grau" (novo padrão).
+function usaNumeroVenda(tipo) {
+  return String(tipo || '').toLowerCase().includes('grau')
+}
+
+// Lista padrão de tipos de venda, usada enquanto as configurações não carregam.
+const TIPOS_VENDA_PADRAO = ['Óculos de Grau', 'Solar']
 function round2(x) { return Math.round(x * 100) / 100 }
 
 // Soma "meses" mantendo o mesmo dia (27/09 → 27/10). Se o mês destino não
@@ -98,7 +107,10 @@ const FORM_INIT = {
 }
 
 /* ── FormVenda ── */
-function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedores, filiais, formasPagamento, parcelasSemJuros, jurosPercent, isAdmin, onSubmit, onCancel, saving, editando }) {
+function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedores, filiais, formasPagamento, tiposVenda, parcelasSemJuros, jurosPercent, isAdmin, onSubmit, onCancel, saving, editando }) {
+  // Opções do tipo de venda: as configuradas + o valor atual (para não perder
+  // o tipo de vendas antigas que não estejam mais na lista).
+  const tiposOpcoes = Array.from(new Set([...(tiposVenda || []), form.tipo_venda].filter(Boolean)))
   function handleBrutoDesc(field, val) {
     const next = { ...form, [field]: val }
     const bruto = parseFloat(String(next.valor_bruto).replace(',', '.')) || 0
@@ -110,7 +122,7 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   const bruto = num(form.valor_bruto)
   const desc = num(form.desconto)
   const final = num(form.valor_final)
-  const isGrau = form.tipo_venda === 'Grau'
+  const isGrau = usaNumeroVenda(form.tipo_venda)
 
   const nParc = Math.max(1, Math.min(parseInt(form.num_parcelas) || 1, 36))
   const parcelas = form.parcelas || []
@@ -153,8 +165,7 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
           <select style={inputCss}
             value={form.tipo_venda}
             onChange={e => onTipoVendaChange(e.target.value)}>
-            <option value="Grau">Óculos de Grau</option>
-            <option value="Solar">Solar</option>
+            {tiposOpcoes.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
 
@@ -212,27 +223,18 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
           </div>
         )}
 
-        {/* Vendedor */}
-        {isAdmin ? (
-          <div>
-            <Label>Vendedor</Label>
-            <select style={inputCss} required
-              value={form.vendedor_id}
-              onChange={e => onChange({ ...form, vendedor_id: e.target.value })}>
-              <option value="">Selecione...</option>
-              {vendedores.map(v => (
-                <option key={v.id} value={v.id}>{v.nome}</option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <div>
-            <Label>Vendedor</Label>
-            <input style={{ ...inputCss, background: C.surfaceContainerLow, color: C.onSurfaceVariant, cursor: 'default' }}
-              value={vendedores.find(v => v.id === form.vendedor_id)?.nome || ''}
-              readOnly />
-          </div>
-        )}
+        {/* Vendedor — qualquer usuário pode lançar para outro vendedor */}
+        <div>
+          <Label>Vendedor</Label>
+          <select style={inputCss} required
+            value={form.vendedor_id}
+            onChange={e => onChange({ ...form, vendedor_id: e.target.value })}>
+            <option value="">Selecione...</option>
+            {vendedores.map(v => (
+              <option key={v.id} value={v.id}>{v.nome}</option>
+            ))}
+          </select>
+        </div>
 
         {/* Valor Bruto */}
         <div>
@@ -380,6 +382,7 @@ export default function Vendas() {
   const [formasPagamento, setFormasPagamento] = useState([])
   const [parcelasSemJuros, setParcelasSemJuros] = useState(0)
   const [jurosPercent, setJurosPercent] = useState(0)
+  const [tiposVenda, setTiposVenda] = useState(TIPOS_VENDA_PADRAO)
   const [vendedores, setVendedores] = useState([])
   const [filiais, setFiliais] = useState([])
   const [filtroFilial, setFiltroFilial] = useState('')
@@ -408,6 +411,8 @@ export default function Vendas() {
         setFormasPagamento((map.formas_pagamento || '').split(',').filter(Boolean))
         setParcelasSemJuros(parseInt(map.parcelas_sem_juros) || 0)
         setJurosPercent(parseFloat(String(map.juros_parcela_percent).replace(',', '.')) || 0)
+        const tipos = (map.tipos_venda || '').split(',').map(t => t.trim()).filter(Boolean)
+        if (tipos.length) setTiposVenda(tipos)
       }
       if (vends) setVendedores(vends)
       if (fils) setFiliais(fils)
@@ -462,13 +467,13 @@ export default function Vendas() {
 
   /* recalcula O.S. ao trocar filial no formulário (somente venda nova de Grau) */
   async function handleFilialChange(newFilialId) {
-    const nextOs = form.tipo_venda === 'Grau' ? await getProximoOs(newFilialId) : ''
+    const nextOs = usaNumeroVenda(form.tipo_venda) ? await getProximoOs(newFilialId) : ''
     setForm(f => ({ ...f, filial_id: newFilialId, os_numero: nextOs }))
   }
 
   /* recalcula O.S. ao trocar tipo de venda */
   async function handleTipoVendaChange(novoTipo) {
-    if (novoTipo === 'Grau') {
+    if (usaNumeroVenda(novoTipo)) {
       const nextOs = await getProximoOs(form.filial_id)
       setForm(f => ({ ...f, tipo_venda: novoTipo, os_numero: nextOs }))
     } else {
@@ -492,10 +497,11 @@ export default function Vendas() {
 
   async function abrirNovaVenda() {
     const filialId = profile?.filial_id || (filiais.length === 1 ? filiais[0].id : '')
-    const proximo = await getProximoOs(filialId)
+    const tipoInicial = tiposVenda[0] || 'Óculos de Grau'
+    const proximo = usaNumeroVenda(tipoInicial) ? await getProximoOs(filialId) : ''
     setForm({
       ...FORM_INIT,
-      tipo_venda: 'Grau',
+      tipo_venda: tipoInicial,
       os_numero: proximo,
       data_venda: viewMode === 'dia' ? dataSel : todayISO(),
       vendedor_id: profile?.id || '',
@@ -553,8 +559,8 @@ export default function Vendas() {
     const final = parseFloat(String(form.valor_final).replace(',', '.')) || 0
     if (bruto <= 0) return showToast('Valor Bruto deve ser maior que zero.', 'err')
     if (desc > bruto) return showToast('Desconto não pode ser maior que o Valor Bruto.', 'err')
-    if (form.tipo_venda === 'Grau' && !form.os_numero) {
-      return showToast('Número da Venda é obrigatório para vendas de Óculos de Grau.', 'err')
+    if (usaNumeroVenda(form.tipo_venda) && !form.os_numero) {
+      return showToast('Número da Venda é obrigatório para este tipo de venda.', 'err')
     }
 
     if (!form.efetivada && !form.motivo_nao_efetivada?.trim()) {
@@ -579,8 +585,8 @@ export default function Vendas() {
 
     setSaving(true)
     const payload = {
-      tipo_venda: form.tipo_venda || 'Grau',
-      os_numero: form.tipo_venda === 'Grau' ? (parseInt(form.os_numero) || null) : null,
+      tipo_venda: form.tipo_venda || 'Óculos de Grau',
+      os_numero: usaNumeroVenda(form.tipo_venda) ? (parseInt(form.os_numero) || null) : null,
       nota_fiscal: form.nota_fiscal || null,
       nome_cliente: form.nome_cliente || null,
       data_venda: form.data_venda,
@@ -949,6 +955,7 @@ export default function Vendas() {
               vendedores={vendedoresAtivos}
               filiais={filiais}
               formasPagamento={formasPagamento}
+              tiposVenda={tiposVenda}
               parcelasSemJuros={parcelasSemJuros}
               jurosPercent={jurosPercent}
               isAdmin={isAdmin}
@@ -1140,8 +1147,8 @@ export default function Vendas() {
                           <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                             <span style={{ color: C.onSurfaceVariant, fontSize: '0.7rem', transition: 'transform 0.2s', transform: aberto ? 'rotate(90deg)' : 'none', display: 'inline-block' }}>▸</span>
                           <span style={{
-                            background: v.tipo_venda === 'Solar' ? C.statusWarningBg : C.statusInfoBg,
-                            color: v.tipo_venda === 'Solar' ? C.statusWarning : C.statusInfo,
+                            background: String(v.tipo_venda).toLowerCase().includes('solar') ? C.statusWarningBg : C.statusInfoBg,
+                            color: String(v.tipo_venda).toLowerCase().includes('solar') ? C.statusWarning : C.statusInfo,
                             borderRadius: '0.375rem', padding: '0.2rem 0.55rem',
                             fontSize: '0.75rem', fontFamily: F.body, fontWeight: '600', display: 'inline-block',
                           }}>{v.tipo_venda || 'Grau'}</span>
