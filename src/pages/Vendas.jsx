@@ -386,12 +386,16 @@ export default function Vendas() {
   const [vendedores, setVendedores] = useState([])
   const [filiais, setFiliais] = useState([])
   const [filtroFilial, setFiltroFilial] = useState('')
+  const [buscaCliente, setBuscaCliente] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(FORM_INIT)
   const [editId, setEditId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
   const [expandedId, setExpandedId] = useState(null) // venda com detalhes abertos
+  const [obsMap, setObsMap] = useState({})   // { vendaId: [observações] }
+  const [obsInput, setObsInput] = useState('')
+  const [obsSaving, setObsSaving] = useState(false)
 
   function showToast(msg, tipo = 'ok') {
     setToast({ msg, tipo })
@@ -401,11 +405,17 @@ export default function Vendas() {
   /* carrega configurações, vendedores e filiais (uma vez) */
   useEffect(() => {
     async function init() {
-      const [{ data: cfgRows }, { data: vends }, { data: fils }] = await Promise.all([
+      const [{ data: cfgRows }, vendsRes, { data: fils }] = await Promise.all([
         supabase.from('configuracoes').select('*'),
-        supabase.from('profiles').select('id, nome, ativo').order('nome'),
+        supabase.from('vendedores_lista').select('id, nome, ativo').order('nome'),
         supabase.from('filiais').select('*').order('nome'),
       ])
+      // Fallback caso a view ainda não exista (SQL não rodado).
+      let vends = vendsRes.data
+      if (vendsRes.error) {
+        const r = await supabase.from('profiles').select('id, nome, ativo').order('nome')
+        vends = r.data
+      }
       if (cfgRows) {
         const map = Object.fromEntries(cfgRows.map(r => [r.chave, r.valor]))
         setFormasPagamento((map.formas_pagamento || '').split(',').filter(Boolean))
@@ -761,6 +771,46 @@ export default function Vendas() {
     }
   }
 
+  // Carrega as observações da venda quando o detalhamento é aberto.
+  useEffect(() => {
+    if (!expandedId) return
+    setObsInput('')
+    let cancel = false
+    ;(async () => {
+      const { data } = await supabase.from('vendas_observacoes')
+        .select('id, texto, autor_nome, created_at')
+        .eq('venda_id', expandedId)
+        .order('created_at', { ascending: false })
+      if (!cancel) setObsMap(prev => ({ ...prev, [expandedId]: data || [] }))
+    })()
+    return () => { cancel = true }
+  }, [expandedId])
+
+  async function adicionarObservacao(v) {
+    const texto = obsInput.trim()
+    if (!texto) return
+    setObsSaving(true)
+    const { error } = await supabase.from('vendas_observacoes').insert({
+      venda_id:   v.id,
+      texto,
+      autor_id:   profile?.id || null,
+      autor_nome: profile?.nome || null,
+      filial_id:  v.filial_id || profile?.filial_id || null,
+    })
+    setObsSaving(false)
+    if (error) {
+      logErro('Salvar observação da venda', error)
+      showToast('Erro ao salvar observação: ' + error.message, 'err')
+      return
+    }
+    setObsInput('')
+    const { data } = await supabase.from('vendas_observacoes')
+      .select('id, texto, autor_nome, created_at')
+      .eq('venda_id', v.id)
+      .order('created_at', { ascending: false })
+    setObsMap(prev => ({ ...prev, [v.id]: data || [] }))
+  }
+
   function podeAlterar(v) {
     // Depois de conferida, só o administrador pode alterar a venda.
     if (v.conferido && !isAdmin) return false
@@ -768,7 +818,11 @@ export default function Vendas() {
   }
 
   /* totais apenas das vendas efetivadas */
-  const vendasEfetivadas = vendas.filter(v => v.efetivada !== false)
+  const termoBusca = buscaCliente.trim().toLowerCase()
+  const vendasVisiveis = termoBusca
+    ? vendas.filter(v => (v.nome_cliente || '').toLowerCase().includes(termoBusca))
+    : vendas
+  const vendasEfetivadas = vendasVisiveis.filter(v => v.efetivada !== false)
   const totBruto = vendasEfetivadas.reduce((s, v) => s + (v.valor_bruto || 0), 0)
   const totDesc = vendasEfetivadas.reduce((s, v) => s + (v.desconto || 0), 0)
   const totFinal = vendasEfetivadas.reduce((s, v) => s + (v.valor_final || 0), 0)
@@ -1090,26 +1144,42 @@ export default function Vendas() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ fontWeight: '700', fontFamily: F.headline, color: C.onSurface, fontSize: '0.95rem' }}>
             {tituloTabela}
-            {vendas.length > 0 && (
+            {vendasVisiveis.length > 0 && (
               <span style={{ marginLeft: '0.5rem', color: C.onSurfaceVariant, fontFamily: F.body, fontWeight: '400', fontSize: '0.85rem' }}>
-                — {vendas.length} venda{vendas.length !== 1 ? 's' : ''}
-                {vendas.some(v => v.efetivada === false) && (
+                — {vendasVisiveis.length} venda{vendasVisiveis.length !== 1 ? 's' : ''}
+                {vendasVisiveis.some(v => v.efetivada === false) && (
                   <span style={{ color: C.statusDanger }}>
-                    {' '}({vendas.filter(v => v.efetivada === false).length} não efetivada{vendas.filter(v => v.efetivada === false).length !== 1 ? 's' : ''})
+                    {' '}({vendasVisiveis.filter(v => v.efetivada === false).length} não efetivada{vendasVisiveis.filter(v => v.efetivada === false).length !== 1 ? 's' : ''})
                   </span>
                 )}
               </span>
             )}
           </div>
+          {/* Busca por nome do cliente */}
+          <input
+            type="text"
+            value={buscaCliente}
+            onChange={e => setBuscaCliente(e.target.value)}
+            placeholder="🔍 Buscar por cliente..."
+            style={{ ...inputCss, width: 'auto', minWidth: '220px', maxWidth: '100%' }} />
         </div>
 
         {loading ? (
           <div style={{ textAlign: 'center', color: C.onSurfaceVariant, fontFamily: F.body, padding: '2.5rem 0' }}>Carregando...</div>
-        ) : vendas.length === 0 ? (
+        ) : vendasVisiveis.length === 0 ? (
           <div style={{ textAlign: 'center', color: C.onSurfaceVariant, fontFamily: F.body, padding: '3rem 0' }}>
-            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📋</div>
-            <div style={{ fontWeight: '600' }}>Nenhuma venda {viewMode === 'dia' ? 'neste dia' : 'neste período'}</div>
-            <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>Clique em "+ Nova Venda" para registrar</div>
+            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{termoBusca ? '🔍' : '📋'}</div>
+            {termoBusca ? (
+              <>
+                <div style={{ fontWeight: '600' }}>Nenhuma venda para "{buscaCliente.trim()}"</div>
+                <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>Tente outro nome ou limpe a busca.</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontWeight: '600' }}>Nenhuma venda {viewMode === 'dia' ? 'neste dia' : 'neste período'}</div>
+                <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>Clique em "+ Nova Venda" para registrar</div>
+              </>
+            )}
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -1131,7 +1201,7 @@ export default function Vendas() {
                 </tr>
               </thead>
               <tbody>
-                {vendas.map(v => {
+                {vendasVisiveis.map(v => {
                   const naoEfetivada = v.efetivada === false
                   const aberto = expandedId === v.id
                   return (
@@ -1303,6 +1373,37 @@ export default function Vendas() {
                                   </div>
                                 </div>
                               )}
+
+                              {/* Observações da venda */}
+                              <div style={{ marginTop: '0.9rem' }}>
+                                <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: C.onSurfaceVariant, fontFamily: F.body, fontWeight: '600', marginBottom: '0.4rem' }}>Observações</div>
+                                {(obsMap[v.id] || []).length > 0 ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.6rem' }}>
+                                    {(obsMap[v.id] || []).map(o => (
+                                      <div key={o.id} style={{ background: C.surface, border: `1px solid ${C.borderSubtle}`, borderRadius: '0.4rem', padding: '0.5rem 0.65rem' }}>
+                                        <div style={{ fontSize: '0.85rem', color: C.onSurface, fontFamily: F.body, whiteSpace: 'pre-wrap' }}>{o.texto}</div>
+                                        <div style={{ fontSize: '0.7rem', color: C.onSurfaceVariant, fontFamily: F.body, marginTop: '0.2rem' }}>
+                                          {o.autor_nome ? `${o.autor_nome} · ` : ''}{new Date(o.created_at).toLocaleString('pt-BR')}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div style={{ fontSize: '0.82rem', color: C.onSurfaceVariant, fontFamily: F.body, marginBottom: '0.6rem' }}>Nenhuma observação ainda.</div>
+                                )}
+                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                                  <textarea
+                                    value={expandedId === v.id ? obsInput : ''}
+                                    onChange={e => setObsInput(e.target.value)}
+                                    placeholder="Escreva uma observação..."
+                                    rows={2}
+                                    style={{ ...inputCss, flex: 1, resize: 'vertical', minHeight: '38px' }} />
+                                  <button type="button" onClick={() => adicionarObservacao(v)} disabled={obsSaving || !obsInput.trim()}
+                                    style={{ ...btnPrimary, whiteSpace: 'nowrap' }}>
+                                    {obsSaving ? 'Salvando...' : 'Adicionar'}
+                                  </button>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>
