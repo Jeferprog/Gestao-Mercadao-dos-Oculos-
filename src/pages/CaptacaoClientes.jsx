@@ -59,10 +59,16 @@ export default function CaptacaoClientes() {
   /* ── init: filiais e vendedores ── */
   useEffect(() => {
     async function init() {
-      const [{ data: fils }, { data: vends }] = await Promise.all([
+      const [{ data: fils }, vendsRes] = await Promise.all([
         supabase.from('filiais').select('*').order('nome'),
-        supabase.from('profiles').select('id, nome, ativo').order('nome'),
+        supabase.from('vendedores_lista').select('id, nome, ativo').order('nome'),
       ])
+      // Fallback caso a view ainda não exista (SQL não rodado).
+      let vends = vendsRes.data
+      if (vendsRes.error) {
+        const r = await supabase.from('profiles').select('id, nome, ativo').order('nome')
+        vends = r.data
+      }
       setFiliais(fils || [])
       setVendedores(vends || [])
     }
