@@ -88,17 +88,45 @@ const Label = ({ children }) => (
   }}>{children}</label>
 )
 
+// Modalidades de pagamento. As que NÃO são "crediário" (sem entrada)
+// pedem a forma da entrada/à vista: Pix ou Dinheiro.
+const MODALIDADES_PAGAMENTO = [
+  { v: 'avista',            label: 'À vista',            temEntrada: true },
+  { v: 'cartao',            label: 'Entrada + Cartão',   temEntrada: true },
+  { v: 'boleto',            label: 'Entrada + Boleto',   temEntrada: true },
+  { v: 'crediario_entrada', label: 'Entrada + Crediário', temEntrada: true },
+  { v: 'crediario',         label: 'Crediário (sem entrada)', temEntrada: false },
+]
+function modalidadeTemEntrada(v) {
+  const m = MODALIDADES_PAGAMENTO.find(x => x.v === v)
+  return m ? m.temEntrada : false
+}
+// Monta o texto que fica salvo em forma_pagamento (aparece nas listas e relatórios).
+function textoFormaPagamento(modalidade, entrada) {
+  switch (modalidade) {
+    case 'avista':            return entrada ? `À vista (${entrada})` : 'À vista'
+    case 'cartao':            return entrada ? `${entrada} + Cartão` : 'Cartão'
+    case 'boleto':            return entrada ? `${entrada} + Boleto` : 'Boleto'
+    case 'crediario_entrada': return entrada ? `${entrada} + Crediário` : 'Crediário'
+    case 'crediario':         return 'Crediário'
+    default:                  return ''
+  }
+}
+
 const FORM_INIT = {
   tipo_venda: 'Grau',
   os_numero: '',
   nota_fiscal: '',
   nome_cliente: '',
+  pagador: '',
   data_venda: todayISO(),
   vendedor_id: '',
   filial_id: '',
   valor_bruto: '',
   desconto: '0',
   valor_final: '',
+  pagamento_modalidade: '',
+  pagamento_entrada: '',
   forma_pagamento: '',
   num_parcelas: 1,
   parcelas: [],
@@ -131,7 +159,6 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   const totalEsperado = infoJuros.total
   const comJuros = infoJuros.comJuros
   const parcelasOk = nParc < 2 || Math.abs(somaParc - totalEsperado) < 0.02
-  const formaConhecida = (formasPagamento || []).includes(form.forma_pagamento)
   const primeiraData = parcelas[0]?.data || form.data_venda || todayISO()
 
   function mudarNumParcelas(raw) {
@@ -192,7 +219,12 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
           <Label>Nome do Cliente</Label>
           <input style={inputCss} placeholder="Opcional"
             value={form.nome_cliente}
-            onChange={e => onChange({ ...form, nome_cliente: e.target.value })} />
+            onChange={e => {
+              const novo = e.target.value
+              // O pagador acompanha o cliente enquanto não for editado à mão.
+              const espelha = !form.pagador || form.pagador === form.nome_cliente
+              onChange({ ...form, nome_cliente: novo, pagador: espelha ? novo : form.pagador })
+            }} />
         </div>
 
         {/* Data */}
@@ -263,21 +295,49 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
             onChange={e => onChange({ ...form, valor_final: e.target.value })} />
         </div>
 
-        {/* Forma de Pagamento */}
+        {/* Pagador (pode ser diferente do cliente comprador) */}
+        <div>
+          <Label>Pagador</Label>
+          <input style={inputCss} placeholder="Quem paga a venda"
+            value={form.pagador}
+            onChange={e => onChange({ ...form, pagador: e.target.value })} />
+        </div>
+
+        {/* Forma de Pagamento — modalidade */}
         <div>
           <Label>Forma de Pagamento</Label>
           <select style={inputCss} required
-            value={form.forma_pagamento}
-            onChange={e => onChange({ ...form, forma_pagamento: e.target.value })}>
+            value={form.pagamento_modalidade}
+            onChange={e => {
+              const mod = e.target.value
+              const entrada = modalidadeTemEntrada(mod) ? (form.pagamento_entrada || '') : ''
+              onChange({ ...form, pagamento_modalidade: mod, pagamento_entrada: entrada,
+                forma_pagamento: textoFormaPagamento(mod, entrada) })
+            }}>
             <option value="">Selecione...</option>
-            {formasPagamento.map(f => (
-              <option key={f} value={f}>{f}</option>
+            {MODALIDADES_PAGAMENTO.map(m => (
+              <option key={m.v} value={m.v}>{m.label}</option>
             ))}
-            {form.forma_pagamento && !formaConhecida && (
-              <option value={form.forma_pagamento}>{form.forma_pagamento}</option>
-            )}
           </select>
         </div>
+
+        {/* Entrada / à vista: Pix ou Dinheiro */}
+        {modalidadeTemEntrada(form.pagamento_modalidade) && (
+          <div>
+            <Label>{form.pagamento_modalidade === 'avista' ? 'Pago em' : 'Entrada em'}</Label>
+            <select style={inputCss} required
+              value={form.pagamento_entrada}
+              onChange={e => {
+                const entrada = e.target.value
+                onChange({ ...form, pagamento_entrada: entrada,
+                  forma_pagamento: textoFormaPagamento(form.pagamento_modalidade, entrada) })
+              }}>
+              <option value="">Selecione...</option>
+              <option value="Pix">Pix</option>
+              <option value="Dinheiro">Dinheiro</option>
+            </select>
+          </div>
+        )}
 
         {/* Número de parcelas */}
         <div>
@@ -527,12 +587,15 @@ export default function Vendas() {
       os_numero: v.os_numero || '',
       nota_fiscal: v.nota_fiscal || '',
       nome_cliente: v.nome_cliente || '',
+      pagador: v.pagador || v.nome_cliente || '',
       data_venda: v.data_venda,
       vendedor_id: v.vendedor_id,
       filial_id: v.filial_id || '',
       valor_bruto: v.valor_bruto,
       desconto: v.desconto || 0,
       valor_final: v.valor_final,
+      pagamento_modalidade: v.pagamento_modalidade || '',
+      pagamento_entrada: v.pagamento_entrada || '',
       forma_pagamento: v.forma_pagamento,
       ...carregarParcelas(v),
       efetivada: v.efetivada !== false,
@@ -577,6 +640,13 @@ export default function Vendas() {
       return showToast('Informe o motivo da venda não efetivada.', 'err')
     }
 
+    if (!form.pagamento_modalidade) {
+      return showToast('Selecione a forma de pagamento.', 'err')
+    }
+    if (modalidadeTemEntrada(form.pagamento_modalidade) && !form.pagamento_entrada) {
+      return showToast('Selecione se a entrada / o à vista é em Pix ou Dinheiro.', 'err')
+    }
+
     const nParc = Math.max(1, parseInt(form.num_parcelas) || 1)
     let parcelasPayload = null
     if (nParc >= 2) {
@@ -599,13 +669,16 @@ export default function Vendas() {
       os_numero: usaNumeroVenda(form.tipo_venda) ? (parseInt(form.os_numero) || null) : null,
       nota_fiscal: form.nota_fiscal || null,
       nome_cliente: form.nome_cliente || null,
+      pagador: (form.pagador || form.nome_cliente || '').trim() || null,
       data_venda: form.data_venda,
       vendedor_id: form.vendedor_id,
       filial_id: form.filial_id || null,
       valor_bruto: bruto,
       desconto: desc,
       valor_final: final,
-      forma_pagamento: form.forma_pagamento,
+      pagamento_modalidade: form.pagamento_modalidade || null,
+      pagamento_entrada: modalidadeTemEntrada(form.pagamento_modalidade) ? (form.pagamento_entrada || null) : null,
+      forma_pagamento: form.forma_pagamento || textoFormaPagamento(form.pagamento_modalidade, form.pagamento_entrada),
       num_parcelas: nParc,
       parcelas: parcelasPayload,
       entrada_valor: null,
@@ -663,7 +736,8 @@ export default function Vendas() {
   async function sincronizarCobranca(vendaId, payload, parcelasPayload) {
     try {
       const filialId = payload.filial_id || profile?.filial_id || null
-      const nome = (payload.nome_cliente || '').trim()
+      // A cobrança é sempre no nome do PAGADOR (é o que o banco traz).
+      const nome = (payload.pagador || payload.nome_cliente || '').trim()
       const geraCobranca = !!parcelasPayload && parcelasPayload.length >= 2 && payload.efetivada !== false && !!nome
 
       // Sem cobrança a gerar (à vista, não efetivada ou sem cliente):
@@ -684,6 +758,7 @@ export default function Vendas() {
         const hoje = todayISO()
         const { data: novoDev, error: eDev } = await supabase.from('cobrancas_devedores').insert({
           nome_pagador:       nome,
+          pagador:            nome,
           nome_normalizado:   norm,
           filial_id:          filialId,
           status_cobranca:    'Novo',
@@ -1333,6 +1408,7 @@ export default function Vendas() {
                                   ['Nº da Venda', v.os_numero ? `#${v.os_numero}` : '—'],
                                   ['Nota Fiscal', v.nota_fiscal || '—'],
                                   ['Cliente', v.nome_cliente || '—'],
+                                  ['Pagador', v.pagador || v.nome_cliente || '—'],
                                   ['Data', fDateBR(v.data_venda)],
                                   ['Vendedor', vendedorMap[v.vendedor_id] || '—'],
                                   ...(filiais.length > 1 ? [['Filial', filialMap[v.filial_id] || '—']] : []),
