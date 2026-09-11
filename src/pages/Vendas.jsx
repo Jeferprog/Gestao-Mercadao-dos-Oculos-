@@ -179,6 +179,23 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
       onChange({ ...form, parcelas: parcelas.map((p, idx) => ({ ...p, data: addMesesISO(valor, idx) })) })
       return
     }
+    // Ao mudar o VALOR da entrada (1ª parcela), distribui o restante do
+    // pagamento igualmente entre as demais parcelas.
+    if (i === 0 && campo === 'valor' && nParc >= 2) {
+      const entrada = num(valor)
+      const restante = Math.max(0, round2(totalEsperado - entrada))
+      const q = nParc - 1
+      const base = Math.floor((restante / q) * 100) / 100
+      let acc = 0
+      const novas = parcelas.map((p, idx) => {
+        if (idx === 0) return { ...p, valor }
+        const v = idx === nParc - 1 ? round2(restante - acc) : base
+        acc += v
+        return { ...p, valor: v.toFixed(2) }
+      })
+      onChange({ ...form, parcelas: novas })
+      return
+    }
     onChange({ ...form, parcelas: parcelas.map((p, idx) => idx === i ? { ...p, [campo]: valor } : p) })
   }
 
@@ -366,6 +383,10 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
               style={{ padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600', borderRadius: '0.5rem', border: `1.5px solid ${C.borderSubtle}`, background: C.surfaceContainerLowest, color: C.onSurfaceVariant, cursor: 'pointer' }}>
               ↺ Redividir igualmente
             </button>
+          </div>
+
+          <div style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body }}>
+            Dica: mude o valor da <strong>entrada</strong> e o sistema divide o restante igualmente entre as demais parcelas.
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
