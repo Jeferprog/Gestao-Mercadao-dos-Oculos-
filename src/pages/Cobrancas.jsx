@@ -191,6 +191,7 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
       .from('cobrancas_devedores')
       .insert(novosNorm.map((norm, i) => ({
         nome_pagador:       novosNomes[i],
+        pagador:            novosNomes[i],
         nome_normalizado:   norm,
         filial_id:          filialId || null,
         status_cobranca:    'Novo',
@@ -375,7 +376,7 @@ export default function Cobrancas() {
     let q = supabase
       .from('cobrancas_devedores')
       .select(`
-        id, nome_pagador, telefone, filial_id, status_cobranca, primeiro_registro, ultima_atualizacao,
+        id, nome_pagador, pagador, telefone, filial_id, status_cobranca, primeiro_registro, ultima_atualizacao,
         pequenas_causas, status_pequenas_causas, data_audiencia, situacao_audiencia, observacoes,
         cobrancas_boletos (
           id, data_vencimento, data_liquidacao, valor, valor_liquidacao,
@@ -589,6 +590,7 @@ export default function Cobrancas() {
     const hoje = todayISO()
     const { data: devIns, error: eDev } = await supabase.from('cobrancas_devedores').insert({
       nome_pagador:       nome,
+      pagador:            nome,
       nome_normalizado:   norm,
       documento:          novoDev.documento || null,
       telefone:           novoDev.telefone || null,
@@ -1877,7 +1879,7 @@ export default function Cobrancas() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                   <thead>
                     <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
-                      {['Devedor', 'Telefone', 'Em aberto', 'Valor em aberto', 'Status', 'P. Causas', 'Audiência', 'Atualização'].map(h => (
+                      {['Devedor', 'Pagador', 'Telefone', 'Em aberto', 'Valor em aberto', 'Status', 'P. Causas', 'Audiência', 'Atualização'].map(h => (
                         <th key={h} style={{ padding: '0.65rem 0.875rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: '600', color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap', fontFamily: F.body }}>{h}</th>
                       ))}
                     </tr>
@@ -1912,6 +1914,9 @@ export default function Cobrancas() {
                                 )}
                               </div>
                             </div>
+                          </td>
+                          <td style={{ padding: '0.8rem 0.875rem', color: C.onSurfaceVariant, fontSize: '0.85rem', fontFamily: F.body }}>
+                            {dev.pagador || dev.nome_pagador || <span style={{ color: C.outlineVariant }}>—</span>}
                           </td>
                           <td style={{ padding: '0.8rem 0.875rem', color: C.onSurfaceVariant, fontSize: '0.85rem', whiteSpace: 'nowrap', fontFamily: F.body }}>
                             {dev.telefone
