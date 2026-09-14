@@ -127,6 +127,7 @@ const FORM_INIT = {
   valor_final: '',
   pagamento_modalidade: '',
   pagamento_entrada: '',
+  entrada_valor: '',
   forma_pagamento: '',
   num_parcelas: 1,
   parcelas: [],
@@ -139,11 +140,39 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   // Opções do tipo de venda: as configuradas + o valor atual (para não perder
   // o tipo de vendas antigas que não estejam mais na lista).
   const tiposOpcoes = Array.from(new Set([...(tiposVenda || []), form.tipo_venda].filter(Boolean)))
+  // Modalidades que geram prestações (boletos/crediário) na Cobrança.
+  const mod = form.pagamento_modalidade
+  const temPrestacoes = mod === 'boleto' || mod === 'crediario_entrada' || mod === 'crediario'
+  // Modalidades que têm valor de entrada (à vista é pago integral; crediário puro não tem entrada).
+  const temEntradaValor = mod === 'cartao' || mod === 'boleto' || mod === 'crediario_entrada'
+  // A entrada entra como 1ª parcela só em boleto/crediário (no cartão o restante vai no cartão).
+  const usaEntradaParcela = mod === 'boleto' || mod === 'crediario_entrada'
+
+  // Monta as parcelas: entrada (se houver) como 1ª, e o RESTANTE (valor − entrada)
+  // dividido em N prestações — com juros acima do limite configurado.
+  function calcParcelas(f, finalV) {
+    const m = f.pagamento_modalidade
+    const gera = m === 'boleto' || m === 'crediario_entrada' || m === 'crediario'
+    if (!gera) return []
+    const comEntrada = (m === 'boleto' || m === 'crediario_entrada') && num(f.entrada_valor) > 0
+    const entrada = comEntrada ? num(f.entrada_valor) : 0
+    const N = Math.max(1, Math.min(parseInt(f.num_parcelas) || 1, 36))
+    const restante = Math.max(0, round2(finalV - entrada))
+    const info = valoresParcelas(N, restante, parcelasSemJuros, jurosPercent)
+    const base = f.data_venda || todayISO()
+    const off = comEntrada ? 1 : 0
+    const arr = []
+    if (comEntrada) arr.push({ n: 1, data: base, valor: entrada.toFixed(2) })
+    info.valores.forEach((v, k) => arr.push({ n: off + k + 1, data: addMesesISO(base, off + k), valor: v.toFixed(2) }))
+    return arr
+  }
+
   function handleBrutoDesc(field, val) {
     const next = { ...form, [field]: val }
-    const bruto = parseFloat(String(next.valor_bruto).replace(',', '.')) || 0
-    const desc = parseFloat(String(next.desconto).replace(',', '.')) || 0
-    next.valor_final = Math.max(0, bruto - desc).toFixed(2)
+    const b = parseFloat(String(next.valor_bruto).replace(',', '.')) || 0
+    const d = parseFloat(String(next.desconto).replace(',', '.')) || 0
+    next.valor_final = Math.max(0, b - d).toFixed(2)
+    next.parcelas = calcParcelas(next, num(next.valor_final))
     onChange(next)
   }
 
@@ -152,48 +181,32 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   const final = num(form.valor_final)
   const isGrau = usaNumeroVenda(form.tipo_venda)
 
-  const nParc = Math.max(1, Math.min(parseInt(form.num_parcelas) || 1, 36))
+  const entradaVal = usaEntradaParcela ? num(form.entrada_valor) : 0
+  const restanteVal = Math.max(0, round2(final - entradaVal))
+  const nPrest = Math.max(1, Math.min(parseInt(form.num_parcelas) || 1, 36))
   const parcelas = form.parcelas || []
   const somaParc = parcelas.reduce((s, p) => s + num(p.valor), 0)
-  const infoJuros = valoresParcelas(nParc, final, parcelasSemJuros, jurosPercent)
-  const totalEsperado = infoJuros.total
+  const infoJuros = temPrestacoes ? valoresParcelas(nPrest, restanteVal, parcelasSemJuros, jurosPercent) : { valores: [], comJuros: false, total: 0 }
   const comJuros = infoJuros.comJuros
-  const parcelasOk = nParc < 2 || Math.abs(somaParc - totalEsperado) < 0.02
-  const primeiraData = parcelas[0]?.data || form.data_venda || todayISO()
+  const totalParcelado = entradaVal + infoJuros.total
+  const parcelasOk = !temPrestacoes || parcelas.length === 0 || Math.abs(somaParc - totalParcelado) < 0.05
 
   function mudarNumParcelas(raw) {
-    if (raw === '') { onChange({ ...form, num_parcelas: '', parcelas: [] }); return }
-    const nn = Math.max(1, Math.min(parseInt(raw) || 1, 36))
-    onChange({
-      ...form,
-      num_parcelas: nn,
-      parcelas: nn >= 2 ? gerarParcelas(nn, final, form.data_venda || todayISO(), parcelasSemJuros, jurosPercent) : [],
-    })
+    const nn = raw === '' ? '' : Math.max(1, Math.min(parseInt(raw) || 1, 36))
+    const f = { ...form, num_parcelas: nn }
+    onChange({ ...f, parcelas: calcParcelas(f, final) })
+  }
+  function mudarEntradaValor(val) {
+    const f = { ...form, entrada_valor: val }
+    onChange({ ...f, parcelas: calcParcelas(f, final) })
   }
   function redividir() {
-    onChange({ ...form, parcelas: gerarParcelas(nParc, final, primeiraData, parcelasSemJuros, jurosPercent) })
+    onChange({ ...form, parcelas: calcParcelas(form, final) })
   }
   function updateParcela(i, campo, valor) {
-    // Ao mudar a data da 1ª parcela, recalcula as datas das demais (mensal).
-    if (i === 0 && campo === 'data') {
-      onChange({ ...form, parcelas: parcelas.map((p, idx) => ({ ...p, data: addMesesISO(valor, idx) })) })
-      return
-    }
-    // Ao mudar o VALOR da entrada (1ª parcela), distribui o restante do
-    // pagamento igualmente entre as demais parcelas.
-    if (i === 0 && campo === 'valor' && nParc >= 2) {
-      const entrada = num(valor)
-      const restante = Math.max(0, round2(totalEsperado - entrada))
-      const q = nParc - 1
-      const base = Math.floor((restante / q) * 100) / 100
-      let acc = 0
-      const novas = parcelas.map((p, idx) => {
-        if (idx === 0) return { ...p, valor }
-        const v = idx === nParc - 1 ? round2(restante - acc) : base
-        acc += v
-        return { ...p, valor: v.toFixed(2) }
-      })
-      onChange({ ...form, parcelas: novas })
+    // Ao mudar a data de uma parcela, recalcula as datas seguintes (mensal).
+    if (campo === 'data') {
+      onChange({ ...form, parcelas: parcelas.map((p, idx) => idx < i ? p : { ...p, data: addMesesISO(valor, idx - i) }) })
       return
     }
     onChange({ ...form, parcelas: parcelas.map((p, idx) => idx === i ? { ...p, [campo]: valor } : p) })
@@ -309,7 +322,7 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
           <Label>Valor Final (R$)</Label>
           <input style={inputCss} type="number" min="0" step="0.01" required placeholder="0,00"
             value={form.valor_final}
-            onChange={e => onChange({ ...form, valor_final: e.target.value })} />
+            onChange={e => { const f = { ...form, valor_final: e.target.value }; onChange({ ...f, parcelas: calcParcelas(f, num(e.target.value)) }) }} />
         </div>
 
         {/* Pagador (pode ser diferente do cliente comprador) */}
@@ -326,10 +339,11 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
           <select style={inputCss} required
             value={form.pagamento_modalidade}
             onChange={e => {
-              const mod = e.target.value
-              const entrada = modalidadeTemEntrada(mod) ? (form.pagamento_entrada || '') : ''
-              onChange({ ...form, pagamento_modalidade: mod, pagamento_entrada: entrada,
-                forma_pagamento: textoFormaPagamento(mod, entrada) })
+              const novaMod = e.target.value
+              const entrada = modalidadeTemEntrada(novaMod) ? (form.pagamento_entrada || '') : ''
+              const f = { ...form, pagamento_modalidade: novaMod, pagamento_entrada: entrada,
+                forma_pagamento: textoFormaPagamento(novaMod, entrada) }
+              onChange({ ...f, parcelas: calcParcelas(f, final) })
             }}>
             <option value="">Selecione...</option>
             {MODALIDADES_PAGAMENTO.map(m => (
@@ -352,69 +366,87 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
               <option value="">Selecione...</option>
               <option value="Pix">Pix</option>
               <option value="Dinheiro">Dinheiro</option>
+              <option value="Cartão Débito">Cartão Débito</option>
+              <option value="Cartão Crédito">Cartão Crédito</option>
             </select>
           </div>
         )}
 
-        {/* Número de parcelas */}
-        <div>
-          <Label>Número de parcelas</Label>
-          <input style={inputCss} type="number" min="1" max="36" step="1"
-            value={form.num_parcelas}
-            onFocus={e => e.target.select()}
-            onChange={e => mudarNumParcelas(e.target.value)}
-            onBlur={() => { if (form.num_parcelas === '' || parseInt(form.num_parcelas) < 1) mudarNumParcelas('1') }} />
-          {nParc >= 2 && final > 0 && (
-            <span style={{ fontSize: '0.75rem', color: comJuros ? C.statusWarning : C.onSurfaceVariant, fontFamily: F.body }}>
-              {nParc}× de {fBRL(totalEsperado / nParc)}{comJuros ? ` (com juros — total ${fBRL(totalEsperado)})` : ' sem juros'}
-            </span>
-          )}
-        </div>
+        {/* Valor da entrada (antes do nº de parcelas) */}
+        {temEntradaValor && (
+          <div>
+            <Label>Valor da entrada (R$)</Label>
+            <input style={inputCss} type="number" min="0" step="0.01" placeholder="0,00"
+              value={form.entrada_valor}
+              onChange={e => mudarEntradaValor(e.target.value)} />
+          </div>
+        )}
+
+        {/* Número de prestações (divide o restante) */}
+        {temPrestacoes && (
+          <div>
+            <Label>{usaEntradaParcela ? 'Nº de prestações (fora a entrada)' : 'Número de parcelas'}</Label>
+            <input style={inputCss} type="number" min="1" max="36" step="1"
+              value={form.num_parcelas}
+              onFocus={e => e.target.select()}
+              onChange={e => mudarNumParcelas(e.target.value)}
+              onBlur={() => { if (form.num_parcelas === '' || parseInt(form.num_parcelas) < 1) mudarNumParcelas('1') }} />
+            {restanteVal > 0 && (
+              <span style={{ fontSize: '0.75rem', color: comJuros ? C.statusWarning : C.onSurfaceVariant, fontFamily: F.body }}>
+                {nPrest}× de {fBRL(infoJuros.total / nPrest)} sobre o restante {fBRL(restanteVal)}
+                {comJuros ? ` (com juros — restante parcelado ${fBRL(infoJuros.total)})` : ' sem juros'}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bloco de Parcelas */}
-      {nParc >= 2 && (
+      {temPrestacoes && parcelas.length > 0 && (
         <div style={{ background: C.surfaceContainerLow, border: `1.5px solid ${C.outlineVariant}`, borderRadius: '0.75rem', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
             <div style={{ fontSize: '0.8rem', fontWeight: '700', fontFamily: F.body, color: C.onSurface, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Parcelas ({nParc}×)
+              {usaEntradaParcela ? `Entrada + ${nPrest} prestação(ões)` : `Parcelas (${parcelas.length}×)`}
             </div>
             <button type="button" onClick={redividir}
               style={{ padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600', borderRadius: '0.5rem', border: `1.5px solid ${C.borderSubtle}`, background: C.surfaceContainerLowest, color: C.onSurfaceVariant, cursor: 'pointer' }}>
-              ↺ Redividir igualmente
+              ↺ Recalcular
             </button>
           </div>
 
           <div style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body }}>
-            Dica: mude o valor da <strong>entrada</strong> e o sistema divide o restante igualmente entre as demais parcelas.
+            Dica: mude o <strong>valor da entrada</strong> ou o <strong>nº de prestações</strong> acima e o sistema divide o restante automaticamente.
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {parcelas.map((p, i) => (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 1fr', gap: '0.5rem', alignItems: 'center' }}>
-                <div style={{ fontSize: '0.8rem', fontWeight: '700', fontFamily: F.body, color: i === 0 ? C.statusDanger : C.onSurfaceVariant }}>
-                  {i === 0 ? '1ª / Entrada' : `${p.n}ª`}
+            {parcelas.map((p, i) => {
+              const ehEntrada = usaEntradaParcela && i === 0
+              return (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 1fr', gap: '0.5rem', alignItems: 'center' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '700', fontFamily: F.body, color: ehEntrada ? C.statusDanger : C.onSurfaceVariant }}>
+                    {ehEntrada ? 'Entrada' : `${usaEntradaParcela ? i : p.n}ª prestação`}
+                  </div>
+                  <input type="date" style={{ ...inputCss, padding: '0.4rem 0.6rem' }}
+                    value={p.data || ''} onChange={e => updateParcela(i, 'data', e.target.value)} />
+                  <input type="number" min="0" step="0.01" placeholder="0,00" style={{ ...inputCss, padding: '0.4rem 0.6rem', fontFamily: F.mono }}
+                    value={p.valor} onChange={e => updateParcela(i, 'valor', e.target.value)} />
                 </div>
-                <input type="date" style={{ ...inputCss, padding: '0.4rem 0.6rem' }}
-                  value={p.data || ''} onChange={e => updateParcela(i, 'data', e.target.value)} />
-                <input type="number" min="0" step="0.01" placeholder="0,00" style={{ ...inputCss, padding: '0.4rem 0.6rem', fontFamily: F.mono }}
-                  value={p.valor} onChange={e => updateParcela(i, 'valor', e.target.value)} />
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           {comJuros && (
             <div style={{ color: C.statusWarning, fontFamily: F.body, fontSize: '0.78rem', fontWeight: '600' }}>
-              Juros aplicados (acima de {parcelasSemJuros}× sem juros): à vista {fBRL(final)} · total parcelado {fBRL(totalEsperado)}
+              Juros aplicados (acima de {parcelasSemJuros}× sem juros) sobre o restante {fBRL(restanteVal)} · total parcelado {fBRL(totalParcelado)}
             </div>
           )}
           {parcelasOk ? (
             <div style={{ color: C.statusSuccess, fontFamily: F.body, fontSize: '0.82rem', fontWeight: '600' }}>
-              ✓ Soma das parcelas ({fBRL(somaParc)}) confere com o total {comJuros ? 'parcelado' : 'da venda'} ({fBRL(totalEsperado)})
+              ✓ Soma ({fBRL(somaParc)}) confere com {usaEntradaParcela ? 'entrada + prestações' : 'o total'} ({fBRL(totalParcelado)})
             </div>
           ) : (
             <div style={{ color: C.error, fontFamily: F.body, fontSize: '0.82rem', fontWeight: '600' }}>
-              ⚠ Soma das parcelas ({fBRL(somaParc)}) deve ser igual a {fBRL(totalEsperado)}
+              ⚠ Soma das parcelas ({fBRL(somaParc)}) deve ser igual a {fBRL(totalParcelado)}
             </div>
           )}
         </div>
@@ -617,13 +649,24 @@ export default function Vendas() {
       valor_final: v.valor_final,
       pagamento_modalidade: v.pagamento_modalidade || '',
       pagamento_entrada: v.pagamento_entrada || '',
+      entrada_valor: v.entrada_valor != null ? String(v.entrada_valor) : '',
       forma_pagamento: v.forma_pagamento,
-      ...carregarParcelas(v),
+      ...carregarEdicaoParcelas(v),
       efetivada: v.efetivada !== false,
       motivo_nao_efetivada: v.motivo_nao_efetivada || '',
     })
     setEditId(v.id)
     setShowForm(true)
+  }
+
+  // Para edição: separa a entrada das prestações. O nº de parcelas mostrado
+  // é a quantidade de PRESTAÇÕES (fora a entrada), quando há entrada.
+  function carregarEdicaoParcelas(v) {
+    const base = carregarParcelas(v)
+    const parcs = base.parcelas
+    const usaEntr = (v.pagamento_modalidade === 'boleto' || v.pagamento_modalidade === 'crediario_entrada') && (v.entrada_valor || 0) > 0
+    const nPrest = usaEntr ? Math.max(1, parcs.length - 1) : (parcs.length || base.num_parcelas || 1)
+    return { num_parcelas: nPrest, parcelas: parcs }
   }
 
   // Monta num_parcelas/parcelas a partir da venda (converte entrada/saldo antigos).
@@ -668,20 +711,17 @@ export default function Vendas() {
       return showToast('Selecione se a entrada / o à vista é em Pix ou Dinheiro.', 'err')
     }
 
-    const nParc = Math.max(1, parseInt(form.num_parcelas) || 1)
+    const modSel = form.pagamento_modalidade
+    const geraPrest = modSel === 'boleto' || modSel === 'crediario_entrada' || modSel === 'crediario'
+    const temEntradaValorSel = modSel === 'cartao' || modSel === 'boleto' || modSel === 'crediario_entrada'
     let parcelasPayload = null
-    if (nParc >= 2) {
+    let numParcelasSalvar = 1
+    if (geraPrest) {
       const parc = (form.parcelas || []).map(p => ({ n: p.n, data: p.data || null, valor: num(p.valor) }))
-      if (parc.length !== nParc) {
-        return showToast('Ajuste o número de parcelas (clique em "Redividir igualmente").', 'err')
-      }
+      if (!parc.length) return showToast('Defina o número de prestações.', 'err')
       if (parc.some(p => !p.data)) return showToast('Preencha a data de todas as parcelas.', 'err')
-      const soma = parc.reduce((s, p) => s + p.valor, 0)
-      const totalEsperado = valoresParcelas(nParc, final, parcelasSemJuros, jurosPercent).total
-      if (Math.abs(soma - totalEsperado) >= 0.02) {
-        return showToast(`A soma das parcelas (${fBRL(soma)}) deve ser igual a ${fBRL(totalEsperado)}.`, 'err')
-      }
       parcelasPayload = parc
+      numParcelasSalvar = parc.length
     }
 
     setSaving(true)
@@ -700,10 +740,10 @@ export default function Vendas() {
       pagamento_modalidade: form.pagamento_modalidade || null,
       pagamento_entrada: modalidadeTemEntrada(form.pagamento_modalidade) ? (form.pagamento_entrada || null) : null,
       forma_pagamento: form.forma_pagamento || textoFormaPagamento(form.pagamento_modalidade, form.pagamento_entrada),
-      num_parcelas: nParc,
+      num_parcelas: numParcelasSalvar,
       parcelas: parcelasPayload,
-      entrada_valor: null,
-      entrada_forma: null,
+      entrada_valor: temEntradaValorSel && num(form.entrada_valor) > 0 ? num(form.entrada_valor) : null,
+      entrada_forma: temEntradaValorSel ? (form.pagamento_entrada || null) : null,
       saldo_valor: null,
       saldo_forma: null,
       efetivada: form.efetivada !== false,
