@@ -167,6 +167,29 @@ async function parseFile(file) {
   return { boletos, periodoInicio, periodoFim }
 }
 
+// Mescla duas linhas do MESMO boleto (mesmo nosso número) numa só, juntando
+// status e movimentação. Campos vazios não sobrescrevem preenchidos; a
+// liquidação (data/valor/situação) é mantida assim que aparecer em qualquer linha.
+function mesclarBoleto(prev, b) {
+  const ok = v => v !== null && v !== undefined && v !== ''
+  const m = { ...prev }
+  ;['carteira', 'numero_doc', 'txid', 'data_vencimento', 'valor', 'motivo'].forEach(k => {
+    if (ok(b[k])) m[k] = b[k]
+  })
+  if (ok(prev.data_liquidacao)) {
+    // já estava liquidado → mantém a liquidação existente
+  } else if (ok(b.data_liquidacao)) {
+    m.data_liquidacao = b.data_liquidacao
+    if (ok(b.valor_liquidacao)) m.valor_liquidacao = b.valor_liquidacao
+    if (ok(b.situacao_boleto))  m.situacao_boleto  = b.situacao_boleto
+  } else {
+    // nenhuma linha liquidada ainda → fica com a última situação/valores não vazios
+    if (ok(b.valor_liquidacao)) m.valor_liquidacao = b.valor_liquidacao
+    if (ok(b.situacao_boleto))  m.situacao_boleto  = b.situacao_boleto
+  }
+  return m
+}
+
 /* ── importar boletos no Supabase (com filial) ── */
 async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, nomeArquivo, importadoPor } = {}) {
   const hoje = todayISO()
@@ -225,8 +248,12 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
     boletosDB?.forEach(b => { setExistentes.add(b.nosso_numero) })
   }
 
-  const paraInserir   = []
-  const paraAtualizar = []
+  // O arquivo do banco (principalmente "todas as situações") pode trazer o
+  // MESMO boleto (mesmo "nosso número") em várias linhas — cada uma com uma
+  // situação/movimentação. Consolidamos tudo numa ÚNICA linha por nosso
+  // número, mesclando os campos e mantendo a liquidação quando houver.
+  const consolidado = new Map()  // nosso_numero → base mesclada
+  const semNumero = []
   boletos.forEach(b => {
     const devedorId = mapId[normalizarNome(b.nome_pagador)]
     if (!devedorId) return
@@ -238,30 +265,24 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
       valor: b.valor, valor_liquidacao: b.valor_liquidacao,
       situacao_boleto: b.situacao_boleto, motivo: b.motivo,
     }
-    if (b.nosso_numero && setExistentes.has(b.nosso_numero)) {
+    if (!b.nosso_numero) { semNumero.push(base); return }
+    const prev = consolidado.get(b.nosso_numero)
+    consolidado.set(b.nosso_numero, prev ? mesclarBoleto(prev, base) : base)
+  })
+
+  const paraInserir   = []
+  const paraAtualizar = []
+  ;[...consolidado.values(), ...semNumero].forEach(base => {
+    if (base.nosso_numero && setExistentes.has(base.nosso_numero)) {
       paraAtualizar.push(base)
     } else {
       // Boleto novo: inicializa situacao_atual com o valor vindo do banco
-      paraInserir.push({ ...base, situacao_atual: b.situacao_boleto || null })
+      paraInserir.push({ ...base, situacao_atual: base.situacao_boleto || null })
     }
   })
 
   if (paraInserir.length > 0) {
-    // O arquivo do banco (principalmente "todas as situações") pode trazer o
-    // mesmo boleto (mesmo "nosso número") em mais de uma linha. Mantemos só
-    // uma por nosso número — preferindo a linha liquidada — para não violar
-    // a regra de unicidade do banco de dados. Linhas sem nosso número passam.
-    const porNum = new Map()
-    const semNum = []
-    for (const b of paraInserir) {
-      if (!b.nosso_numero) { semNum.push(b); continue }
-      const prev = porNum.get(b.nosso_numero)
-      if (!prev) { porNum.set(b.nosso_numero, b); continue }
-      if (b.data_liquidacao && !prev.data_liquidacao) porNum.set(b.nosso_numero, b)
-      else if (!(prev.data_liquidacao && !b.data_liquidacao)) porNum.set(b.nosso_numero, b)
-    }
-    const inserirDedup = [...porNum.values(), ...semNum]
-    const { error: e3 } = await supabase.from('cobrancas_boletos').insert(inserirDedup)
+    const { error: e3 } = await supabase.from('cobrancas_boletos').insert(paraInserir)
     if (e3) throw new Error(e3.message)
   }
   for (const b of paraAtualizar) {
