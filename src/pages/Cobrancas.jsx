@@ -15,6 +15,21 @@ function normalizarNome(nome) {
   return String(nome || '').trim().toUpperCase().replace(/\s+/g, ' ')
 }
 
+// Situações do banco que devem ser tratadas como quitadas (fora da inadimplência),
+// além da liquidação: "Baixado por solicitação" e "Rejeitado".
+function situacaoBaixa(situacao) {
+  const s = String(situacao || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  return s.includes('BAIXADO POR SOLICITACAO') || s.includes('REJEITADO')
+}
+// Um boleto está QUITADO/fora da inadimplência quando: tem data de liquidação,
+// a Situação Atual é "Liquidada", ou a situação (banco/atual) é baixa/rejeitado.
+function boletoQuitado(b) {
+  return !!b.data_liquidacao
+    || b.situacao_atual === 'Liquidada'
+    || situacaoBaixa(b.situacao_boleto)
+    || situacaoBaixa(b.situacao_atual)
+}
+
 function parseBRL(val) {
   if (val === null || val === undefined || val === '') return null
   if (typeof val === 'number') return val
@@ -441,7 +456,7 @@ export default function Cobrancas() {
   useEffect(() => { carregar() }, [carregar])
 
   /* ── helpers derivados ── */
-  function abertos(dev) { return (dev.cobrancas_boletos || []).filter(b => !b.data_liquidacao && b.situacao_atual !== 'Liquidada') }
+  function abertos(dev) { return (dev.cobrancas_boletos || []).filter(b => !boletoQuitado(b)) }
   function valorAberto(dev) { return abertos(dev).reduce((s, b) => s + (b.valor || 0), 0) }
 
   /* ── filtros ── */
@@ -1380,7 +1395,7 @@ export default function Cobrancas() {
                   {[...(modalDev.cobrancas_boletos || [])]
                     .sort((a, b) => (a.data_vencimento || '').localeCompare(b.data_vencimento || ''))
                     .map(b => {
-                      const emAberto = !b.data_liquidacao && b.situacao_atual !== 'Liquidada'
+                      const emAberto = !boletoQuitado(b)
                       const edit = boletoEdits[b.id] || { situacao_atual: b.situacao_atual || '', motivo: b.motivo || '', data_atual: b.data_atual || '', valor_atual: b.valor_atual != null ? String(b.valor_atual) : '', dirty: false }
                       const isSaving = savingBoleto.has(b.id)
                       const lblCss = { fontSize: '0.62rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', color: C.onSurfaceVariant, marginBottom: '0.2rem', fontFamily: F.body }
@@ -2140,7 +2155,7 @@ export default function Cobrancas() {
                   </thead>
                   <tbody>
                     {boletosFiltrados.map(b => {
-                      const liquidado = !!b.data_liquidacao || b.situacao_atual === 'Liquidada'
+                      const liquidado = boletoQuitado(b)
                       return (
                         <tr key={b.id} style={{ borderBottom: `1px solid ${C.borderSubtle}`, background: liquidado ? C.statusSuccessBg + '33' : 'transparent' }}>
                           <td style={{ padding: '0.6rem 0.875rem', fontWeight: '600', color: C.onSurface, whiteSpace: 'nowrap' }}>{b.nome_pagador}</td>
