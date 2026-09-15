@@ -96,10 +96,11 @@ const MODALIDADES_PAGAMENTO = [
   { v: 'boleto',              label: 'Entrada + Boleto',           temEntrada: true },
   { v: 'boleto_multicredito', label: 'Entrada + Boleto MultiCredito', temEntrada: true },
   { v: 'crediario_entrada',   label: 'Entrada + Crediário',        temEntrada: true },
+  { v: 'boleto_multicredito_sem', label: 'Boleto MultiCredito (sem entrada)', temEntrada: false },
   { v: 'crediario',           label: 'Crediário (sem entrada)',    temEntrada: false },
 ]
 // Modalidades que geram prestações (boletos/crediário) na Cobrança.
-const MODS_PRESTACAO      = ['boleto', 'boleto_multicredito', 'crediario_entrada', 'crediario']
+const MODS_PRESTACAO      = ['boleto', 'boleto_multicredito', 'boleto_multicredito_sem', 'crediario_entrada', 'crediario']
 // Modalidades cuja entrada entra como 1ª parcela (o restante vira prestações).
 const MODS_ENTRADA_PARCELA = ['boleto', 'boleto_multicredito', 'crediario_entrada']
 // Modalidades que têm campo "Valor da entrada".
@@ -115,6 +116,7 @@ function textoFormaPagamento(modalidade, entrada) {
     case 'cartao':            return entrada ? `${entrada} + Cartão` : 'Cartão'
     case 'boleto':            return entrada ? `${entrada} + Boleto` : 'Boleto'
     case 'boleto_multicredito': return entrada ? `${entrada} + Boleto MultiCredito` : 'Boleto MultiCredito'
+    case 'boleto_multicredito_sem': return 'Boleto MultiCredito'
     case 'crediario_entrada': return entrada ? `${entrada} + Crediário` : 'Crediário'
     case 'crediario':         return 'Crediário'
     default:                  return ''
