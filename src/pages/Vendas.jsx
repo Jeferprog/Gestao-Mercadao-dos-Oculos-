@@ -91,12 +91,19 @@ const Label = ({ children }) => (
 // Modalidades de pagamento. As que NÃO são "crediário" (sem entrada)
 // pedem a forma da entrada/à vista: Pix ou Dinheiro.
 const MODALIDADES_PAGAMENTO = [
-  { v: 'avista',            label: 'À vista',            temEntrada: true },
-  { v: 'cartao',            label: 'Entrada + Cartão',   temEntrada: true },
-  { v: 'boleto',            label: 'Entrada + Boleto',   temEntrada: true },
-  { v: 'crediario_entrada', label: 'Entrada + Crediário', temEntrada: true },
-  { v: 'crediario',         label: 'Crediário (sem entrada)', temEntrada: false },
+  { v: 'avista',              label: 'À vista',                    temEntrada: true },
+  { v: 'cartao',              label: 'Entrada + Cartão',           temEntrada: true },
+  { v: 'boleto',              label: 'Entrada + Boleto',           temEntrada: true },
+  { v: 'boleto_multicredito', label: 'Entrada + Boleto MultiCredito', temEntrada: true },
+  { v: 'crediario_entrada',   label: 'Entrada + Crediário',        temEntrada: true },
+  { v: 'crediario',           label: 'Crediário (sem entrada)',    temEntrada: false },
 ]
+// Modalidades que geram prestações (boletos/crediário) na Cobrança.
+const MODS_PRESTACAO      = ['boleto', 'boleto_multicredito', 'crediario_entrada', 'crediario']
+// Modalidades cuja entrada entra como 1ª parcela (o restante vira prestações).
+const MODS_ENTRADA_PARCELA = ['boleto', 'boleto_multicredito', 'crediario_entrada']
+// Modalidades que têm campo "Valor da entrada".
+const MODS_ENTRADA_VALOR  = ['cartao', 'boleto', 'boleto_multicredito', 'crediario_entrada']
 function modalidadeTemEntrada(v) {
   const m = MODALIDADES_PAGAMENTO.find(x => x.v === v)
   return m ? m.temEntrada : false
@@ -107,6 +114,7 @@ function textoFormaPagamento(modalidade, entrada) {
     case 'avista':            return entrada ? `À vista (${entrada})` : 'À vista'
     case 'cartao':            return entrada ? `${entrada} + Cartão` : 'Cartão'
     case 'boleto':            return entrada ? `${entrada} + Boleto` : 'Boleto'
+    case 'boleto_multicredito': return entrada ? `${entrada} + Boleto MultiCredito` : 'Boleto MultiCredito'
     case 'crediario_entrada': return entrada ? `${entrada} + Crediário` : 'Crediário'
     case 'crediario':         return 'Crediário'
     default:                  return ''
@@ -142,19 +150,19 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   const tiposOpcoes = Array.from(new Set([...(tiposVenda || []), form.tipo_venda].filter(Boolean)))
   // Modalidades que geram prestações (boletos/crediário) na Cobrança.
   const mod = form.pagamento_modalidade
-  const temPrestacoes = mod === 'boleto' || mod === 'crediario_entrada' || mod === 'crediario'
+  const temPrestacoes = MODS_PRESTACAO.includes(mod)
   // Modalidades que têm valor de entrada (à vista é pago integral; crediário puro não tem entrada).
-  const temEntradaValor = mod === 'cartao' || mod === 'boleto' || mod === 'crediario_entrada'
+  const temEntradaValor = MODS_ENTRADA_VALOR.includes(mod)
   // A entrada entra como 1ª parcela só em boleto/crediário (no cartão o restante vai no cartão).
-  const usaEntradaParcela = mod === 'boleto' || mod === 'crediario_entrada'
+  const usaEntradaParcela = MODS_ENTRADA_PARCELA.includes(mod)
 
   // Monta as parcelas: entrada (se houver) como 1ª, e o RESTANTE (valor − entrada)
   // dividido em N prestações — com juros acima do limite configurado.
   function calcParcelas(f, finalV) {
     const m = f.pagamento_modalidade
-    const gera = m === 'boleto' || m === 'crediario_entrada' || m === 'crediario'
+    const gera = MODS_PRESTACAO.includes(m)
     if (!gera) return []
-    const comEntrada = (m === 'boleto' || m === 'crediario_entrada') && num(f.entrada_valor) > 0
+    const comEntrada = MODS_ENTRADA_PARCELA.includes(m) && num(f.entrada_valor) > 0
     const entrada = comEntrada ? num(f.entrada_valor) : 0
     const N = Math.max(1, Math.min(parseInt(f.num_parcelas) || 1, 36))
     const restante = Math.max(0, round2(finalV - entrada))
@@ -664,7 +672,7 @@ export default function Vendas() {
   function carregarEdicaoParcelas(v) {
     const base = carregarParcelas(v)
     const parcs = base.parcelas
-    const usaEntr = (v.pagamento_modalidade === 'boleto' || v.pagamento_modalidade === 'crediario_entrada') && (v.entrada_valor || 0) > 0
+    const usaEntr = MODS_ENTRADA_PARCELA.includes(v.pagamento_modalidade) && (v.entrada_valor || 0) > 0
     const nPrest = usaEntr ? Math.max(1, parcs.length - 1) : (parcs.length || base.num_parcelas || 1)
     return { num_parcelas: nPrest, parcelas: parcs }
   }
@@ -712,8 +720,8 @@ export default function Vendas() {
     }
 
     const modSel = form.pagamento_modalidade
-    const geraPrest = modSel === 'boleto' || modSel === 'crediario_entrada' || modSel === 'crediario'
-    const temEntradaValorSel = modSel === 'cartao' || modSel === 'boleto' || modSel === 'crediario_entrada'
+    const geraPrest = MODS_PRESTACAO.includes(modSel)
+    const temEntradaValorSel = MODS_ENTRADA_VALOR.includes(modSel)
     let parcelasPayload = null
     let numParcelasSalvar = 1
     if (geraPrest) {

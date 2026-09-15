@@ -6,6 +6,15 @@ import { C, F, card as dsCard } from '../lib/ds'
 import { logErro } from '../lib/erros'
 
 /* ── helpers ── */
+// Situações do banco tratadas como quitadas (baixa por solicitação / rejeitado),
+// além da liquidação — não contam na inadimplência.
+function situacaoBaixa(situacao) {
+  const s = String(situacao || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  return s.includes('BAIXADO POR SOLICITACAO') || s.includes('REJEITADO')
+}
+function boletoEmAberto(b) {
+  return b.situacao_atual !== 'Liquidada' && !situacaoBaixa(b.situacao_boleto) && !situacaoBaixa(b.situacao_atual)
+}
 function todayISO() { return new Date().toISOString().slice(0, 10) }
 function firstOfMonth() {
   const d = new Date()
@@ -321,14 +330,14 @@ export default function Dashboard() {
           supabase.from('despesas').select('valor').eq('pago', false).eq('filial_id', filtroFilial),
           supabase.from('despesas').select('valor').eq('pago', false).lt('data_vencimento', hoje).eq('filial_id', filtroFilial),
           supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
-          supabase.from('cobrancas_boletos').select('valor, devedor_id, situacao_atual').is('data_liquidacao', null).eq('filial_id', filtroFilial),
+          supabase.from('cobrancas_boletos').select('valor, devedor_id, situacao_atual, situacao_boleto').is('data_liquidacao', null).eq('filial_id', filtroFilial),
           supabase.from('cobrancas_devedores').select('id, status_cobranca').eq('filial_id', filtroFilial),
           supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia, filial_id').gte('data_audiencia', hoje).lte('data_audiencia', em7).order('data_audiencia').limit(8),
           supabase.from('cobrancas_lembretes').select('id, data, observacao, devedor_id, cobrancas_devedores(nome_pagador)').eq('concluido', false).lte('data', em7).eq('filial_id', filtroFilial).order('data').limit(10),
         ])
         const vH = rH.data || [], vM = rM.data || []
         const dA = rDA.data || [], dAtr = rDAtr.data || []
-        const bols = (rBol.data || []).filter(b => b.situacao_atual !== 'Liquidada'), devs = rDevs.data || []
+        const bols = (rBol.data || []).filter(boletoEmAberto), devs = rDevs.data || []
         const bs = new Set(bols.map(b => b.devedor_id))
         setStats({
           ...calcStats(vH, vM, bols, devs),
@@ -351,7 +360,7 @@ export default function Dashboard() {
         supabase.from('despesas').select('valor, filial_id').eq('pago', false),
         supabase.from('despesas').select('valor, filial_id').eq('pago', false).lt('data_vencimento', hoje),
         supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
-        supabase.from('cobrancas_boletos').select('valor, devedor_id, filial_id, situacao_atual').is('data_liquidacao', null),
+        supabase.from('cobrancas_boletos').select('valor, devedor_id, filial_id, situacao_atual, situacao_boleto').is('data_liquidacao', null),
         supabase.from('cobrancas_devedores').select('id, status_cobranca, filial_id'),
         supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia, filial_id').gte('data_audiencia', hoje).lte('data_audiencia', em7).order('data_audiencia').limit(8),
         supabase.from('cobrancas_lembretes').select('id, data, observacao, devedor_id, cobrancas_devedores(nome_pagador)').eq('concluido', false).lte('data', em7).order('data').limit(10),
@@ -359,7 +368,7 @@ export default function Dashboard() {
 
       const vHAll  = rH.data  || [], vMAll  = rM.data  || []
       const dA     = rDA.data || [], dAtr   = rDAtr.data || []
-      const bolAll = (rBol.data || []).filter(b => b.situacao_atual !== 'Liquidada'), devsAll = rDevs.data || []
+      const bolAll = (rBol.data || []).filter(boletoEmAberto), devsAll = rDevs.data || []
 
       /* ── dados por filial ── */
       const fd = currentFiliais.map(f => {
