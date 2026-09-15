@@ -247,7 +247,21 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
   })
 
   if (paraInserir.length > 0) {
-    const { error: e3 } = await supabase.from('cobrancas_boletos').insert(paraInserir)
+    // O arquivo do banco (principalmente "todas as situações") pode trazer o
+    // mesmo boleto (mesmo "nosso número") em mais de uma linha. Mantemos só
+    // uma por nosso número — preferindo a linha liquidada — para não violar
+    // a regra de unicidade do banco de dados. Linhas sem nosso número passam.
+    const porNum = new Map()
+    const semNum = []
+    for (const b of paraInserir) {
+      if (!b.nosso_numero) { semNum.push(b); continue }
+      const prev = porNum.get(b.nosso_numero)
+      if (!prev) { porNum.set(b.nosso_numero, b); continue }
+      if (b.data_liquidacao && !prev.data_liquidacao) porNum.set(b.nosso_numero, b)
+      else if (!(prev.data_liquidacao && !b.data_liquidacao)) porNum.set(b.nosso_numero, b)
+    }
+    const inserirDedup = [...porNum.values(), ...semNum]
+    const { error: e3 } = await supabase.from('cobrancas_boletos').insert(inserirDedup)
     if (e3) throw new Error(e3.message)
   }
   for (const b of paraAtualizar) {
