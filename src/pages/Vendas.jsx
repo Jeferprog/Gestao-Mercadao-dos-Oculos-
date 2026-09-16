@@ -92,6 +92,8 @@ const Label = ({ children }) => (
 // pedem a forma da entrada/à vista: Pix ou Dinheiro.
 const MODALIDADES_PAGAMENTO = [
   { v: 'avista',              label: 'À vista',                    temEntrada: true },
+  { v: 'cartao_credito',      label: 'Cartão Crédito',             temEntrada: false },
+  { v: 'cartao_debito',       label: 'Cartão Débito',              temEntrada: false },
   { v: 'cartao',              label: 'Entrada + Cartão',           temEntrada: true },
   { v: 'boleto',              label: 'Entrada + Boleto',           temEntrada: true },
   { v: 'boleto_multicredito', label: 'Entrada + Boleto MultiCredito', temEntrada: true },
@@ -113,6 +115,8 @@ function modalidadeTemEntrada(v) {
 function textoFormaPagamento(modalidade, entrada) {
   switch (modalidade) {
     case 'avista':            return entrada ? `À vista (${entrada})` : 'À vista'
+    case 'cartao_credito':    return 'Cartão Crédito'
+    case 'cartao_debito':     return 'Cartão Débito'
     case 'cartao':            return entrada ? `${entrada} + Cartão` : 'Cartão'
     case 'boleto':            return entrada ? `${entrada} + Boleto` : 'Boleto'
     case 'boleto_multicredito': return entrada ? `${entrada} + Boleto MultiCredito` : 'Boleto MultiCredito'
