@@ -254,12 +254,14 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
       await supabase.from('cobrancas_devedores').update({ filial_id: filialId }).in('id', semFilial)
   }
 
+  // Procura boletos já existentes pelo "nosso número" INDEPENDENTE da filial.
+  // Assim, um boleto importado antes sem filial é ATUALIZADO (e ganha a
+  // filial), em vez de virar um segundo registro duplicado.
   const nossoNums = boletos.map(b => b.nosso_numero).filter(Boolean)
   const setExistentes = new Set()
   if (nossoNums.length > 0) {
-    let qBol = supabase.from('cobrancas_boletos').select('nosso_numero').in('nosso_numero', nossoNums)
-    if (filialId) qBol = qBol.eq('filial_id', filialId)
-    const { data: boletosDB } = await qBol
+    const { data: boletosDB } = await supabase
+      .from('cobrancas_boletos').select('nosso_numero').in('nosso_numero', nossoNums)
     boletosDB?.forEach(b => { setExistentes.add(b.nosso_numero) })
   }
 
@@ -309,9 +311,8 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
     }
     if (b.situacao_boleto) patch.situacao_boleto = b.situacao_boleto
     if (b.motivo)          patch.motivo          = b.motivo
-    let q = supabase.from('cobrancas_boletos').update(patch).eq('nosso_numero', b.nosso_numero)
-    if (filialId) q = q.eq('filial_id', filialId)
-    await q
+    if (filialId)          patch.filial_id       = filialId  // garante/corrige a filial do boleto
+    await supabase.from('cobrancas_boletos').update(patch).eq('nosso_numero', b.nosso_numero)
   }
 
   // log import (silently ignore if table doesn't exist yet)
