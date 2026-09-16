@@ -376,6 +376,7 @@ export default function Cobrancas() {
   const [copied,           setCopied]           = useState(false)
 
   const [modalDev,         setModalDev]         = useState(null)
+  const [mostrarQuitados,  setMostrarQuitados]  = useState(false)
   const [boletoEdits,      setBoletoEdits]      = useState({})
   const [savingBoleto,     setSavingBoleto]     = useState(new Set())
 
@@ -506,6 +507,7 @@ export default function Cobrancas() {
       observacoes:        dev.observacoes        || '',
     })
     setModalDev(dev)
+    setMostrarQuitados(false)  // por padrão mostra só os boletos em aberto
     if (isAdmin) carregarDocs(dev.id)
   }
 
@@ -1392,8 +1394,21 @@ export default function Cobrancas() {
                   )}
                 </div>
 
+                {(() => {
+                  const todos = modalDev.cobrancas_boletos || []
+                  const qtdQuitados = todos.filter(b => boletoQuitado(b)).length
+                  return qtdQuitados > 0 ? (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.8rem', fontFamily: F.body, color: C.onSurfaceVariant, marginBottom: '0.5rem' }}>
+                      <input type="checkbox" checked={mostrarQuitados} onChange={e => setMostrarQuitados(e.target.checked)}
+                        style={{ width: '1rem', height: '1rem', accentColor: C.statusSuccess }} />
+                      Mostrar também os quitados ({qtdQuitados})
+                    </label>
+                  ) : null
+                })()}
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                   {[...(modalDev.cobrancas_boletos || [])]
+                    .filter(b => mostrarQuitados || !boletoQuitado(b))
                     .sort((a, b) => (a.data_vencimento || '').localeCompare(b.data_vencimento || ''))
                     .map(b => {
                       const emAberto = !boletoQuitado(b)
