@@ -107,11 +107,15 @@ const MODS_PRESTACAO      = ['boleto', 'boleto_multicredito', 'boleto_multicredi
 const MODS_ENTRADA_PARCELA = ['boleto', 'boleto_multicredito', 'crediario_entrada']
 // Modalidades que têm campo "Valor da entrada".
 const MODS_ENTRADA_VALOR  = ['cartao', 'boleto', 'boleto_multicredito', 'crediario_entrada']
+// Cartão de crédito pode ser parcelado (na operadora). O nº de parcelas é só
+// informativo — NÃO gera boletos na Cobrança.
+const MODS_CARTAO_PARCELAS = ['cartao_credito', 'cartao']
 function modalidadeTemEntrada(v) {
   const m = MODALIDADES_PAGAMENTO.find(x => x.v === v)
   return m ? m.temEntrada : false
 }
 // Monta o texto que fica salvo em forma_pagamento (aparece nas listas e relatórios).
+// O nº de parcelas do cartão aparece via "(N×)" na lista, então não é repetido aqui.
 function textoFormaPagamento(modalidade, entrada) {
   switch (modalidade) {
     case 'avista':            return entrada ? `À vista (${entrada})` : 'À vista'
@@ -161,6 +165,8 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   const temEntradaValor = MODS_ENTRADA_VALOR.includes(mod)
   // A entrada entra como 1ª parcela só em boleto/crediário (no cartão o restante vai no cartão).
   const usaEntradaParcela = MODS_ENTRADA_PARCELA.includes(mod)
+  // Cartão de crédito pode ser parcelado (informativo, não gera cobrança).
+  const temParcelasCartao = MODS_CARTAO_PARCELAS.includes(mod)
 
   // Monta as parcelas: entrada (se houver) como 1ª, e o RESTANTE (valor − entrada)
   // dividido em N prestações — com juros acima do limite configurado.
@@ -213,6 +219,12 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   function mudarEntradaValor(val) {
     const f = { ...form, entrada_valor: val }
     onChange({ ...f, parcelas: calcParcelas(f, final) })
+  }
+  // Parcelas no cartão de crédito: só atualiza o texto da forma de pagamento (sem cobrança).
+  function mudarParcelasCartao(raw) {
+    const nn = raw === '' ? '' : Math.max(1, Math.min(parseInt(raw) || 1, 36))
+    onChange({ ...form, num_parcelas: nn,
+      forma_pagamento: textoFormaPagamento(form.pagamento_modalidade, form.pagamento_entrada, nn) })
   }
   function redividir() {
     onChange({ ...form, parcelas: calcParcelas(form, final) })
@@ -356,7 +368,7 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
               const novaMod = e.target.value
               const entrada = modalidadeTemEntrada(novaMod) ? (form.pagamento_entrada || '') : ''
               const f = { ...form, pagamento_modalidade: novaMod, pagamento_entrada: entrada,
-                forma_pagamento: textoFormaPagamento(novaMod, entrada) }
+                forma_pagamento: textoFormaPagamento(novaMod, entrada, form.num_parcelas) }
               onChange({ ...f, parcelas: calcParcelas(f, final) })
             }}>
             <option value="">Selecione...</option>
@@ -375,7 +387,7 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
               onChange={e => {
                 const entrada = e.target.value
                 onChange({ ...form, pagamento_entrada: entrada,
-                  forma_pagamento: textoFormaPagamento(form.pagamento_modalidade, entrada) })
+                  forma_pagamento: textoFormaPagamento(form.pagamento_modalidade, entrada, form.num_parcelas) })
               }}>
               <option value="">Selecione...</option>
               <option value="Pix">Pix</option>
@@ -409,6 +421,23 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
               <span style={{ fontSize: '0.75rem', color: comJuros ? C.statusWarning : C.onSurfaceVariant, fontFamily: F.body }}>
                 {nPrest}× de {fBRL(infoJuros.total / nPrest)} sobre o restante {fBRL(restanteVal)}
                 {comJuros ? ` (com juros — restante parcelado ${fBRL(infoJuros.total)})` : ' sem juros'}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Número de parcelas do cartão de crédito (informativo, sem cobrança) */}
+        {temParcelasCartao && (
+          <div>
+            <Label>Parcelas no cartão</Label>
+            <input style={inputCss} type="number" min="1" max="36" step="1"
+              value={form.num_parcelas}
+              onFocus={e => e.target.select()}
+              onChange={e => mudarParcelasCartao(e.target.value)}
+              onBlur={() => { if (form.num_parcelas === '' || parseInt(form.num_parcelas) < 1) mudarParcelasCartao('1') }} />
+            {final > 0 && (parseInt(form.num_parcelas) || 1) >= 2 && (
+              <span style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body }}>
+                {parseInt(form.num_parcelas)}× de {fBRL(final / (parseInt(form.num_parcelas) || 1))} no cartão
               </span>
             )}
           </div>
@@ -728,6 +757,7 @@ export default function Vendas() {
     const modSel = form.pagamento_modalidade
     const geraPrest = MODS_PRESTACAO.includes(modSel)
     const temEntradaValorSel = MODS_ENTRADA_VALOR.includes(modSel)
+    const temParcelasCartaoSel = MODS_CARTAO_PARCELAS.includes(modSel)
     let parcelasPayload = null
     let numParcelasSalvar = 1
     if (geraPrest) {
@@ -736,6 +766,9 @@ export default function Vendas() {
       if (parc.some(p => !p.data)) return showToast('Preencha a data de todas as parcelas.', 'err')
       parcelasPayload = parc
       numParcelasSalvar = parc.length
+    } else if (temParcelasCartaoSel) {
+      // Parcelas no cartão: guardamos a quantidade (informativo), sem boletos.
+      numParcelasSalvar = Math.max(1, parseInt(form.num_parcelas) || 1)
     }
 
     setSaving(true)
@@ -753,7 +786,7 @@ export default function Vendas() {
       valor_final: final,
       pagamento_modalidade: form.pagamento_modalidade || null,
       pagamento_entrada: modalidadeTemEntrada(form.pagamento_modalidade) ? (form.pagamento_entrada || null) : null,
-      forma_pagamento: form.forma_pagamento || textoFormaPagamento(form.pagamento_modalidade, form.pagamento_entrada),
+      forma_pagamento: form.forma_pagamento || textoFormaPagamento(form.pagamento_modalidade, form.pagamento_entrada, numParcelasSalvar),
       num_parcelas: numParcelasSalvar,
       parcelas: parcelasPayload,
       entrada_valor: temEntradaValorSel && num(form.entrada_valor) > 0 ? num(form.entrada_valor) : null,
