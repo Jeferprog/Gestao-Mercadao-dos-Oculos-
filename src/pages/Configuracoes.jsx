@@ -79,6 +79,8 @@ function TabSistema({ showToast }) {
   const [novoTipoVenda, setNovoTipoVenda] = useState('')
   const [parcelasSemJuros, setParcelasSemJuros] = useState('3')
   const [jurosPercent, setJurosPercent] = useState('0')
+  const [parcelasSemJurosMC, setParcelasSemJurosMC] = useState('0')
+  const [jurosPercentMC, setJurosPercentMC] = useState('0')
   const [comissaoComVenda, setComissaoComVenda] = useState('10')
   const [comissaoSemVenda, setComissaoSemVenda] = useState('5')
   const [loading, setLoading] = useState(true)
@@ -96,6 +98,8 @@ function TabSistema({ showToast }) {
       setTiposVenda(tipos.length ? tipos : ['Óculos de Grau', 'Solar'])
       if (map.parcelas_sem_juros != null) setParcelasSemJuros(String(map.parcelas_sem_juros))
       if (map.juros_parcela_percent != null) setJurosPercent(String(map.juros_parcela_percent))
+      if (map.parcelas_sem_juros_multicredito != null) setParcelasSemJurosMC(String(map.parcelas_sem_juros_multicredito))
+      if (map.juros_multicredito_percent != null) setJurosPercentMC(String(map.juros_multicredito_percent))
       if (map.comissao_captacao_com_venda != null) setComissaoComVenda(String(map.comissao_captacao_com_venda))
       if (map.comissao_captacao_sem_venda != null) setComissaoSemVenda(String(map.comissao_captacao_sem_venda))
     }
@@ -110,6 +114,17 @@ function TabSistema({ showToast }) {
     ], { onConflict: 'chave' })
     if (error) logErro('Salvar parcelamento', error)
     showToast(error ? 'Erro ao salvar parcelamento.' : 'Configuração de parcelamento salva!')
+    setSaving(false)
+  }
+
+  async function salvarMultiCredito() {
+    setSaving(true)
+    const { error } = await supabase.from('configuracoes').upsert([
+      { chave: 'parcelas_sem_juros_multicredito', valor: String(parseInt(parcelasSemJurosMC) || 0) },
+      { chave: 'juros_multicredito_percent',      valor: String(parseFloat(String(jurosPercentMC).replace(',', '.')) || 0) },
+    ], { onConflict: 'chave' })
+    if (error) logErro('Salvar juros MultiCredito', error)
+    showToast(error ? 'Erro ao salvar juros do MultiCredito.' : 'Juros do Boleto MultiCredito salvos!')
     setSaving(false)
   }
 
@@ -378,6 +393,40 @@ function TabSistema({ showToast }) {
         </div>
         <button onClick={salvarParcelamento} disabled={saving} style={btnPrimary}>
           {saving ? 'Salvando...' : 'Salvar Parcelamento'}
+        </button>
+      </div>
+
+      {/* Boleto MultiCredito — Juros */}
+      <div style={cardMb}>
+        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>
+          Boleto MultiCredito — Juros
+        </h3>
+        <p style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5', fontFamily: F.body }}>
+          Taxa de juros específica para as vendas no <strong>Boleto MultiCredito</strong> (com ou sem entrada).
+          Vale só para essa forma de pagamento; as demais parceladas usam a taxa do "Parcelamento e Juros" acima.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', fontFamily: F.body }}>
+              Parcelas sem juros (até)
+            </label>
+            <input type="number" min="0" max="36" step="1" value={parcelasSemJurosMC}
+              onChange={e => setParcelasSemJurosMC(e.target.value)}
+              onFocus={e => e.target.select()}
+              style={inputCss} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '600', color: C.onSurfaceVariant, marginBottom: '0.3rem', fontFamily: F.body }}>
+              Juros ao mês (%) acima do limite
+            </label>
+            <input type="number" min="0" step="0.1" value={jurosPercentMC}
+              onChange={e => setJurosPercentMC(e.target.value)}
+              onFocus={e => e.target.select()}
+              placeholder="Ex: 3,5" style={inputCss} />
+          </div>
+        </div>
+        <button onClick={salvarMultiCredito} disabled={saving} style={btnPrimary}>
+          {saving ? 'Salvando...' : 'Salvar Juros MultiCredito'}
         </button>
       </div>
 
