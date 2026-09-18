@@ -167,6 +167,7 @@ const FORM_INIT = {
   filial_id: '',
   valor_bruto: '',
   desconto: '0',
+  tarifa: '0',
   valor_final: '',
   pagamento_modalidade: '',
   pagamento_entrada: '',
@@ -223,17 +224,20 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
     const b = parseFloat(String(next.valor_bruto).replace(',', '.')) || 0
     const d = parseFloat(String(next.desconto).replace(',', '.')) || 0
     next.valor_final = Math.max(0, b - d).toFixed(2)
-    next.parcelas = calcParcelas(next, num(next.valor_final))
+    next.parcelas = calcParcelas(next, num(next.valor_final) + num(next.tarifa))
     onChange(next)
   }
 
   const bruto = num(form.valor_bruto)
   const desc = num(form.desconto)
   const final = num(form.valor_final)
+  const tarifa = num(form.tarifa)
+  // Base do parcelamento = valor da venda + tarifa (a tarifa entra antes de dividir).
+  const baseParc = round2(final + tarifa)
   const isGrau = usaNumeroVenda(form.tipo_venda)
 
   const entradaVal = usaEntradaParcela ? num(form.entrada_valor) : 0
-  const restanteVal = Math.max(0, round2(final - entradaVal))
+  const restanteVal = Math.max(0, round2(baseParc - entradaVal))
   const nPrest = Math.max(1, Math.min(parseInt(form.num_parcelas) || 1, 36))
   const parcelas = form.parcelas || []
   const somaParc = parcelas.reduce((s, p) => s + num(p.valor), 0)
@@ -245,11 +249,15 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   function mudarNumParcelas(raw) {
     const nn = raw === '' ? '' : Math.max(1, Math.min(parseInt(raw) || 1, 36))
     const f = { ...form, num_parcelas: nn }
-    onChange({ ...f, parcelas: calcParcelas(f, final) })
+    onChange({ ...f, parcelas: calcParcelas(f, baseParc) })
   }
   function mudarEntradaValor(val) {
     const f = { ...form, entrada_valor: val }
-    onChange({ ...f, parcelas: calcParcelas(f, final) })
+    onChange({ ...f, parcelas: calcParcelas(f, baseParc) })
+  }
+  function mudarTarifa(val) {
+    const f = { ...form, tarifa: val }
+    onChange({ ...f, parcelas: calcParcelas(f, round2(final + num(val))) })
   }
   // Parcelas no cartão de crédito: só atualiza o texto da forma de pagamento (sem cobrança).
   function mudarParcelasCartao(raw) {
@@ -258,7 +266,7 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
       forma_pagamento: textoFormaPagamento(form.pagamento_modalidade, form.pagamento_entrada, nn) })
   }
   function redividir() {
-    onChange({ ...form, parcelas: calcParcelas(form, final) })
+    onChange({ ...form, parcelas: calcParcelas(form, baseParc) })
   }
   function updateParcela(i, campo, valor) {
     // Ao mudar a data de uma parcela, recalcula as datas seguintes (mensal).
@@ -374,12 +382,25 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
           )}
         </div>
 
+        {/* Tarifa (somada ao valor antes de calcular as parcelas) */}
+        <div>
+          <Label>Tarifa (R$)</Label>
+          <input style={inputCss} type="number" min="0" step="0.01" placeholder="0,00"
+            value={form.tarifa}
+            onChange={e => mudarTarifa(e.target.value)} />
+          {tarifa > 0 && (
+            <span style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body }}>
+              Base p/ parcelas: {fBRL(baseParc)}
+            </span>
+          )}
+        </div>
+
         {/* Valor Final */}
         <div>
           <Label>Valor Final (R$)</Label>
           <input style={inputCss} type="number" min="0" step="0.01" required placeholder="0,00"
             value={form.valor_final}
-            onChange={e => { const f = { ...form, valor_final: e.target.value }; onChange({ ...f, parcelas: calcParcelas(f, num(e.target.value)) }) }} />
+            onChange={e => { const f = { ...form, valor_final: e.target.value }; onChange({ ...f, parcelas: calcParcelas(f, num(e.target.value) + num(form.tarifa)) }) }} />
         </div>
 
         {/* Pagador (pode ser diferente do cliente comprador) */}
@@ -400,7 +421,7 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
               const entrada = modalidadeTemEntrada(novaMod) ? (form.pagamento_entrada || '') : ''
               const f = { ...form, pagamento_modalidade: novaMod, pagamento_entrada: entrada,
                 forma_pagamento: textoFormaPagamento(novaMod, entrada, form.num_parcelas) }
-              onChange({ ...f, parcelas: calcParcelas(f, final) })
+              onChange({ ...f, parcelas: calcParcelas(f, baseParc) })
             }}>
             <option value="">Selecione...</option>
             {MODALIDADES_PAGAMENTO.map(m => (
@@ -729,6 +750,7 @@ export default function Vendas() {
       filial_id: v.filial_id || '',
       valor_bruto: v.valor_bruto,
       desconto: v.desconto || 0,
+      tarifa: v.tarifa != null ? String(v.tarifa) : '0',
       valor_final: v.valor_final,
       pagamento_modalidade: v.pagamento_modalidade || '',
       pagamento_entrada: v.pagamento_entrada || '',
@@ -823,6 +845,7 @@ export default function Vendas() {
       filial_id: form.filial_id || null,
       valor_bruto: bruto,
       desconto: desc,
+      tarifa: num(form.tarifa) || 0,
       valor_final: final,
       pagamento_modalidade: form.pagamento_modalidade || null,
       pagamento_entrada: modalidadeTemEntrada(form.pagamento_modalidade) ? (form.pagamento_entrada || null) : null,
@@ -1564,6 +1587,7 @@ export default function Vendas() {
                                   ['Forma de pagamento', v.num_parcelas >= 2 ? `${v.forma_pagamento || '—'} (${v.num_parcelas}×)` : (v.forma_pagamento || '—')],
                                   ['Valor bruto', fBRL(v.valor_bruto)],
                                   ['Desconto', v.desconto > 0 ? `- ${fBRL(v.desconto)}` : '—'],
+                                  ['Tarifa', v.tarifa > 0 ? `+ ${fBRL(v.tarifa)}` : '—'],
                                   ['Valor final', fBRL(v.valor_final)],
                                   ['Conferido', v.conferido ? `Sim${v.conferido_em ? ' — ' + new Date(v.conferido_em).toLocaleString('pt-BR') : ''}` : 'Não'],
                                 ].map(([rotulo, valor]) => (
