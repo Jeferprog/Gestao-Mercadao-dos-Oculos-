@@ -70,6 +70,31 @@ function valoresParcelas(qtd, valorFinal, semJuros, jurosPct) {
   return { valores: arr, comJuros: false, total: round2(valorFinal) }
 }
 
+// Tabela de juros do Boleto MultiCredito por nº de parcelas (% total sobre o valor).
+const MC_PARCELAS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+const MC_TABELA_PADRAO = { 2: 5.05, 3: 6.77, 4: 8.51, 5: 10.27, 6: 12.05, 7: 13.84, 8: 15.65, 9: 17.48, 10: 19.33, 11: 21.20, 12: 23.09 }
+
+// Calcula as parcelas do MultiCredito: aplica o % da tabela para aquele nº de
+// parcelas sobre o valor financiado e divide igualmente (última absorve centavos).
+function valoresParcelasMC(qtd, valorBase, tabela) {
+  const q = Math.max(1, Math.min(parseInt(qtd) || 1, 36))
+  const pct = parseFloat(String((tabela || {})[q] ?? '').toString().replace(',', '.')) || 0
+  if (q >= 2 && pct > 0 && valorBase > 0) {
+    const total = round2(valorBase * (1 + pct / 100))
+    const base = Math.floor((total / q) * 100) / 100
+    const arr = []
+    let acc = 0
+    for (let k = 0; k < q; k++) { const v = k === q - 1 ? round2(total - acc) : base; acc += v; arr.push(v) }
+    return { valores: arr, comJuros: true, total }
+  }
+  // sem juros na tabela → divide o próprio valor
+  const base = Math.floor((valorBase / q) * 100) / 100
+  const arr = []
+  let acc = 0
+  for (let k = 0; k < q; k++) { const v = k === q - 1 ? round2(valorBase - acc) : base; acc += v; arr.push(v) }
+  return { valores: arr, comJuros: false, total: round2(valorBase) }
+}
+
 // Gera as parcelas (nº, data mensal a partir da data base, valor).
 function gerarParcelas(qtd, valorFinal, dataBase, semJuros, jurosPct) {
   const q = Math.max(1, Math.min(parseInt(qtd) || 1, 36))
@@ -154,7 +179,7 @@ const FORM_INIT = {
 }
 
 /* ── FormVenda ── */
-function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedores, filiais, formasPagamento, tiposVenda, parcelasSemJuros, jurosPercent, parcelasSemJurosMC, jurosPercentMC, isAdmin, onSubmit, onCancel, saving, editando }) {
+function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedores, filiais, formasPagamento, tiposVenda, parcelasSemJuros, jurosPercent, tabelaMC, isAdmin, onSubmit, onCancel, saving, editando }) {
   // Opções do tipo de venda: as configuradas + o valor atual (para não perder
   // o tipo de vendas antigas que não estejam mais na lista).
   const tiposOpcoes = Array.from(new Set([...(tiposVenda || []), form.tipo_venda].filter(Boolean)))
@@ -167,13 +192,15 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   const usaEntradaParcela = MODS_ENTRADA_PARCELA.includes(mod)
   // Cartão de crédito pode ser parcelado (informativo, não gera cobrança).
   const temParcelasCartao = MODS_CARTAO_PARCELAS.includes(mod)
-  // Boleto MultiCredito usa taxa de juros própria (configurada à parte).
+  // Boleto MultiCredito usa a TABELA de juros por parcela (configurada à parte).
   const ehMultiCredito = m => m === 'boleto_multicredito' || m === 'boleto_multicredito_sem'
-  const semJurosDe = m => ehMultiCredito(m) ? parcelasSemJurosMC : parcelasSemJuros
-  const jurosDe = m => ehMultiCredito(m) ? jurosPercentMC : jurosPercent
+  // Calcula as parcelas do restante conforme a modalidade (tabela MC ou juros geral).
+  const calcInfo = (m, N, restante) => ehMultiCredito(m)
+    ? valoresParcelasMC(N, restante, tabelaMC)
+    : valoresParcelas(N, restante, parcelasSemJuros, jurosPercent)
 
   // Monta as parcelas: entrada (se houver) como 1ª, e o RESTANTE (valor − entrada)
-  // dividido em N prestações — com juros acima do limite configurado.
+  // dividido em N prestações — com juros conforme a modalidade.
   function calcParcelas(f, finalV) {
     const m = f.pagamento_modalidade
     const gera = MODS_PRESTACAO.includes(m)
@@ -182,7 +209,7 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
     const entrada = comEntrada ? num(f.entrada_valor) : 0
     const N = Math.max(1, Math.min(parseInt(f.num_parcelas) || 1, 36))
     const restante = Math.max(0, round2(finalV - entrada))
-    const info = valoresParcelas(N, restante, semJurosDe(m), jurosDe(m))
+    const info = calcInfo(m, N, restante)
     const base = f.data_venda || todayISO()
     const off = comEntrada ? 1 : 0
     const arr = []
@@ -210,7 +237,7 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   const nPrest = Math.max(1, Math.min(parseInt(form.num_parcelas) || 1, 36))
   const parcelas = form.parcelas || []
   const somaParc = parcelas.reduce((s, p) => s + num(p.valor), 0)
-  const infoJuros = temPrestacoes ? valoresParcelas(nPrest, restanteVal, semJurosDe(mod), jurosDe(mod)) : { valores: [], comJuros: false, total: 0 }
+  const infoJuros = temPrestacoes ? calcInfo(mod, nPrest, restanteVal) : { valores: [], comJuros: false, total: 0 }
   const comJuros = infoJuros.comJuros
   const totalParcelado = entradaVal + infoJuros.total
   const parcelasOk = !temPrestacoes || parcelas.length === 0 || Math.abs(somaParc - totalParcelado) < 0.05
@@ -484,7 +511,9 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
 
           {comJuros && (
             <div style={{ color: C.statusWarning, fontFamily: F.body, fontSize: '0.78rem', fontWeight: '600' }}>
-              Juros aplicados (acima de {semJurosDe(mod)}× sem juros) sobre o restante {fBRL(restanteVal)} · total parcelado {fBRL(totalParcelado)}
+              {ehMultiCredito(mod)
+                ? `Juros da tabela MultiCredito (${nPrest}×) sobre o restante ${fBRL(restanteVal)} · total parcelado ${fBRL(totalParcelado)}`
+                : `Juros aplicados (acima de ${parcelasSemJuros}× sem juros) sobre o restante ${fBRL(restanteVal)} · total parcelado ${fBRL(totalParcelado)}`}
             </div>
           )}
           {parcelasOk ? (
@@ -542,8 +571,7 @@ export default function Vendas() {
   const [formasPagamento, setFormasPagamento] = useState([])
   const [parcelasSemJuros, setParcelasSemJuros] = useState(0)
   const [jurosPercent, setJurosPercent] = useState(0)
-  const [parcelasSemJurosMC, setParcelasSemJurosMC] = useState(0)
-  const [jurosPercentMC, setJurosPercentMC] = useState(0)
+  const [tabelaMC, setTabelaMC] = useState({ ...MC_TABELA_PADRAO })
   const [tiposVenda, setTiposVenda] = useState(TIPOS_VENDA_PADRAO)
   const [vendedores, setVendedores] = useState([])
   const [filiais, setFiliais] = useState([])
@@ -583,8 +611,12 @@ export default function Vendas() {
         setFormasPagamento((map.formas_pagamento || '').split(',').filter(Boolean))
         setParcelasSemJuros(parseInt(map.parcelas_sem_juros) || 0)
         setJurosPercent(parseFloat(String(map.juros_parcela_percent).replace(',', '.')) || 0)
-        setParcelasSemJurosMC(parseInt(map.parcelas_sem_juros_multicredito) || 0)
-        setJurosPercentMC(parseFloat(String(map.juros_multicredito_percent).replace(',', '.')) || 0)
+        if (map.juros_multicredito_tabela) {
+          try {
+            const t = JSON.parse(map.juros_multicredito_tabela)
+            if (t && typeof t === 'object') setTabelaMC(prev => ({ ...prev, ...t }))
+          } catch { /* mantém o padrão */ }
+        }
         const tipos = (map.tipos_venda || '').split(',').map(t => t.trim()).filter(Boolean)
         if (tipos.length) setTiposVenda(tipos)
       }
@@ -1203,8 +1235,7 @@ export default function Vendas() {
               tiposVenda={tiposVenda}
               parcelasSemJuros={parcelasSemJuros}
               jurosPercent={jurosPercent}
-              parcelasSemJurosMC={parcelasSemJurosMC}
-              jurosPercentMC={jurosPercentMC}
+              tabelaMC={tabelaMC}
               isAdmin={isAdmin}
               onSubmit={salvar}
               onCancel={() => setShowForm(false)}

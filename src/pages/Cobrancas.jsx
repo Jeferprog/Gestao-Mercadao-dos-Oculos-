@@ -508,7 +508,7 @@ export default function Cobrancas() {
     })
     setModalDev(dev)
     setMostrarQuitados(false)  // por padrão mostra só os boletos em aberto
-    if (isAdmin) carregarDocs(dev.id)
+    carregarDocs(dev.id)
   }
 
   // Abre automaticamente o devedor indicado pela navegação (lembrete do Dashboard).
@@ -1359,7 +1359,7 @@ export default function Cobrancas() {
                       {filialMap[modalDev.filial_id]}
                     </span>
                   )}
-                  {isAdmin && docs.length > 0 && (
+                  {docs.length > 0 && (
                     <span style={{ marginLeft: '0.5rem', background: '#9d0518', color: '#fff', borderRadius: '0.35rem', padding: '0.1rem 0.5rem', fontSize: '0.72rem', fontWeight: '700' }}>
                       {docs.length} doc{docs.length !== 1 ? 's' : ''}
                     </span>
@@ -1652,8 +1652,8 @@ export default function Cobrancas() {
                 </div>
               </div>
 
-              {/* ── Documentos (somente admin) ── */}
-              {isAdmin && (
+              {/* ── Documentos (anexos) — todos os usuários podem incluir ── */}
+              {(
                 <div style={{ borderTop: `1px solid ${C.borderSubtle}`, paddingTop: '1.25rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.875rem' }}>
                     <div style={{ fontWeight: '700', color: C.onSurfaceVariant, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>
@@ -1759,12 +1759,14 @@ export default function Cobrancas() {
                             >
                               Ver / Baixar
                             </button>
-                            <button
-                              onClick={() => excluirDoc(doc)}
-                              style={{ padding: '0.3rem 0.65rem', borderRadius: '0.4rem', background: C.statusDangerBg, color: '#9d0518', border: `1px solid #9d051830`, fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}
-                            >
-                              Excluir
-                            </button>
+                            {isAdmin && (
+                              <button
+                                onClick={() => excluirDoc(doc)}
+                                style={{ padding: '0.3rem 0.65rem', borderRadius: '0.4rem', background: C.statusDangerBg, color: '#9d0518', border: `1px solid #9d051830`, fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', fontFamily: F.body }}
+                              >
+                                Excluir
+                              </button>
+                            )}
                           </div>
                         </div>
                       ))}
