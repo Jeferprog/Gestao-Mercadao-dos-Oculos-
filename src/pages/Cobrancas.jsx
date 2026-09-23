@@ -209,13 +209,24 @@ function mesclarBoleto(prev, b) {
 async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, nomeArquivo, importadoPor } = {}) {
   const hoje = todayISO()
 
+  // Busca em blocos: um .in(...) com milhares de valores estoura o limite da
+  // consulta (URL). Quebramos em lotes e juntamos os resultados.
+  async function buscarEmBlocos(tabela, colunas, campo, valores, tam = 150) {
+    const out = []
+    for (let i = 0; i < valores.length; i += tam) {
+      const fatia = valores.slice(i, i + tam)
+      const { data, error } = await supabase.from(tabela).select(colunas).in(campo, fatia)
+      if (error) throw new Error(error.message)
+      if (data) out.push(...data)
+    }
+    return out
+  }
+
   const uniqueNorm = [...new Set(boletos.map(b => normalizarNome(b.nome_pagador)).filter(Boolean))]
   if (uniqueNorm.length === 0) throw new Error('Nenhum pagador válido encontrado.')
 
-  // nome_normalizado é globalmente único — busca sem filtro de filial
-  const { data: existentesDB, error: e1 } = await supabase
-    .from('cobrancas_devedores').select('id, nome_normalizado, filial_id').in('nome_normalizado', uniqueNorm)
-  if (e1) throw new Error(e1.message)
+  // nome_normalizado é globalmente único — busca sem filtro de filial (em blocos)
+  const existentesDB = await buscarEmBlocos('cobrancas_devedores', 'id, nome_normalizado, filial_id', 'nome_normalizado', uniqueNorm)
 
   const mapId = {}
   existentesDB?.forEach(d => { mapId[d.nome_normalizado] = d.id })
@@ -260,9 +271,8 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
   const nossoNums = boletos.map(b => b.nosso_numero).filter(Boolean)
   const setExistentes = new Set()
   if (nossoNums.length > 0) {
-    const { data: boletosDB } = await supabase
-      .from('cobrancas_boletos').select('nosso_numero').in('nosso_numero', nossoNums)
-    boletosDB?.forEach(b => { setExistentes.add(b.nosso_numero) })
+    const boletosDB = await buscarEmBlocos('cobrancas_boletos', 'nosso_numero', 'nosso_numero', [...new Set(nossoNums)])
+    boletosDB.forEach(b => { setExistentes.add(b.nosso_numero) })
   }
 
   // O arquivo do banco (principalmente "todas as situações") pode trazer o
@@ -299,8 +309,10 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
   })
 
   if (paraInserir.length > 0) {
-    const { error: e3 } = await supabase.from('cobrancas_boletos').insert(paraInserir)
-    if (e3) throw new Error(e3.message)
+    for (let i = 0; i < paraInserir.length; i += 500) {
+      const { error: e3 } = await supabase.from('cobrancas_boletos').insert(paraInserir.slice(i, i + 500))
+      if (e3) throw new Error(e3.message)
+    }
   }
   for (const b of paraAtualizar) {
     const patch = {
