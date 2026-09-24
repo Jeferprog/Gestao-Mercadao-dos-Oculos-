@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { buscarTodos } from '../lib/paginar'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 
@@ -32,10 +33,13 @@ export default function Clientes() {
 
   const carregar = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('clientes').select('*').order('nome', { nullsFirst: false })
-    // Vendedor vê só a própria filial (o RLS também garante isso no banco).
-    if (!isAdmin && profile?.filial_id) q = q.eq('filial_id', profile.filial_id)
-    const { data } = await q
+    const montar = () => {
+      let q = supabase.from('clientes').select('*').order('nome', { nullsFirst: false })
+      // Vendedor vê só a própria filial (o RLS também garante isso no banco).
+      if (!isAdmin && profile?.filial_id) q = q.eq('filial_id', profile.filial_id)
+      return q
+    }
+    const { data } = await buscarTodos(montar, { ordenarPorId: true })
     setClientes(data || [])
     setLoading(false)
   }, [isAdmin, profile?.filial_id])

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { buscarTodos } from '../lib/paginar'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss as dsInputCss } from '../lib/ds'
 import { logErro } from '../lib/erros'
@@ -314,17 +315,39 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
       if (e3) throw new Error(e3.message)
     }
   }
-  for (const b of paraAtualizar) {
-    const patch = {
+  // Atualização EM LOTE (função no banco): 500 boletos por chamada, em vez
+  // de uma chamada por boleto. Se a função ainda não existir (SQL não
+  // rodado), cai no modo antigo, um a um.
+  let emLote = paraAtualizar.length > 0
+  for (let i = 0; emLote && i < paraAtualizar.length; i += 500) {
+    const lote = paraAtualizar.slice(i, i + 500).map(b => ({
+      nosso_numero:     b.nosso_numero,
       data_vencimento:  b.data_vencimento,
       data_liquidacao:  b.data_liquidacao,
       valor:            b.valor,
       valor_liquidacao: b.valor_liquidacao,
+      situacao_boleto:  b.situacao_boleto || null,
+      motivo:           b.motivo || null,
+    }))
+    const { error } = await supabase.rpc('atualizar_boletos_importacao', { p_boletos: lote, p_filial: filialId || null })
+    if (error) {
+      if (i === 0) emLote = false            // função inexistente → modo antigo
+      else throw new Error(error.message)
     }
-    if (b.situacao_boleto) patch.situacao_boleto = b.situacao_boleto
-    if (b.motivo)          patch.motivo          = b.motivo
-    if (filialId)          patch.filial_id       = filialId  // garante/corrige a filial do boleto
-    await supabase.from('cobrancas_boletos').update(patch).eq('nosso_numero', b.nosso_numero)
+  }
+  if (!emLote) {
+    for (const b of paraAtualizar) {
+      const patch = {
+        data_vencimento:  b.data_vencimento,
+        data_liquidacao:  b.data_liquidacao,
+        valor:            b.valor,
+        valor_liquidacao: b.valor_liquidacao,
+      }
+      if (b.situacao_boleto) patch.situacao_boleto = b.situacao_boleto
+      if (b.motivo)          patch.motivo          = b.motivo
+      if (filialId)          patch.filial_id       = filialId  // garante/corrige a filial do boleto
+      await supabase.from('cobrancas_boletos').update(patch).eq('nosso_numero', b.nosso_numero)
+    }
   }
 
   // log import (silently ignore if table doesn't exist yet)
@@ -382,6 +405,7 @@ export default function Cobrancas() {
   const [loading,          setLoading]          = useState(true)
   const [editForm,         setEditForm]         = useState({})
   const [salvando,         setSalvando]         = useState(false)
+  const [devVersao,        setDevVersao]        = useState(null) // 'atualizado_em' do devedor aberto
   const [importando,       setImportando]       = useState(false)
   const [importErr,        setImportErr]        = useState(null)
   const [resultado,        setResultado]        = useState(null)
@@ -437,7 +461,7 @@ export default function Cobrancas() {
   /* ── carregamento ── */
   const carregar = useCallback(async () => {
     setLoading(true)
-    let q = supabase
+    const montar = () => { let q = supabase
       .from('cobrancas_devedores')
       .select(`
         id, nome_pagador, pagador, telefone, filial_id, status_cobranca, primeiro_registro, ultima_atualizacao,
@@ -451,7 +475,8 @@ export default function Cobrancas() {
       .order('ultima_atualizacao', { ascending: false })
     if (filtroFilial) q = q.eq('filial_id', filtroFilial)
     else if (!isAdmin && profile?.filial_id) q = q.eq('filial_id', profile.filial_id)
-    const { data, error } = await q
+    return q }
+    const { data, error } = await buscarTodos(montar, { ordenarPorId: true })
     if (error) logErro('Carregar devedores', error)
     setDevedores(data || [])
     setLoading(false)
@@ -519,6 +544,9 @@ export default function Cobrancas() {
       observacoes:        dev.observacoes        || '',
     })
     setModalDev(dev)
+    setDevVersao(null)
+    supabase.from('cobrancas_devedores').select('*').eq('id', dev.id).maybeSingle()
+      .then(({ data }) => setDevVersao(data?.atualizado_em || null))
     setMostrarQuitados(false)  // por padrão mostra só os boletos em aberto
     carregarDocs(dev.id)
   }
@@ -546,8 +574,9 @@ export default function Cobrancas() {
   async function tocarDevedor(devedorId) {
     if (!devedorId) return
     const hoje = todayISO()
-    const { error } = await supabase.from('cobrancas_devedores').update({ ultima_atualizacao: hoje }).eq('id', devedorId)
+    const { data: upd, error } = await supabase.from('cobrancas_devedores').update({ ultima_atualizacao: hoje }).eq('id', devedorId).select()
     if (error) { logErro('Atualizar data do devedor', error); return }
+    if (upd?.[0]?.atualizado_em && modalDev?.id === devedorId) setDevVersao(upd[0].atualizado_em)
     setModalDev(prev => prev && prev.id === devedorId ? { ...prev, ultima_atualizacao: hoje } : prev)
     setDevedores(prev => prev.map(d => d.id === devedorId ? { ...d, ultima_atualizacao: hoje } : d))
   }
@@ -777,7 +806,7 @@ export default function Cobrancas() {
   async function salvarDevedor() {
     if (!modalDev) return
     setSalvando(true)
-    await supabase.from('cobrancas_devedores').update({
+    let qDev = supabase.from('cobrancas_devedores').update({
       status_cobranca:    editForm.status_cobranca,
       telefone:           editForm.telefone || null,
       pequenas_causas:    editForm.pequenas_causas,
@@ -787,6 +816,20 @@ export default function Cobrancas() {
       observacoes:        editForm.observacoes || null,
       ultima_atualizacao: todayISO(),
     }).eq('id', modalDev.id)
+    if (devVersao) qDev = qDev.eq('atualizado_em', devVersao)
+    const { data: updDev, error: eDev } = await qDev.select()
+    if (eDev) {
+      setSalvando(false)
+      logErro('Salvar devedor', eDev)
+      window.alert('Erro ao salvar: ' + eDev.message)
+      return
+    }
+    if (devVersao && (!updDev || updDev.length === 0)) {
+      setSalvando(false)
+      window.alert('Este devedor foi alterado por outra pessoa enquanto você editava.\n\nFeche, abra de novo e refaça sua alteração — assim a alteração dela não se perde.')
+      return
+    }
+    if (updDev?.[0]?.atualizado_em) setDevVersao(updDev[0].atualizado_em)
 
     const nomeDev = modalDev.nome_pagador
     if (nomeDev) {

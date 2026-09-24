@@ -4,6 +4,10 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard } from '../lib/ds'
 import { logErro } from '../lib/erros'
+import { buscarTodos } from '../lib/paginar'
+
+// Consulta paginada (sem o corte de 1.000 linhas do Supabase).
+const todos = montar => buscarTodos(montar, { ordenarPorId: true })
 
 /* ── helpers ── */
 // Situações do banco tratadas como quitadas (baixa por solicitação / rejeitado),
@@ -303,8 +307,8 @@ export default function Dashboard() {
       /* ── VENDEDOR ── */
       if (!isAdmin) {
         const [rH, rM] = await Promise.all([
-          supabase.from('vendas').select('valor_final').eq('data_venda', hoje).eq('efetivada', true).eq('vendedor_id', profile.id),
-          supabase.from('vendas').select('data_venda, valor_final').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true).eq('vendedor_id', profile.id),
+          todos(() => supabase.from('vendas').select('valor_final').eq('data_venda', hoje).eq('efetivada', true).eq('vendedor_id', profile.id)),
+          todos(() => supabase.from('vendas').select('data_venda, valor_final').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true).eq('vendedor_id', profile.id)),
         ])
         const vH = rH.data || [], vM = rM.data || []
         setStats({ totHoje: vH.reduce((s, v) => s + (v.valor_final || 0), 0), qtdHoje: vH.length, totMes: vM.reduce((s, v) => s + (v.valor_final || 0), 0), qtdMes: vM.length })
@@ -325,13 +329,13 @@ export default function Dashboard() {
       /* ── ADMIN filial específica ── */
       if (filtroFilial) {
         const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud, rLem] = await Promise.all([
-          supabase.from('vendas').select('valor_final').eq('data_venda', hoje).eq('efetivada', true).eq('filial_id', filtroFilial),
-          supabase.from('vendas').select('data_venda, valor_final').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true).eq('filial_id', filtroFilial),
-          supabase.from('despesas').select('valor').eq('pago', false).eq('filial_id', filtroFilial),
-          supabase.from('despesas').select('valor').eq('pago', false).lt('data_vencimento', hoje).eq('filial_id', filtroFilial),
+          todos(() => supabase.from('vendas').select('valor_final').eq('data_venda', hoje).eq('efetivada', true).eq('filial_id', filtroFilial)),
+          todos(() => supabase.from('vendas').select('data_venda, valor_final').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true).eq('filial_id', filtroFilial)),
+          todos(() => supabase.from('despesas').select('valor').eq('pago', false).eq('filial_id', filtroFilial)),
+          todos(() => supabase.from('despesas').select('valor').eq('pago', false).lt('data_vencimento', hoje).eq('filial_id', filtroFilial)),
           supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
-          supabase.from('cobrancas_boletos').select('valor, devedor_id, situacao_atual, situacao_boleto').is('data_liquidacao', null).eq('filial_id', filtroFilial),
-          supabase.from('cobrancas_devedores').select('id, status_cobranca').eq('filial_id', filtroFilial),
+          todos(() => supabase.from('cobrancas_boletos').select('valor, devedor_id, situacao_atual, situacao_boleto').is('data_liquidacao', null).eq('filial_id', filtroFilial)),
+          todos(() => supabase.from('cobrancas_devedores').select('id, status_cobranca').eq('filial_id', filtroFilial)),
           supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia, filial_id').gte('data_audiencia', hoje).lte('data_audiencia', em7).order('data_audiencia').limit(8),
           supabase.from('cobrancas_lembretes').select('id, data, observacao, devedor_id, cobrancas_devedores(nome_pagador)').eq('concluido', false).lte('data', em7).eq('filial_id', filtroFilial).order('data').limit(10),
         ])
@@ -355,13 +359,13 @@ export default function Dashboard() {
 
       /* ── ADMIN: todas as filiais ── */
       const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud, rLem] = await Promise.all([
-        supabase.from('vendas').select('valor_final, filial_id').eq('data_venda', hoje).eq('efetivada', true),
-        supabase.from('vendas').select('data_venda, valor_final, filial_id').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true),
-        supabase.from('despesas').select('valor, filial_id').eq('pago', false),
-        supabase.from('despesas').select('valor, filial_id').eq('pago', false).lt('data_vencimento', hoje),
+        todos(() => supabase.from('vendas').select('valor_final, filial_id').eq('data_venda', hoje).eq('efetivada', true)),
+        todos(() => supabase.from('vendas').select('data_venda, valor_final, filial_id').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true)),
+        todos(() => supabase.from('despesas').select('valor, filial_id').eq('pago', false)),
+        todos(() => supabase.from('despesas').select('valor, filial_id').eq('pago', false).lt('data_vencimento', hoje)),
         supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
-        supabase.from('cobrancas_boletos').select('valor, devedor_id, filial_id, situacao_atual, situacao_boleto').is('data_liquidacao', null),
-        supabase.from('cobrancas_devedores').select('id, status_cobranca, filial_id'),
+        todos(() => supabase.from('cobrancas_boletos').select('valor, devedor_id, filial_id, situacao_atual, situacao_boleto').is('data_liquidacao', null)),
+        todos(() => supabase.from('cobrancas_devedores').select('id, status_cobranca, filial_id')),
         supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia, filial_id').gte('data_audiencia', hoje).lte('data_audiencia', em7).order('data_audiencia').limit(8),
         supabase.from('cobrancas_lembretes').select('id, data, observacao, devedor_id, cobrancas_devedores(nome_pagador)').eq('concluido', false).lte('data', em7).order('data').limit(10),
       ])

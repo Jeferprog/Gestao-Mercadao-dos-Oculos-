@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, Fragment } from 'react'
 import { supabase } from '../lib/supabase'
+import { buscarTodos } from '../lib/paginar'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 import { logErro } from '../lib/erros'
@@ -601,6 +602,7 @@ export default function Vendas() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(FORM_INIT)
   const [editId, setEditId] = useState(null)
+  const [editVersao, setEditVersao] = useState(null) // 'atualizado_em' ao abrir a edição
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
   const [expandedId, setExpandedId] = useState(null) // venda com detalhes abertos
@@ -651,14 +653,15 @@ export default function Vendas() {
   const carregarDias = useCallback(async () => {
     if (viewMode !== 'dia') return
     const mes = dataSel.slice(0, 7)
-    let q = supabase
+    const montar = () => { let q = supabase
       .from('vendas')
       .select('data_venda')
       .gte('data_venda', `${mes}-01`)
       .lte('data_venda', `${mes}-31`)
     if (filtroFilial) q = q.eq('filial_id', filtroFilial)
     else if (!isAdmin) q = q.eq('filial_id', profile?.filial_id || '')
-    const { data } = await q
+    return q }
+    const { data } = await buscarTodos(montar, { ordenarPorId: true })
     if (data) {
       const unique = [...new Set(data.map(r => r.data_venda))].sort()
       setDiasComVendas(unique)
@@ -668,7 +671,7 @@ export default function Vendas() {
   /* vendas do dia ou período selecionado */
   const carregarVendas = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('vendas').select('*')
+    const montar = () => { let q = supabase.from('vendas').select('*')
 
     if (viewMode === 'dia') {
       q = q.eq('data_venda', dataSel)
@@ -682,7 +685,8 @@ export default function Vendas() {
 
     if (filtroFilial) q = q.eq('filial_id', filtroFilial)
     else if (!isAdmin) q = q.eq('filial_id', profile?.filial_id || '')
-    const { data, error } = await q
+    return q }
+    const { data, error } = await buscarTodos(montar, { ordenarPorId: true })
     if (!error && data) setVendas(data)
     setLoading(false)
   }, [dataSel, periodoInicio, periodoFim, viewMode, filtroFilial, isAdmin, profile?.id])
@@ -735,6 +739,7 @@ export default function Vendas() {
       filial_id: filialId,
     })
     setEditId(null)
+    setEditVersao(null)
     setShowForm(true)
   }
 
@@ -761,6 +766,7 @@ export default function Vendas() {
       motivo_nao_efetivada: v.motivo_nao_efetivada || '',
     })
     setEditId(v.id)
+    setEditVersao(v.atualizado_em || null)
     setShowForm(true)
   }
 
@@ -862,19 +868,36 @@ export default function Vendas() {
 
     let error
     let vendaId = editId
+    let numeroAjustado = null
     if (editId) {
-      ;({ error } = await supabase.from('vendas').update(payload).eq('id', editId))
+      // Só grava se ninguém alterou a venda desde que a edição foi aberta.
+      let q = supabase.from('vendas').update(payload).eq('id', editId)
+      if (editVersao) q = q.eq('atualizado_em', editVersao)
+      const { data: upd, error: eUp } = await q.select('id')
+      error = eUp
+      if (!eUp && editVersao && (!upd || upd.length === 0)) {
+        setSaving(false)
+        return showToast('Esta venda foi alterada por outra pessoa enquanto você editava. Feche, recarregue a lista e edite de novo — assim a alteração dela não se perde.', 'err')
+      }
     } else {
-      const { data: ins, error: eIns } = await supabase.from('vendas').insert(payload).select('id').single()
+      const { data: ins, error: eIns } = await supabase.from('vendas').insert(payload).select('id, os_numero').single()
       error = eIns
       vendaId = ins?.id
+      // O banco pode ter dado outro número se este acabou de ser usado por outra venda.
+      if (ins && payload.os_numero && ins.os_numero !== payload.os_numero) numeroAjustado = ins.os_numero
     }
 
     setSaving(false)
     if (error) {
-      showToast('Erro ao salvar: ' + error.message, 'err')
+      if (error.code === '23505') {
+        showToast('Já existe uma venda com este Nº da Venda nesta filial. Confira o número e tente de novo.', 'err')
+      } else {
+        showToast('Erro ao salvar: ' + error.message, 'err')
+      }
     } else {
-      showToast(editId ? 'Venda atualizada!' : 'Venda registrada!')
+      showToast(numeroAjustado
+        ? `Venda registrada com o Nº ${numeroAjustado} (o Nº ${payload.os_numero} acabou de ser usado por outra venda).`
+        : (editId ? 'Venda atualizada!' : 'Venda registrada!'))
 
       // Venda parcelada → gera/atualiza as parcelas na aba Cobranças.
       if (vendaId) {
@@ -1010,10 +1033,13 @@ export default function Vendas() {
       conferido_em: novoValor ? new Date().toISOString() : null,
     }
     setVendas(prev => prev.map(x => x.id === v.id ? { ...x, ...payload } : x))
-    const { error } = await supabase.from('vendas').update(payload).eq('id', v.id)
+    const { data: upd, error } = await supabase.from('vendas').update(payload).eq('id', v.id).select()
     if (error) {
       showToast('Erro ao atualizar conferido: ' + error.message, 'err')
       setVendas(prev => prev.map(x => x.id === v.id ? { ...x, conferido: v.conferido, conferido_em: v.conferido_em } : x))
+    } else if (upd?.[0]?.atualizado_em) {
+      // Mantém a "versão" local em dia (evita falso aviso de edição simultânea).
+      setVendas(prev => prev.map(x => x.id === v.id ? { ...x, atualizado_em: upd[0].atualizado_em } : x))
     }
   }
 

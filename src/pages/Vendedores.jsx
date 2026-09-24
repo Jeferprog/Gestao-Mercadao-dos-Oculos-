@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { buscarTodos } from '../lib/paginar'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss } from '../lib/ds'
 
@@ -48,25 +49,27 @@ export default function Vendedores() {
   /* carrega perfis, vendas do período e filiais */
   const carregar = useCallback(async () => {
     setLoading(true)
-    let qVendas = supabase
+    const montarVendas = () => { let qVendas = supabase
       .from('vendas')
       .select('id, os_numero, tipo_venda, data_venda, vendedor_id, filial_id, valor_final, forma_pagamento')
       .gte('data_venda', dataInicio)
       .lte('data_venda', dataFim)
       .eq('efetivada', true)
     if (filtroFilial) qVendas = qVendas.eq('filial_id', filtroFilial)
+    return qVendas }
 
-    let qCapt = supabase
+    const montarCapt = () => { let qCapt = supabase
       .from('captacao_clientes')
       .select('id, numero_os, vendedor_id, filial_id, data_consulta')
       .gte('data_consulta', dataInicio)
       .lte('data_consulta', dataFim)
     if (filtroFilial) qCapt = qCapt.eq('filial_id', filtroFilial)
+    return qCapt }
 
     const [{ data: perfis }, { data: vendasData }, { data: captData }, { data: fils }, { data: cfg }] = await Promise.all([
       supabase.from('profiles').select('id, nome, comissao_percentual, ativo').eq('ativo', true).order('nome'),
-      qVendas,
-      qCapt,
+      buscarTodos(montarVendas, { ordenarPorId: true }),
+      buscarTodos(montarCapt, { ordenarPorId: true }),
       supabase.from('filiais').select('*').order('nome'),
       supabase.from('configuracoes').select('chave, valor').in('chave', ['comissao_captacao_com_venda', 'comissao_captacao_sem_venda']),
     ])
