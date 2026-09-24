@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { buscarTodos } from '../lib/paginar'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 
@@ -78,7 +79,7 @@ export default function CaptacaoClientes() {
   /* ── carregar registros ── */
   const carregar = useCallback(async () => {
     setLoading(true)
-    let q = supabase
+    const montar = () => { let q = supabase
       .from('captacao_clientes')
       .select('*')
       .gte('data_consulta', filtroInicio)
@@ -88,8 +89,9 @@ export default function CaptacaoClientes() {
 
     if (!isAdmin) q = q.eq('filial_id', profile?.filial_id || '')
     if (filtroFilial) q = q.eq('filial_id', filtroFilial)
+    return q }
 
-    const { data, error } = await q
+    const { data, error } = await buscarTodos(montar, { ordenarPorId: true })
     if (!error && data) setRegistros(data)
     setLoading(false)
   }, [filtroInicio, filtroFim, filtroFilial, isAdmin, profile?.id])

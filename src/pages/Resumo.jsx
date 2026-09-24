@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { buscarTodos } from '../lib/paginar'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 
@@ -107,14 +108,15 @@ export default function Resumo() {
   /* carrega despesas do período */
   const carregarDespesas = useCallback(async () => {
     setLoading(true)
-    let q = supabase
+    const montar = () => { let q = supabase
       .from('despesas')
       .select('*')
       .gte('data_vencimento', dataInicio)
       .lte('data_vencimento', dataFim)
       .order('data_vencimento')
     if (filtroFilial) q = q.eq('filial_id', filtroFilial)
-    const { data, error } = await q
+    return q }
+    const { data, error } = await buscarTodos(montar, { ordenarPorId: true })
     if (!error && data) setDespesas(data)
     setLoading(false)
   }, [dataInicio, dataFim, filtroFilial])
