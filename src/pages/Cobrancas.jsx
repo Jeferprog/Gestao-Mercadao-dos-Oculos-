@@ -628,7 +628,10 @@ export default function Cobrancas() {
       created_by:  profile?.id || null,
     })
     setSalvandoLembrete(false)
-    if (!error) {
+    if (error) {
+      logErro('Salvar lembrete', error)
+      window.alert('Não foi possível salvar o lembrete: ' + error.message)
+    } else {
       setNovoLembrete({ data: '', observacao: '' })
       setMostrarFormLembrete(false)
       carregarLembretes(modalDev.id)
@@ -1578,7 +1581,7 @@ export default function Cobrancas() {
                   <div style={{ fontWeight: '700', color: C.onSurfaceVariant, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>
                     Lembretes {lembretes.length > 0 && `(${lembretes.filter(l => !l.concluido).length} pendente${lembretes.filter(l => !l.concluido).length !== 1 ? 's' : ''})`}
                   </div>
-                  {isAdmin && !mostrarFormLembrete && (
+                  {!mostrarFormLembrete && (
                     <button onClick={() => { setMostrarFormLembrete(true); setNovoLembrete({ data: todayISO(), observacao: '' }) }}
                       style={{ padding: '0.35rem 0.8rem', background: C.primaryContainer, color: C.onPrimary, border: 'none', borderRadius: '0.5rem', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer', fontFamily: F.body }}>
                       + Adicionar lembrete
@@ -1621,7 +1624,7 @@ export default function Cobrancas() {
                       const hoje = !l.concluido && l.data === todayISO()
                       return (
                         <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', padding: '0.5rem 0.75rem', borderRadius: '0.5rem', border: `1px solid ${C.borderSubtle}`, background: l.concluido ? C.surfaceContainerLow : atrasado ? C.statusDangerBg + '55' : hoje ? C.statusWarningBg + '55' : C.surfaceContainerLowest, opacity: l.concluido ? 0.7 : 1 }}>
-                          <input type="checkbox" checked={l.concluido} onChange={() => toggleLembrete(l)} disabled={!isAdmin} style={{ cursor: isAdmin ? 'pointer' : 'default', flexShrink: 0 }} />
+                          <input type="checkbox" checked={l.concluido} onChange={() => toggleLembrete(l)} style={{ cursor: 'pointer', flexShrink: 0 }} />
                           <div style={{ minWidth: '78px', fontFamily: F.mono, fontSize: '0.8rem', fontWeight: '700', color: l.concluido ? C.onSurfaceVariant : atrasado ? C.statusDanger : hoje ? C.statusWarning : C.onSurface }}>
                             {fDate(l.data)}
                           </div>
