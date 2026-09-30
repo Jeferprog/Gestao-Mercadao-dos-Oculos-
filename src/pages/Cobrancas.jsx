@@ -134,7 +134,11 @@ function detectarColunas(headerRow) {
     if (c.includes('nosso')) col.nosso_numero = j
     if (/^txid$/i.test(raw)) col.txid = j
     if (/^pagador$/i.test(raw)) col.nome_pagador = j
-    if (c.includes('vencimento')) col.data_vencimento = j
+    // Vencimento ATUAL do boleto. Ignora colunas como "Vencimento original"
+    // ou "Dias de vencimento" (não são a data vigente no banco).
+    if (c.includes('vencimento') && !c.includes('original') && !c.includes('dias')) {
+      if (col.data_vencimento === undefined || c.includes('prorrog') || c.includes('atual')) col.data_vencimento = j
+    }
     if (c.includes('data') && c.includes('liquidac')) col.data_liquidacao = j
     if (c.includes('valor') && !c.includes('liquidac')) col.valor = j
     if (c.includes('liquidac') && !c.includes('data') && !c.includes('valor')) col.valor_liquidacao = j
@@ -198,9 +202,13 @@ async function parseFile(file) {
 function mesclarBoleto(prev, b) {
   const ok = v => v !== null && v !== undefined && v !== ''
   const m = { ...prev }
-  ;['carteira', 'numero_doc', 'txid', 'data_vencimento', 'valor', 'motivo'].forEach(k => {
+  ;['carteira', 'numero_doc', 'txid', 'valor', 'motivo'].forEach(k => {
     if (ok(b[k])) m[k] = b[k]
   })
+  // Vencimento: se as linhas trazem datas diferentes (ex.: prorrogação),
+  // fica a mais recente — é a que vale no banco.
+  if (ok(b.data_vencimento) && (!ok(prev.data_vencimento) || b.data_vencimento > prev.data_vencimento))
+    m.data_vencimento = b.data_vencimento
   if (ok(prev.data_liquidacao)) {
     // já estava liquidado → mantém a liquidação existente
   } else if (ok(b.data_liquidacao)) {
@@ -221,11 +229,11 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
 
   // Busca em blocos: um .in(...) com milhares de valores estoura o limite da
   // consulta (URL). Quebramos em lotes e juntamos os resultados.
-  async function buscarEmBlocos(tabela, colunas, campo, valores, tam = 150) {
+  async function buscarEmBlocos(tabela, colunas, campo, valores, tam = 150, filtro = q => q) {
     const out = []
     for (let i = 0; i < valores.length; i += tam) {
       const fatia = valores.slice(i, i + tam)
-      const { data, error } = await supabase.from(tabela).select(colunas).in(campo, fatia)
+      const { data, error } = await filtro(supabase.from(tabela).select(colunas).in(campo, fatia))
       if (error) throw new Error(error.message)
       if (data) out.push(...data)
     }
@@ -280,9 +288,10 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
   // filial), em vez de virar um segundo registro duplicado.
   const nossoNums = boletos.map(b => b.nosso_numero).filter(Boolean)
   const setExistentes = new Set()
+  const vencAnterior = {}  // nosso_numero → vencimento que estava no sistema
   if (nossoNums.length > 0) {
-    const boletosDB = await buscarEmBlocos('cobrancas_boletos', 'nosso_numero', 'nosso_numero', [...new Set(nossoNums)])
-    boletosDB.forEach(b => { setExistentes.add(b.nosso_numero) })
+    const boletosDB = await buscarEmBlocos('cobrancas_boletos', 'nosso_numero, data_vencimento', 'nosso_numero', [...new Set(nossoNums)])
+    boletosDB.forEach(b => { setExistentes.add(b.nosso_numero); vencAnterior[b.nosso_numero] = b.data_vencimento })
   }
 
   // O arquivo do banco (principalmente "todas as situações") pode trazer o
@@ -309,14 +318,65 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
 
   const paraInserir   = []
   const paraAtualizar = []
+  const semMatch      = []
   ;[...consolidado.values(), ...semNumero].forEach(base => {
-    if (base.nosso_numero && setExistentes.has(base.nosso_numero)) {
-      paraAtualizar.push(base)
-    } else {
-      // Boleto novo: inicializa situacao_atual com o valor vindo do banco
-      paraInserir.push({ ...base, situacao_atual: base.situacao_boleto || null })
-    }
+    if (base.nosso_numero && setExistentes.has(base.nosso_numero)) paraAtualizar.push(base)
+    else semMatch.push(base)
   })
+
+  // Boletos criados pela aba VENDAS (parcelas) ainda não têm "nosso número".
+  // Quando o banco traz o boleto dessa parcela, identificamos pelo mesmo
+  // devedor + mesmo valor + vencimento mais próximo (até 45 dias) e
+  // ATUALIZAMOS a parcela (vencimento do banco, nosso número etc.), em vez
+  // de criar um boleto duplicado.
+  const paraVincular = []  // { id, base }
+  const candidatosDevs = [...new Set(semMatch.filter(b => b.nosso_numero).map(b => b.devedor_id))]
+  if (candidatosDevs.length > 0) {
+    const parcelas = await buscarEmBlocos(
+      'cobrancas_boletos', 'id, devedor_id, valor, data_vencimento', 'devedor_id', candidatosDevs, 150,
+      q => q.is('nosso_numero', null).not('venda_id', 'is', null).is('data_liquidacao', null),
+    )
+    const dias = (a, b) => Math.abs((new Date(a) - new Date(b)) / 86400000)
+    const pares = []
+    semMatch.forEach((base, bi) => {
+      if (!base.nosso_numero || !base.data_vencimento) return
+      parcelas.forEach(p => {
+        if (p.devedor_id !== base.devedor_id || !p.data_vencimento) return
+        const tol = Math.max(0.10, Math.abs(Number(p.valor) || 0) * 0.01)
+        if (Math.abs((Number(p.valor) || 0) - (Number(base.valor) || 0)) > tol) return
+        const d = dias(p.data_vencimento, base.data_vencimento)
+        if (d <= 45) pares.push({ bi, id: p.id, d, vencAntes: p.data_vencimento })
+      })
+    })
+    pares.sort((a, b) => a.d - b.d)
+    const usadosB = new Set(), usadosP = new Set()
+    pares.forEach(par => {
+      if (usadosB.has(par.bi) || usadosP.has(par.id)) return
+      usadosB.add(par.bi); usadosP.add(par.id)
+      paraVincular.push({ id: par.id, base: semMatch[par.bi], vencAntes: par.vencAntes })
+    })
+    semMatch.forEach((base, bi) => { if (!usadosB.has(bi)) paraInserir.push({ ...base, situacao_atual: base.situacao_boleto || null }) })
+  } else {
+    // Boleto novo: inicializa situacao_atual com o valor vindo do banco
+    semMatch.forEach(base => paraInserir.push({ ...base, situacao_atual: base.situacao_boleto || null }))
+  }
+
+  for (const { id, base: b } of paraVincular) {
+    const patch = {
+      nosso_numero:     b.nosso_numero,
+      data_vencimento:  b.data_vencimento,
+      data_liquidacao:  b.data_liquidacao,
+      valor:            b.valor,
+      valor_liquidacao: b.valor_liquidacao,
+    }
+    if (b.carteira)        patch.carteira        = b.carteira
+    if (b.txid)            patch.txid            = b.txid
+    if (b.situacao_boleto) patch.situacao_boleto = b.situacao_boleto
+    if (b.motivo)          patch.motivo          = b.motivo
+    if (filialId)          patch.filial_id       = filialId
+    const { error } = await supabase.from('cobrancas_boletos').update(patch).eq('id', id)
+    if (error) throw new Error(error.message)
+  }
 
   if (paraInserir.length > 0) {
     for (let i = 0; i < paraInserir.length; i += 500) {
@@ -355,9 +415,15 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
       if (b.situacao_boleto) patch.situacao_boleto = b.situacao_boleto
       if (b.motivo)          patch.motivo          = b.motivo
       if (filialId)          patch.filial_id       = filialId  // garante/corrige a filial do boleto
-      await supabase.from('cobrancas_boletos').update(patch).eq('nosso_numero', b.nosso_numero)
+      const { error } = await supabase.from('cobrancas_boletos').update(patch).eq('nosso_numero', b.nosso_numero)
+      if (error) throw new Error(error.message)
     }
   }
+
+  const mesmoDia = (a, b) => String(a || '').slice(0, 10) === String(b || '').slice(0, 10)
+  const vencimentosAlterados =
+    paraAtualizar.filter(b => b.data_vencimento && !mesmoDia(b.data_vencimento, vencAnterior[b.nosso_numero])).length
+    + paraVincular.filter(v => v.base.data_vencimento && !mesmoDia(v.base.data_vencimento, v.vencAntes)).length
 
   // log import (silently ignore if table doesn't exist yet)
   try {
@@ -369,7 +435,7 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
       importado_por:   importadoPor    || null,
       total_boletos:   boletos.length,
       inseridos:       paraInserir.length,
-      atualizados:     paraAtualizar.length,
+      atualizados:     paraAtualizar.length + paraVincular.length,
       novos_devedores: novosNomes.length,
     })
   } catch (_) { /* tabela ainda não criada */ }
@@ -377,7 +443,9 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
   return {
     total: boletos.length,
     inseridos: paraInserir.length,
-    atualizados: paraAtualizar.length,
+    atualizados: paraAtualizar.length + paraVincular.length,
+    vinculados: paraVincular.length,
+    vencimentosAlterados,
     novosDevedores: novosNomes,
     devedoresAtualizados: idsExistentes.length,
   }
@@ -1901,6 +1969,12 @@ export default function Cobrancas() {
               </p>
               <div style={{ fontSize: '0.85rem', color: C.statusSuccess, display: 'flex', flexDirection: 'column', gap: '0.2rem', fontFamily: F.body }}>
                 <span>📥 {resultado.inseridos} boleto{resultado.inseridos !== 1 ? 's' : ''} novo{resultado.inseridos !== 1 ? 's' : ''} inserido{resultado.inseridos !== 1 ? 's' : ''} · ♻️ {resultado.atualizados} atualizado{resultado.atualizados !== 1 ? 's' : ''}</span>
+                {resultado.vencimentosAlterados > 0 && (
+                  <span>📅 {resultado.vencimentosAlterados} vencimento{resultado.vencimentosAlterados !== 1 ? 's' : ''} atualizado{resultado.vencimentosAlterados !== 1 ? 's' : ''} conforme o banco</span>
+                )}
+                {resultado.vinculados > 0 && (
+                  <span>🔗 {resultado.vinculados} parcela{resultado.vinculados !== 1 ? 's' : ''} de venda{resultado.vinculados !== 1 ? 's' : ''} ligada{resultado.vinculados !== 1 ? 's' : ''} ao boleto do banco</span>
+                )}
                 {resultado.novosDevedores.length > 0 && (
                   <span>🆕 {resultado.novosDevedores.length} devedor{resultado.novosDevedores.length > 1 ? 'es' : ''} novo{resultado.novosDevedores.length > 1 ? 's' : ''}: <strong>{resultado.novosDevedores.join(', ')}</strong></span>
                 )}

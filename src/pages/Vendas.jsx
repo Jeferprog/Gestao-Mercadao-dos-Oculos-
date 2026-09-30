@@ -966,7 +966,7 @@ export default function Vendas() {
       // Boletos já gerados por esta venda (para atualizar sem duplicar).
       const { data: existentes } = await supabase
         .from('cobrancas_boletos')
-        .select('id, parcela_num, data_liquidacao, situacao_atual')
+        .select('*')
         .eq('venda_id', vendaId)
       const porNum = {}
       ;(existentes || []).forEach(b => { porNum[b.parcela_num] = b })
@@ -976,12 +976,13 @@ export default function Vendas() {
       for (const p of parcelasPayload) {
         const ex = porNum[p.n]
         if (ex) {
-          // Atualiza vencimento/valor; não mexe em parcela já quitada.
+          // Atualiza vencimento/valor. Se a parcela já foi ligada ao boleto do
+          // banco (tem "nosso número"), vale o vencimento/valor do BANCO.
+          const doBanco = !!ex.nosso_numero
           await supabase.from('cobrancas_boletos').update({
             devedor_id:      devedorId,
             filial_id:       filialId,
-            data_vencimento: p.data,
-            valor:           p.valor,
+            ...(doBanco ? {} : { data_vencimento: p.data, valor: p.valor }),
             numero_doc:      `Parcela ${p.n}/${total}`,
           }).eq('id', ex.id)
         } else {
