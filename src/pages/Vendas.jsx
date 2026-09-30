@@ -1455,7 +1455,12 @@ export default function Vendas() {
             )}
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div className="tabela-vendas-rolagem" style={{ overflow: 'auto', maxHeight: 'max(320px, calc(100vh - 230px))' }}>
+            {/* Cabeçalho e totais fixos: a barra de rolagem lateral fica sempre visível na tela. */}
+            <style>{`
+              .tabela-vendas-rolagem thead th { position: sticky; top: 0; z-index: 2; background: ${C.tableHeader}; box-shadow: inset 0 -1.5px 0 ${C.borderSubtle}; }
+              .tabela-vendas-rolagem tfoot td { position: sticky; bottom: 0; z-index: 2; background: ${C.tableHeader}; box-shadow: inset 0 2px 0 ${C.borderSubtle}; }
+            `}</style>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
