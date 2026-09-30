@@ -24,10 +24,11 @@ function normalizarNome(nome) {
   return String(nome || '').trim().toUpperCase().replace(/\s+/g, ' ')
 }
 
-// Situações do banco que devem ser tratadas como quitadas (fora da inadimplência),
-// além da liquidação: "Baixado por solicitação" e "Rejeitado".
+// Situações do banco que devem ser tratadas como quitadas (fora da inadimplência):
+// "Liquidado/Liquidada" (mesmo sem data de liquidação), "Baixado por solicitação" e "Rejeitado".
 function situacaoBaixa(situacao) {
   const s = String(situacao || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  if (s.includes('LIQUIDAD') && !s.includes('NAO LIQUIDAD')) return true
   return s.includes('BAIXADO POR SOLICITACAO') || s.includes('REJEITADO')
 }
 // Um boleto está QUITADO/fora da inadimplência quando: tem data de liquidação,
@@ -209,7 +210,7 @@ function mesclarBoleto(prev, b) {
   } else {
     // nenhuma linha liquidada ainda → fica com a última situação/valores não vazios
     if (ok(b.valor_liquidacao)) m.valor_liquidacao = b.valor_liquidacao
-    if (ok(b.situacao_boleto))  m.situacao_boleto  = b.situacao_boleto
+    if (ok(b.situacao_boleto) && !situacaoBaixa(prev.situacao_boleto)) m.situacao_boleto = b.situacao_boleto
   }
   return m
 }
