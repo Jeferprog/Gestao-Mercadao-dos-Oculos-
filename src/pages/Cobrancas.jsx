@@ -12,6 +12,14 @@ const { width: _w, ...inputCss } = dsInputCss
 /* ── helpers ── */
 function todayISO() { return new Date().toISOString().slice(0, 10) }
 
+// Tabelas largas: altura limitada à tela, com rolagem própria — a barra lateral
+// fica sempre visível; cabeçalho fixo no topo e totais (se houver) fixos embaixo.
+const CSS_TABELA_ROLAGEM = `
+  .tabela-rolagem thead th { position: sticky; top: 0; z-index: 2; background-color: inherit; }
+  .tabela-rolagem thead tr { background-clip: padding-box; }
+  .tabela-rolagem tfoot td { position: sticky; bottom: 0; z-index: 2; background-color: inherit; }
+`
+
 function normalizarNome(nome) {
   return String(nome || '').trim().toUpperCase().replace(/\s+/g, ' ')
 }
@@ -2001,7 +2009,8 @@ export default function Cobrancas() {
                 </div>
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
+              <div className="tabela-rolagem" style={{ overflow: 'auto', maxHeight: 'max(320px, calc(100vh - 260px))' }}>
+                <style>{CSS_TABELA_ROLAGEM}</style>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                   <thead>
                     <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
@@ -2099,7 +2108,8 @@ export default function Cobrancas() {
               <div style={{ fontSize: '0.82rem', marginTop: '0.25rem', fontFamily: F.body }}>Clique em um devedor e preencha a data da audiência.</div>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
+            <div className="tabela-rolagem" style={{ overflow: 'auto', maxHeight: 'max(320px, calc(100vh - 260px))' }}>
+              <style>{CSS_TABELA_ROLAGEM}</style>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                 <thead>
                   <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
@@ -2215,7 +2225,8 @@ export default function Cobrancas() {
 
           {/* Tabela */}
           <div style={{ ...dsCard, padding: 0, overflow: 'hidden' }}>
-            <div style={{ overflowX: 'auto' }}>
+            <div className="tabela-rolagem" style={{ overflow: 'auto', maxHeight: 'max(320px, calc(100vh - 260px))' }}>
+              <style>{CSS_TABELA_ROLAGEM}</style>
               {boletosFiltrados.length === 0 ? (
                 <div style={{ padding: '3rem', textAlign: 'center', color: C.onSurfaceVariant, fontFamily: F.body }}>
                   Nenhum boleto encontrado com os filtros selecionados.
