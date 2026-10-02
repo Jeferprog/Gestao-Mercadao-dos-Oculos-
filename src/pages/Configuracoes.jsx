@@ -11,6 +11,16 @@ const cardMb = { ...dsCard, marginBottom: '1.5rem' }
 const MC_PARCELAS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 const MC_TABELA_PADRAO = { 2: 5.05, 3: 6.77, 4: 8.51, 5: 10.27, 6: 12.05, 7: 13.84, 8: 15.65, 9: 17.48, 10: 19.33, 11: 21.20, 12: 23.09 }
 
+// Lista de especialistas salva em configuracoes (JSON; aceita texto separado por vírgula).
+function lerListaEspecialistas(valor) {
+  if (!valor) return []
+  try {
+    const l = JSON.parse(valor)
+    if (Array.isArray(l)) return l.map(x => String(x).trim()).filter(Boolean)
+  } catch { /* formato antigo */ }
+  return String(valor).split(',').map(x => x.trim()).filter(Boolean)
+}
+
 function Label({ children }) {
   return (
     <label style={{
@@ -81,6 +91,8 @@ function TabSistema({ showToast }) {
   const [novaSituacao, setNovaSituacao] = useState('')
   const [tiposVenda, setTiposVenda] = useState([])
   const [novoTipoVenda, setNovoTipoVenda] = useState('')
+  const [especialistas, setEspecialistas] = useState([])
+  const [novoEspecialista, setNovoEspecialista] = useState('')
   const [parcelasSemJuros, setParcelasSemJuros] = useState('3')
   const [jurosPercent, setJurosPercent] = useState('0')
   const [tabelaMC, setTabelaMC] = useState({ ...MC_TABELA_PADRAO })
@@ -99,6 +111,7 @@ function TabSistema({ showToast }) {
       setSituacoes((map.situacoes_cobranca || '').split(',').filter(Boolean))
       const tipos = (map.tipos_venda || '').split(',').map(t => t.trim()).filter(Boolean)
       setTiposVenda(tipos.length ? tipos : ['Óculos de Grau', 'Solar'])
+      setEspecialistas(lerListaEspecialistas(map.especialistas))
       if (map.parcelas_sem_juros != null) setParcelasSemJuros(String(map.parcelas_sem_juros))
       if (map.juros_parcela_percent != null) setJurosPercent(String(map.juros_parcela_percent))
       if (map.juros_multicredito_tabela) {
@@ -219,6 +232,24 @@ function TabSistema({ showToast }) {
   }
   function removeTipoVenda(t) { setTiposVenda(prev => prev.filter(x => x !== t)) }
 
+  async function salvarEspecialistas() {
+    setSaving(true)
+    const { error } = await supabase
+      .from('configuracoes')
+      .upsert({ chave: 'especialistas', valor: JSON.stringify(especialistas) }, { onConflict: 'chave' })
+    if (error) logErro('Salvar especialistas', error)
+    showToast(error ? 'Erro ao salvar especialistas.' : 'Especialistas salvos!')
+    setSaving(false)
+  }
+  function addEspecialista() {
+    const n = novoEspecialista.trim().replace(/\s+/g, ' ')
+    if (n && !especialistas.some(x => x.toLowerCase() === n.toLowerCase())) {
+      setEspecialistas(prev => [...prev, n].sort((a, b) => a.localeCompare(b, 'pt-BR')))
+      setNovoEspecialista('')
+    }
+  }
+  function removeEspecialista(n) { setEspecialistas(prev => prev.filter(x => x !== n)) }
+
   if (loading) return <p style={{ color: C.onSurfaceVariant, fontFamily: F.body }}>Carregando configurações...</p>
 
   return (
@@ -258,6 +289,44 @@ function TabSistema({ showToast }) {
         </div>
         <button onClick={salvarTiposVenda} disabled={saving || tiposVenda.length === 0} style={btnPrimary}>
           {saving ? 'Salvando...' : 'Salvar Tipos de Venda'}
+        </button>
+      </div>
+
+      {/* Especialistas (exame de vista) */}
+      <div style={cardMb}>
+        <h3 style={{ margin: '0 0 0.25rem', fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>
+          Especialistas (Exame de Vista)
+        </h3>
+        <p style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5', fontFamily: F.body }}>
+          Nomes que aparecem na busca do campo <strong>Especialista</strong> ao registrar uma venda.
+          O acompanhamento das vendas por especialista fica na aba <strong>Comissões</strong>.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem', minHeight: '36px' }}>
+          {especialistas.map(n => (
+            <span key={n} style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.375rem',
+              background: C.statusInfoBg, color: C.statusInfo,
+              padding: '0.3rem 0.75rem', borderRadius: '999px',
+              fontSize: '0.82rem', fontWeight: '500', fontFamily: F.body,
+            }}>
+              {n}
+              <button onClick={() => removeEspecialista(n)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.statusInfo, fontSize: '1rem', lineHeight: 1, padding: 0, opacity: 0.6 }}
+                title={`Remover ${n}`}>×</button>
+            </span>
+          ))}
+          {especialistas.length === 0 && (
+            <span style={{ color: C.outlineVariant, fontSize: '0.85rem', fontFamily: F.body }}>Nenhum especialista cadastrado.</span>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+          <input type="text" value={novoEspecialista} onChange={e => setNovoEspecialista(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEspecialista())}
+            placeholder="Nome do especialista" style={{ ...inputCss, flex: 1 }} />
+          <button onClick={addEspecialista} style={btnSecondary}>+ Adicionar</button>
+        </div>
+        <button onClick={salvarEspecialistas} disabled={saving} style={btnPrimary}>
+          {saving ? 'Salvando...' : 'Salvar Especialistas'}
         </button>
       </div>
 
