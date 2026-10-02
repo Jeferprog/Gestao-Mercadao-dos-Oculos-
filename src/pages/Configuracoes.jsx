@@ -232,23 +232,30 @@ function TabSistema({ showToast }) {
   }
   function removeTipoVenda(t) { setTiposVenda(prev => prev.filter(x => x !== t)) }
 
-  async function salvarEspecialistas() {
+  // Salva na hora ao adicionar/remover (não depende de clicar em "Salvar").
+  async function salvarEspecialistas(lista = especialistas) {
     setSaving(true)
     const { error } = await supabase
       .from('configuracoes')
-      .upsert({ chave: 'especialistas', valor: JSON.stringify(especialistas) }, { onConflict: 'chave' })
+      .upsert({ chave: 'especialistas', valor: JSON.stringify(lista) }, { onConflict: 'chave' })
     if (error) logErro('Salvar especialistas', error)
-    showToast(error ? 'Erro ao salvar especialistas.' : 'Especialistas salvos!')
+    showToast(error ? 'Erro ao salvar especialistas: ' + error.message : 'Especialistas salvos!')
     setSaving(false)
   }
   function addEspecialista() {
     const n = novoEspecialista.trim().replace(/\s+/g, ' ')
     if (n && !especialistas.some(x => x.toLowerCase() === n.toLowerCase())) {
-      setEspecialistas(prev => [...prev, n].sort((a, b) => a.localeCompare(b, 'pt-BR')))
+      const lista = [...especialistas, n].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      setEspecialistas(lista)
       setNovoEspecialista('')
+      salvarEspecialistas(lista)
     }
   }
-  function removeEspecialista(n) { setEspecialistas(prev => prev.filter(x => x !== n)) }
+  function removeEspecialista(n) {
+    const lista = especialistas.filter(x => x !== n)
+    setEspecialistas(lista)
+    salvarEspecialistas(lista)
+  }
 
   if (loading) return <p style={{ color: C.onSurfaceVariant, fontFamily: F.body }}>Carregando configurações...</p>
 
@@ -325,7 +332,7 @@ function TabSistema({ showToast }) {
             placeholder="Nome do especialista" style={{ ...inputCss, flex: 1 }} />
           <button onClick={addEspecialista} style={btnSecondary}>+ Adicionar</button>
         </div>
-        <button onClick={salvarEspecialistas} disabled={saving} style={btnPrimary}>
+        <button onClick={() => salvarEspecialistas()} disabled={saving} style={btnPrimary}>
           {saving ? 'Salvando...' : 'Salvar Especialistas'}
         </button>
       </div>
