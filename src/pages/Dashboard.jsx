@@ -10,10 +10,11 @@ import { buscarTodos } from '../lib/paginar'
 const todos = montar => buscarTodos(montar, { ordenarPorId: true })
 
 /* ── helpers ── */
-// Situações do banco tratadas como quitadas (baixa por solicitação / rejeitado),
-// além da liquidação — não contam na inadimplência.
+// Situações do banco tratadas como quitadas (liquidado, baixa por solicitação,
+// rejeitado) — não contam na inadimplência.
 function situacaoBaixa(situacao) {
   const s = String(situacao || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  if (s.includes('LIQUIDAD') && !s.includes('NAO LIQUIDAD')) return true
   return s.includes('BAIXADO POR SOLICITACAO') || s.includes('REJEITADO')
 }
 function boletoEmAberto(b) {

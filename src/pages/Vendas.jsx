@@ -23,11 +23,6 @@ function firstOfMonthISO() {
 }
 function num(v) { return parseFloat(String(v ?? '').replace(',', '.')) || 0 }
 
-// Mesma normalização usada na aba Cobranças (para casar o devedor pelo nome).
-function normalizarNome(nome) {
-  return String(nome || '').trim().toUpperCase().replace(/\s+/g, ' ')
-}
-
 // Tipos de venda "de grau" usam o Número da Venda (sequência automática).
 // Vale para "Grau" (dados antigos) e "Óculos de Grau" (novo padrão).
 function usaNumeroVenda(tipo) {
@@ -127,14 +122,15 @@ const MODALIDADES_PAGAMENTO = [
   { v: 'boleto_multicredito_sem', label: 'Boleto MultiCredito (sem entrada)', temEntrada: false },
   { v: 'crediario',           label: 'Crediário (sem entrada)',    temEntrada: false },
 ]
-// Modalidades que geram prestações (boletos/crediário) na Cobrança.
+// Modalidades com prestações (boletos/crediário). Só controle da venda —
+// a aba Cobrança recebe apenas o que vem do arquivo do banco.
 const MODS_PRESTACAO      = ['boleto', 'boleto_multicredito', 'boleto_multicredito_sem', 'crediario_entrada', 'crediario']
 // Modalidades cuja entrada entra como 1ª parcela (o restante vira prestações).
 const MODS_ENTRADA_PARCELA = ['boleto', 'boleto_multicredito', 'crediario_entrada']
 // Modalidades que têm campo "Valor da entrada".
 const MODS_ENTRADA_VALOR  = ['cartao', 'boleto', 'boleto_multicredito', 'crediario_entrada']
 // Cartão de crédito pode ser parcelado (na operadora). O nº de parcelas é só
-// informativo — NÃO gera boletos na Cobrança.
+// informativo.
 const MODS_CARTAO_PARCELAS = ['cartao_credito', 'cartao']
 function modalidadeTemEntrada(v) {
   const m = MODALIDADES_PAGAMENTO.find(x => x.v === v)
@@ -185,14 +181,14 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   // Opções do tipo de venda: as configuradas + o valor atual (para não perder
   // o tipo de vendas antigas que não estejam mais na lista).
   const tiposOpcoes = Array.from(new Set([...(tiposVenda || []), form.tipo_venda].filter(Boolean)))
-  // Modalidades que geram prestações (boletos/crediário) na Cobrança.
+  // Modalidades com prestações (boletos/crediário) — só controle da venda.
   const mod = form.pagamento_modalidade
   const temPrestacoes = MODS_PRESTACAO.includes(mod)
   // Modalidades que têm valor de entrada (à vista é pago integral; crediário puro não tem entrada).
   const temEntradaValor = MODS_ENTRADA_VALOR.includes(mod)
   // A entrada entra como 1ª parcela só em boleto/crediário (no cartão o restante vai no cartão).
   const usaEntradaParcela = MODS_ENTRADA_PARCELA.includes(mod)
-  // Cartão de crédito pode ser parcelado (informativo, não gera cobrança).
+  // Cartão de crédito pode ser parcelado (informativo).
   const temParcelasCartao = MODS_CARTAO_PARCELAS.includes(mod)
   // Boleto MultiCredito usa a TABELA de juros por parcela (configurada à parte).
   const ehMultiCredito = m => m === 'boleto_multicredito' || m === 'boleto_multicredito_sem'
@@ -899,11 +895,6 @@ export default function Vendas() {
         ? `Venda registrada com o Nº ${numeroAjustado} (o Nº ${payload.os_numero} acabou de ser usado por outra venda).`
         : (editId ? 'Venda atualizada!' : 'Venda registrada!'))
 
-      // Venda parcelada → gera/atualiza as parcelas na aba Cobranças.
-      if (vendaId) {
-        await sincronizarCobranca(vendaId, payload, parcelasPayload)
-      }
-
       if (form.nome_cliente?.trim()) {
         const n = form.nome_cliente.trim()
         const filialCliente = form.filial_id || profile?.filial_id || null
@@ -919,98 +910,6 @@ export default function Vendas() {
       setShowForm(false)
       carregarVendas()
       carregarDias()
-    }
-  }
-
-  // Reflete as parcelas da venda na aba Cobranças, para controlar o que
-  // está em aberto. Cria 1 boleto por parcela (entrada + demais). A parcela
-  // cuja data é hoje entra como PAGA. Reeditar a venda atualiza os boletos
-  // (sem duplicar) e preserva parcelas já quitadas manualmente. Só vale para
-  // vendas parceladas (2+), efetivadas e com nome do cliente.
-  async function sincronizarCobranca(vendaId, payload, parcelasPayload) {
-    try {
-      const filialId = payload.filial_id || profile?.filial_id || null
-      // A cobrança é sempre no nome do PAGADOR (é o que o banco traz).
-      const nome = (payload.pagador || payload.nome_cliente || '').trim()
-      const geraCobranca = !!parcelasPayload && parcelasPayload.length >= 2 && payload.efetivada !== false && !!nome
-
-      // Sem cobrança a gerar (à vista, não efetivada ou sem cliente):
-      // remove qualquer boleto que esta venda tenha gerado antes.
-      if (!geraCobranca) {
-        await supabase.from('cobrancas_boletos').delete().eq('venda_id', vendaId)
-        return
-      }
-
-      // Acha o devedor pelo nome (normalizado, igual à aba Cobranças) ou cria.
-      const norm = normalizarNome(nome)
-      let devedorId
-      const { data: devs } = await supabase
-        .from('cobrancas_devedores').select('id').eq('nome_normalizado', norm).limit(1)
-      if (devs?.length) {
-        devedorId = devs[0].id
-      } else {
-        const hoje = todayISO()
-        const { data: novoDev, error: eDev } = await supabase.from('cobrancas_devedores').insert({
-          nome_pagador:       nome,
-          pagador:            nome,
-          nome_normalizado:   norm,
-          filial_id:          filialId,
-          status_cobranca:    'Novo',
-          primeiro_registro:  hoje,
-          ultima_atualizacao: hoje,
-        }).select('id').single()
-        if (eDev) { logErro('Cobrança: criar devedor da venda', eDev); return }
-        devedorId = novoDev.id
-      }
-
-      // Boletos já gerados por esta venda (para atualizar sem duplicar).
-      const { data: existentes } = await supabase
-        .from('cobrancas_boletos')
-        .select('id, parcela_num, data_liquidacao, situacao_atual')
-        .eq('venda_id', vendaId)
-      const porNum = {}
-      ;(existentes || []).forEach(b => { porNum[b.parcela_num] = b })
-
-      const hoje = todayISO()
-      const total = parcelasPayload.length
-      for (const p of parcelasPayload) {
-        const ex = porNum[p.n]
-        if (ex) {
-          // Atualiza vencimento/valor; não mexe em parcela já quitada.
-          await supabase.from('cobrancas_boletos').update({
-            devedor_id:      devedorId,
-            filial_id:       filialId,
-            data_vencimento: p.data,
-            valor:           p.valor,
-            numero_doc:      `Parcela ${p.n}/${total}`,
-          }).eq('id', ex.id)
-        } else {
-          const pagaHoje = p.data === hoje
-          await supabase.from('cobrancas_boletos').insert({
-            devedor_id:      devedorId,
-            venda_id:        vendaId,
-            parcela_num:     p.n,
-            filial_id:       filialId,
-            data_vencimento: p.data,
-            valor:           p.valor,
-            numero_doc:      `Parcela ${p.n}/${total}`,
-            ...(pagaHoje ? {
-              data_liquidacao:  hoje,
-              valor_liquidacao: p.valor,
-              situacao_atual:   'Liquidada',
-            } : {}),
-          })
-        }
-      }
-
-      // Remove boletos de parcelas que não existem mais (ex.: reduziu o nº).
-      const nsAtuais = parcelasPayload.map(p => p.n)
-      const remover = (existentes || []).filter(b => !nsAtuais.includes(b.parcela_num)).map(b => b.id)
-      if (remover.length) {
-        await supabase.from('cobrancas_boletos').delete().in('id', remover)
-      }
-    } catch (err) {
-      logErro('Cobrança: sincronizar parcelas da venda', err)
     }
   }
 

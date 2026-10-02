@@ -24,10 +24,11 @@ function normalizarNome(nome) {
   return String(nome || '').trim().toUpperCase().replace(/\s+/g, ' ')
 }
 
-// Situações do banco que devem ser tratadas como quitadas (fora da inadimplência),
-// além da liquidação: "Baixado por solicitação" e "Rejeitado".
+// Situações do banco que devem ser tratadas como quitadas (fora da inadimplência):
+// "Liquidado/Liquidada" (mesmo sem data de liquidação), "Baixado por solicitação" e "Rejeitado".
 function situacaoBaixa(situacao) {
   const s = String(situacao || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  if (s.includes('LIQUIDAD') && !s.includes('NAO LIQUIDAD')) return true
   return s.includes('BAIXADO POR SOLICITACAO') || s.includes('REJEITADO')
 }
 // Um boleto está QUITADO/fora da inadimplência quando: tem data de liquidação,
@@ -133,7 +134,11 @@ function detectarColunas(headerRow) {
     if (c.includes('nosso')) col.nosso_numero = j
     if (/^txid$/i.test(raw)) col.txid = j
     if (/^pagador$/i.test(raw)) col.nome_pagador = j
-    if (c.includes('vencimento')) col.data_vencimento = j
+    // Vencimento ATUAL do boleto. Ignora colunas como "Vencimento original"
+    // ou "Dias de vencimento" (não são a data vigente no banco).
+    if (c.includes('vencimento') && !c.includes('original') && !c.includes('dias')) {
+      if (col.data_vencimento === undefined || c.includes('prorrog') || c.includes('atual')) col.data_vencimento = j
+    }
     if (c.includes('data') && c.includes('liquidac')) col.data_liquidacao = j
     if (c.includes('valor') && !c.includes('liquidac')) col.valor = j
     if (c.includes('liquidac') && !c.includes('data') && !c.includes('valor')) col.valor_liquidacao = j
@@ -197,9 +202,13 @@ async function parseFile(file) {
 function mesclarBoleto(prev, b) {
   const ok = v => v !== null && v !== undefined && v !== ''
   const m = { ...prev }
-  ;['carteira', 'numero_doc', 'txid', 'data_vencimento', 'valor', 'motivo'].forEach(k => {
+  ;['carteira', 'numero_doc', 'txid', 'valor', 'motivo'].forEach(k => {
     if (ok(b[k])) m[k] = b[k]
   })
+  // Vencimento: se as linhas trazem datas diferentes (ex.: prorrogação),
+  // fica a mais recente — é a que vale no banco.
+  if (ok(b.data_vencimento) && (!ok(prev.data_vencimento) || b.data_vencimento > prev.data_vencimento))
+    m.data_vencimento = b.data_vencimento
   if (ok(prev.data_liquidacao)) {
     // já estava liquidado → mantém a liquidação existente
   } else if (ok(b.data_liquidacao)) {
@@ -209,7 +218,7 @@ function mesclarBoleto(prev, b) {
   } else {
     // nenhuma linha liquidada ainda → fica com a última situação/valores não vazios
     if (ok(b.valor_liquidacao)) m.valor_liquidacao = b.valor_liquidacao
-    if (ok(b.situacao_boleto))  m.situacao_boleto  = b.situacao_boleto
+    if (ok(b.situacao_boleto) && !situacaoBaixa(prev.situacao_boleto)) m.situacao_boleto = b.situacao_boleto
   }
   return m
 }
@@ -279,9 +288,10 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
   // filial), em vez de virar um segundo registro duplicado.
   const nossoNums = boletos.map(b => b.nosso_numero).filter(Boolean)
   const setExistentes = new Set()
+  const vencAnterior = {}  // nosso_numero → vencimento que estava no sistema
   if (nossoNums.length > 0) {
-    const boletosDB = await buscarEmBlocos('cobrancas_boletos', 'nosso_numero', 'nosso_numero', [...new Set(nossoNums)])
-    boletosDB.forEach(b => { setExistentes.add(b.nosso_numero) })
+    const boletosDB = await buscarEmBlocos('cobrancas_boletos', 'nosso_numero, data_vencimento', 'nosso_numero', [...new Set(nossoNums)])
+    boletosDB.forEach(b => { setExistentes.add(b.nosso_numero); vencAnterior[b.nosso_numero] = b.data_vencimento })
   }
 
   // O arquivo do banco (principalmente "todas as situações") pode trazer o
@@ -354,9 +364,14 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
       if (b.situacao_boleto) patch.situacao_boleto = b.situacao_boleto
       if (b.motivo)          patch.motivo          = b.motivo
       if (filialId)          patch.filial_id       = filialId  // garante/corrige a filial do boleto
-      await supabase.from('cobrancas_boletos').update(patch).eq('nosso_numero', b.nosso_numero)
+      const { error } = await supabase.from('cobrancas_boletos').update(patch).eq('nosso_numero', b.nosso_numero)
+      if (error) throw new Error(error.message)
     }
   }
+
+  const mesmoDia = (a, b) => String(a || '').slice(0, 10) === String(b || '').slice(0, 10)
+  const vencimentosAlterados =
+    paraAtualizar.filter(b => b.data_vencimento && !mesmoDia(b.data_vencimento, vencAnterior[b.nosso_numero])).length
 
   // log import (silently ignore if table doesn't exist yet)
   try {
@@ -377,6 +392,7 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
     total: boletos.length,
     inseridos: paraInserir.length,
     atualizados: paraAtualizar.length,
+    vencimentosAlterados,
     novosDevedores: novosNomes,
     devedoresAtualizados: idsExistentes.length,
   }
@@ -1900,6 +1916,9 @@ export default function Cobrancas() {
               </p>
               <div style={{ fontSize: '0.85rem', color: C.statusSuccess, display: 'flex', flexDirection: 'column', gap: '0.2rem', fontFamily: F.body }}>
                 <span>📥 {resultado.inseridos} boleto{resultado.inseridos !== 1 ? 's' : ''} novo{resultado.inseridos !== 1 ? 's' : ''} inserido{resultado.inseridos !== 1 ? 's' : ''} · ♻️ {resultado.atualizados} atualizado{resultado.atualizados !== 1 ? 's' : ''}</span>
+                {resultado.vencimentosAlterados > 0 && (
+                  <span>📅 {resultado.vencimentosAlterados} vencimento{resultado.vencimentosAlterados !== 1 ? 's' : ''} atualizado{resultado.vencimentosAlterados !== 1 ? 's' : ''} conforme o banco</span>
+                )}
                 {resultado.novosDevedores.length > 0 && (
                   <span>🆕 {resultado.novosDevedores.length} devedor{resultado.novosDevedores.length > 1 ? 'es' : ''} novo{resultado.novosDevedores.length > 1 ? 's' : ''}: <strong>{resultado.novosDevedores.join(', ')}</strong></span>
                 )}
