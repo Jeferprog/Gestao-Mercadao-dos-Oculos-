@@ -23,6 +23,16 @@ function firstOfMonthISO() {
 }
 function num(v) { return parseFloat(String(v ?? '').replace(',', '.')) || 0 }
 
+// Lista de especialistas salva em Configurações (JSON; aceita texto com vírgulas).
+function lerListaEspecialistas(valor) {
+  if (!valor) return []
+  try {
+    const l = JSON.parse(valor)
+    if (Array.isArray(l)) return l.map(x => String(x).trim()).filter(Boolean)
+  } catch { /* formato antigo */ }
+  return String(valor).split(',').map(x => x.trim()).filter(Boolean)
+}
+
 // Tipos de venda "de grau" usam o Número da Venda (sequência automática).
 // Vale para "Grau" (dados antigos) e "Óculos de Grau" (novo padrão).
 function usaNumeroVenda(tipo) {
@@ -158,6 +168,7 @@ const FORM_INIT = {
   os_numero: '',
   nota_fiscal: '',
   nome_cliente: '',
+  especialista: '',
   pagador: '',
   data_venda: todayISO(),
   vendedor_id: '',
@@ -177,7 +188,7 @@ const FORM_INIT = {
 }
 
 /* ── FormVenda ── */
-function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedores, filiais, formasPagamento, tiposVenda, parcelasSemJuros, jurosPercent, tabelaMC, isAdmin, onSubmit, onCancel, saving, editando }) {
+function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedores, filiais, formasPagamento, tiposVenda, especialistas, parcelasSemJuros, jurosPercent, tabelaMC, isAdmin, onSubmit, onCancel, saving, editando }) {
   // Opções do tipo de venda: as configuradas + o valor atual (para não perder
   // o tipo de vendas antigas que não estejam mais na lista).
   const tiposOpcoes = Array.from(new Set([...(tiposVenda || []), form.tipo_venda].filter(Boolean)))
@@ -317,6 +328,18 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
               const espelha = !form.pagador || form.pagador === form.nome_cliente
               onChange({ ...form, nome_cliente: novo, pagador: espelha ? novo : form.pagador })
             }} />
+        </div>
+
+        {/* Especialista que atendeu no exame de vista (opcional) */}
+        <div>
+          <Label>Especialista (exame de vista)</Label>
+          <input style={inputCss} placeholder="Opcional — digite para buscar"
+            list="lista-especialistas"
+            value={form.especialista || ''}
+            onChange={e => onChange({ ...form, especialista: e.target.value })} />
+          <datalist id="lista-especialistas">
+            {(especialistas || []).map(n => <option key={n} value={n} />)}
+          </datalist>
         </div>
 
         {/* Data */}
@@ -591,6 +614,7 @@ export default function Vendas() {
   const [jurosPercent, setJurosPercent] = useState(0)
   const [tabelaMC, setTabelaMC] = useState({ ...MC_TABELA_PADRAO })
   const [tiposVenda, setTiposVenda] = useState(TIPOS_VENDA_PADRAO)
+  const [especialistas, setEspecialistas] = useState([])
   const [vendedores, setVendedores] = useState([])
   const [filiais, setFiliais] = useState([])
   const [filtroFilial, setFiltroFilial] = useState('')
@@ -638,6 +662,7 @@ export default function Vendas() {
         }
         const tipos = (map.tipos_venda || '').split(',').map(t => t.trim()).filter(Boolean)
         if (tipos.length) setTiposVenda(tipos)
+        setEspecialistas(lerListaEspecialistas(map.especialistas))
       }
       if (vends) setVendedores(vends)
       if (fils) setFiliais(fils)
@@ -745,6 +770,8 @@ export default function Vendas() {
       os_numero: v.os_numero || '',
       nota_fiscal: v.nota_fiscal || '',
       nome_cliente: v.nome_cliente || '',
+      especialista: v.especialista || '',
+      _espAntes: v.especialista || '',
       pagador: v.pagador || v.nome_cliente || '',
       data_venda: v.data_venda,
       vendedor_id: v.vendedor_id,
@@ -861,6 +888,10 @@ export default function Vendas() {
       efetivada: form.efetivada !== false,
       motivo_nao_efetivada: !form.efetivada ? (form.motivo_nao_efetivada || null) : null,
     }
+    // Especialista do exame de vista (opcional). Só envia quando preenchido
+    // ou quando a venda já tinha um (para permitir apagar).
+    const esp = (form.especialista || '').trim().replace(/\s+/g, ' ')
+    if (esp || (editId && form._espAntes)) payload.especialista = esp || null
 
     let error
     let vendaId = editId
@@ -1181,6 +1212,7 @@ export default function Vendas() {
               filiais={filiais}
               formasPagamento={formasPagamento}
               tiposVenda={tiposVenda}
+              especialistas={especialistas}
               parcelasSemJuros={parcelasSemJuros}
               jurosPercent={jurosPercent}
               tabelaMC={tabelaMC}
@@ -1511,6 +1543,7 @@ export default function Vendas() {
                                   ['Nota Fiscal', v.nota_fiscal || '—'],
                                   ['Cliente', v.nome_cliente || '—'],
                                   ['Pagador', v.pagador || v.nome_cliente || '—'],
+                                  ['Especialista', v.especialista || '—'],
                                   ['Data', fDateBR(v.data_venda)],
                                   ['Vendedor', vendedorMap[v.vendedor_id] || '—'],
                                   ...(filiais.length > 1 ? [['Filial', filialMap[v.filial_id] || '—']] : []),

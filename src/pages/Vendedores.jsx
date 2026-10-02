@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { Fragment, useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { buscarTodos } from '../lib/paginar'
 import { useAuth } from '../contexts/AuthContext'
@@ -29,6 +29,12 @@ const Label = ({ children }) => (
   }}>{children}</label>
 )
 
+const TH = {
+  padding: '0.65rem 0.875rem', textAlign: 'left', fontSize: '0.7rem',
+  fontFamily: F.body, fontWeight: '600', color: C.onSurfaceVariant,
+  textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap',
+}
+
 /* ── componente principal ── */
 export default function Vendedores() {
   const { profile, isAdmin } = useAuth()
@@ -45,6 +51,8 @@ export default function Vendedores() {
   const [filtroVendedor, setFiltroVendedor] = useState('')
   const [filtroFilial, setFiltroFilial] = useState('')
   const [loading, setLoading] = useState(true)
+  const [vendasEsp, setVendasEsp] = useState([])       // vendas com especialista registrado
+  const [espSelecionado, setEspSelecionado] = useState(null)
 
   /* carrega perfis, vendas do período e filiais */
   const carregar = useCallback(async () => {
@@ -65,6 +73,21 @@ export default function Vendedores() {
       .lte('data_consulta', dataFim)
     if (filtroFilial) qCapt = qCapt.eq('filial_id', filtroFilial)
     return qCapt }
+
+    // Vendas com Especialista (exame de vista) — inclui as não efetivadas,
+    // para ver quantas consultas viraram venda. Consulta separada: se a
+    // coluna ainda não existir (SQL não rodado), o resto da tela funciona.
+    const montarEsp = () => { let q = supabase
+      .from('vendas')
+      .select('id, os_numero, tipo_venda, data_venda, vendedor_id, filial_id, valor_final, efetivada, nome_cliente, especialista')
+      .gte('data_venda', dataInicio)
+      .lte('data_venda', dataFim)
+      .not('especialista', 'is', null)
+    if (filtroFilial) q = q.eq('filial_id', filtroFilial)
+    return q }
+    buscarTodos(montarEsp, { ordenarPorId: true })
+      .then(({ data }) => setVendasEsp((data || []).filter(v => (v.especialista || '').trim())))
+      .catch(() => setVendasEsp([]))
 
     const [{ data: perfis }, { data: vendasData }, { data: captData }, { data: fils }, { data: cfg }] = await Promise.all([
       supabase.from('profiles').select('id, nome, comissao_percentual, ativo').eq('ativo', true).order('nome'),
@@ -131,6 +154,24 @@ export default function Vendedores() {
         .filter(v => v.vendedor_id === selectedId)
         .sort((a, b) => (a.os_numero || 0) - (b.os_numero || 0))
     : []
+
+  // Acompanhamento por Especialista (respeita os filtros; vendedor vê só as suas).
+  const espVisiveis = vendasEsp.filter(v =>
+    (isAdmin || v.vendedor_id === profile?.id) && (!filtroVendedor || v.vendedor_id === filtroVendedor))
+  const espMap = {}
+  espVisiveis.forEach(v => {
+    const nome = v.especialista.trim()
+    if (!espMap[nome]) espMap[nome] = { nome, efetivadas: 0, naoEfetivadas: 0, total: 0, vendas: [] }
+    const e = espMap[nome]
+    if (v.efetivada === false) e.naoEfetivadas++
+    else { e.efetivadas++; e.total += v.valor_final || 0 }
+    e.vendas.push(v)
+  })
+  const linhasEsp = Object.values(espMap).sort((a, b) => b.efetivadas - a.efetivadas || a.nome.localeCompare(b.nome, 'pt-BR'))
+  const espTotEf = linhasEsp.reduce((s, r) => s + r.efetivadas, 0)
+  const espTotNao = linhasEsp.reduce((s, r) => s + r.naoEfetivadas, 0)
+  const espTotValor = linhasEsp.reduce((s, r) => s + r.total, 0)
+  const nomeVendedor = id => vendedores.find(v => v.id === id)?.nome || '—'
 
   function toggleSelecao(id) {
     setSelectedId(prev => (prev === id ? null : id))
@@ -393,6 +434,96 @@ export default function Vendedores() {
           )}
         </div>
       )}
+
+      {/* Acompanhamento por Especialista (exame de vista) */}
+      <div style={{ ...dsCard, marginTop: '1rem' }}>
+        <h2 style={{ fontSize: '1.05rem', fontWeight: '800', fontFamily: F.headline, color: C.onSurface, margin: '0 0 0.25rem' }}>
+          Vendas por Especialista
+        </h2>
+        <p style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', margin: '0 0 1rem', fontFamily: F.body, lineHeight: 1.5 }}>
+          Vendas do período em que foi registrado o especialista que atendeu no exame de vista.
+          Clique em um especialista para ver as vendas.
+        </p>
+        {loading ? (
+          <div style={{ textAlign: 'center', color: C.onSurfaceVariant, fontFamily: F.body, padding: '1.5rem 0' }}>Carregando...</div>
+        ) : linhasEsp.length === 0 ? (
+          <div style={{ textAlign: 'center', color: C.onSurfaceVariant, fontFamily: F.body, padding: '1.5rem 0' }}>
+            <div style={{ fontSize: '1.5rem', marginBottom: '0.4rem' }}>👁️</div>
+            <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>Nenhuma venda com especialista neste período</div>
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+              <thead>
+                <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
+                  {['Especialista', 'Vendas', 'Não efetivadas', 'Total Vendido', 'Ticket Médio'].map(h => (
+                    <th key={h} style={TH}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {linhasEsp.map(r => {
+                  const aberto = espSelecionado === r.nome
+                  return (
+                    <Fragment key={r.nome}>
+                      <tr onClick={() => setEspSelecionado(aberto ? null : r.nome)}
+                        style={{ borderBottom: `1px solid ${C.borderSubtle}`, cursor: 'pointer', background: aberto ? C.surfaceContainerLow : 'transparent' }}>
+                        <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.body, fontWeight: '700', color: C.onSurface }}>
+                          <span style={{ marginRight: '0.4rem', color: C.onSurfaceVariant }}>{aberto ? '▾' : '▸'}</span>{r.nome}
+                        </td>
+                        <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.mono, fontWeight: '800', color: C.statusInfo }}>{r.efetivadas}</td>
+                        <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.mono, color: r.naoEfetivadas ? C.statusWarning : C.borderSubtle }}>{r.naoEfetivadas || '—'}</td>
+                        <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.mono, fontWeight: '700', color: C.statusSuccess, whiteSpace: 'nowrap' }}>{fBRL(r.total)}</td>
+                        <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.mono, color: C.onSurfaceVariant, whiteSpace: 'nowrap' }}>{r.efetivadas ? fBRL(r.total / r.efetivadas) : '—'}</td>
+                      </tr>
+                      {aberto && (
+                        <tr>
+                          <td colSpan={5} style={{ padding: '0.5rem 0.875rem 1rem', background: C.surfaceContainerLow }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                              <thead>
+                                <tr>
+                                  {['Data', 'Nº Venda', 'Cliente', 'Vendedor', 'Valor', 'Situação'].map(h => (
+                                    <th key={h} style={{ ...TH, padding: '0.4rem 0.6rem' }}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {[...r.vendas].sort((a, b) => String(a.data_venda).localeCompare(String(b.data_venda))).map(v => (
+                                  <tr key={v.id} style={{ borderTop: `1px solid ${C.borderSubtle}` }}>
+                                    <td style={{ padding: '0.4rem 0.6rem', fontFamily: F.body, whiteSpace: 'nowrap' }}>{fDateBR(v.data_venda)}</td>
+                                    <td style={{ padding: '0.4rem 0.6rem', fontFamily: F.mono, color: C.statusInfo }}>{v.os_numero ? `#${v.os_numero}` : '—'}</td>
+                                    <td style={{ padding: '0.4rem 0.6rem', fontFamily: F.body }}>{v.nome_cliente || '—'}</td>
+                                    <td style={{ padding: '0.4rem 0.6rem', fontFamily: F.body }}>{nomeVendedor(v.vendedor_id)}</td>
+                                    <td style={{ padding: '0.4rem 0.6rem', fontFamily: F.mono, whiteSpace: 'nowrap' }}>{fBRL(v.valor_final)}</td>
+                                    <td style={{ padding: '0.4rem 0.6rem', fontFamily: F.body, color: v.efetivada === false ? C.statusWarning : C.statusSuccess, fontWeight: '600' }}>
+                                      {v.efetivada === false ? 'Não efetivada' : 'Efetivada'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+              {linhasEsp.length > 1 && (
+                <tfoot>
+                  <tr style={{ borderTop: `2px solid ${C.borderSubtle}`, background: C.tableHeader }}>
+                    <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.body, fontWeight: '700', color: C.onSurface, fontSize: '0.82rem' }}>TOTAL</td>
+                    <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.mono, fontWeight: '800', color: C.statusInfo }}>{espTotEf}</td>
+                    <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.mono, color: C.onSurface }}>{espTotNao || '—'}</td>
+                    <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.mono, fontWeight: '800', color: C.statusSuccess, whiteSpace: 'nowrap' }}>{fBRL(espTotValor)}</td>
+                    <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.mono, color: C.onSurfaceVariant, whiteSpace: 'nowrap' }}>{espTotEf ? fBRL(espTotValor / espTotEf) : '—'}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
