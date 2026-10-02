@@ -33,6 +33,49 @@ function lerListaEspecialistas(valor) {
   return String(valor).split(',').map(x => x.trim()).filter(Boolean)
 }
 
+// Campo com lista de sugestões dos especialistas cadastrados em Configurações.
+// Ao clicar, mostra todos; ao digitar, filtra (sem diferenciar acentos/maiúsculas).
+function semAcento(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') }
+function CampoEspecialista({ value, opcoes, onChange }) {
+  const [aberto, setAberto] = useState(false)
+  const termo = semAcento(value)
+  const filtradas = opcoes.filter(n => !termo || semAcento(n).includes(termo))
+  const lista = filtradas.length ? filtradas : opcoes
+  return (
+    <div style={{ position: 'relative' }}>
+      <input style={inputCss} autoComplete="off"
+        placeholder={opcoes.length ? 'Opcional — clique para escolher' : 'Opcional'}
+        value={value}
+        onFocus={() => setAberto(true)}
+        onClick={() => setAberto(true)}
+        onBlur={() => setTimeout(() => setAberto(false), 150)}
+        onKeyDown={e => { if (e.key === 'Escape') setAberto(false) }}
+        onChange={e => { onChange(e.target.value); setAberto(true) }} />
+      {aberto && lista.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30, marginTop: '2px',
+          background: C.surfaceContainerLowest, border: `1.5px solid ${C.borderSubtle}`,
+          borderRadius: '0.375rem', boxShadow: '0 6px 18px rgba(0,0,0,0.12)',
+          maxHeight: '220px', overflowY: 'auto',
+        }}>
+          {lista.map(n => (
+            <div key={n}
+              onMouseDown={e => { e.preventDefault(); onChange(n); setAberto(false) }}
+              style={{
+                padding: '0.5rem 0.75rem', cursor: 'pointer', fontFamily: F.body, fontSize: '0.875rem',
+                color: C.onSurface, background: n === value ? C.surfaceContainerLow : 'transparent',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = C.surfaceContainerLow }}
+              onMouseLeave={e => { e.currentTarget.style.background = n === value ? C.surfaceContainerLow : 'transparent' }}>
+              {n}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Tipos de venda "de grau" usam o Número da Venda (sequência automática).
 // Vale para "Grau" (dados antigos) e "Óculos de Grau" (novo padrão).
 function usaNumeroVenda(tipo) {
@@ -333,13 +376,10 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
         {/* Especialista que atendeu no exame de vista (opcional) */}
         <div>
           <Label>Especialista (exame de vista)</Label>
-          <input style={inputCss} placeholder="Opcional — digite para buscar"
-            list="lista-especialistas"
+          <CampoEspecialista
             value={form.especialista || ''}
-            onChange={e => onChange({ ...form, especialista: e.target.value })} />
-          <datalist id="lista-especialistas">
-            {(especialistas || []).map(n => <option key={n} value={n} />)}
-          </datalist>
+            opcoes={especialistas || []}
+            onChange={val => onChange({ ...form, especialista: val })} />
         </div>
 
         {/* Data */}
@@ -747,7 +787,15 @@ export default function Vendas() {
     return inicial
   }
 
+  // Busca a lista atual de especialistas (pega cadastros feitos depois de abrir a tela).
+  async function carregarEspecialistas() {
+    const { data, error } = await supabase.from('configuracoes').select('valor').eq('chave', 'especialistas').maybeSingle()
+    if (error) { logErro('Carregar especialistas', error); return }
+    setEspecialistas(lerListaEspecialistas(data?.valor))
+  }
+
   async function abrirNovaVenda() {
+    carregarEspecialistas()
     const filialId = profile?.filial_id || (filiais.length === 1 ? filiais[0].id : '')
     const tipoInicial = tiposVenda[0] || 'Óculos de Grau'
     const proximo = usaNumeroVenda(tipoInicial) ? await getProximoOs(filialId) : ''
@@ -765,6 +813,7 @@ export default function Vendas() {
   }
 
   function abrirEdicao(v) {
+    carregarEspecialistas()
     setForm({
       tipo_venda: v.tipo_venda || 'Grau',
       os_numero: v.os_numero || '',
