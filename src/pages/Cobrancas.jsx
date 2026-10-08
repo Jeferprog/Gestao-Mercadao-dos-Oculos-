@@ -140,6 +140,7 @@ function detectarColunas(headerRow) {
       if (col.data_vencimento === undefined || c.includes('prorrog') || c.includes('atual')) col.data_vencimento = j
     }
     if (c.includes('data') && c.includes('liquidac')) col.data_liquidacao = j
+    if (c.includes('emiss') && col.data_emissao === undefined) col.data_emissao = j
     if (c.includes('valor') && !c.includes('liquidac')) col.valor = j
     if (c.includes('liquidac') && !c.includes('data') && !c.includes('valor')) col.valor_liquidacao = j
     if (c.includes('situac')) col.situacao_boleto = j
@@ -185,6 +186,7 @@ async function parseFile(file) {
       nome_pagador:     nomePagador,
       data_vencimento:  parseDataBR(row[colMap.data_vencimento]),
       data_liquidacao:  parseDataBR(row[colMap.data_liquidacao]) || null,
+      data_emissao:     colMap.data_emissao !== undefined ? (parseDataBR(row[colMap.data_emissao]) || null) : null,
       valor:            parseBRL(row[colMap.valor]),
       valor_liquidacao: parseBRL(row[colMap.valor_liquidacao]),
       situacao_boleto:  String(row[colMap.situacao_boleto] ?? '').trim() || null,
@@ -205,6 +207,9 @@ function mesclarBoleto(prev, b) {
   ;['carteira', 'numero_doc', 'txid', 'valor', 'motivo'].forEach(k => {
     if (ok(b[k])) m[k] = b[k]
   })
+  // Emissão: fica a primeira data informada.
+  if (ok(b.data_emissao) && (!ok(prev.data_emissao) || b.data_emissao < prev.data_emissao))
+    m.data_emissao = b.data_emissao
   // Vencimento: se as linhas trazem datas diferentes (ex.: prorrogação),
   // fica a mais recente — é a que vale no banco.
   if (ok(b.data_vencimento) && (!ok(prev.data_vencimento) || b.data_vencimento > prev.data_vencimento))
@@ -308,6 +313,7 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
       carteira: b.carteira, numero_doc: b.numero_doc,
       nosso_numero: b.nosso_numero, txid: b.txid,
       data_vencimento: b.data_vencimento, data_liquidacao: b.data_liquidacao,
+      ...(b.data_emissao ? { data_emissao: b.data_emissao } : {}),
       valor: b.valor, valor_liquidacao: b.valor_liquidacao,
       situacao_boleto: b.situacao_boleto, motivo: b.motivo,
     }
@@ -346,6 +352,7 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
       valor_liquidacao: b.valor_liquidacao,
       situacao_boleto:  b.situacao_boleto || null,
       motivo:           b.motivo || null,
+      data_emissao:     b.data_emissao || null,
     }))
     const { error } = await supabase.rpc('atualizar_boletos_importacao', { p_boletos: lote, p_filial: filialId || null })
     if (error) {
@@ -363,6 +370,7 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
       }
       if (b.situacao_boleto) patch.situacao_boleto = b.situacao_boleto
       if (b.motivo)          patch.motivo          = b.motivo
+      if (b.data_emissao)    patch.data_emissao    = b.data_emissao
       if (filialId)          patch.filial_id       = filialId  // garante/corrige a filial do boleto
       const { error } = await supabase.from('cobrancas_boletos').update(patch).eq('nosso_numero', b.nosso_numero)
       if (error) throw new Error(error.message)
@@ -372,6 +380,9 @@ async function importarBoletos(boletos, filialId, { periodoInicio, periodoFim, n
   const mesmoDia = (a, b) => String(a || '').slice(0, 10) === String(b || '').slice(0, 10)
   const vencimentosAlterados =
     paraAtualizar.filter(b => b.data_vencimento && !mesmoDia(b.data_vencimento, vencAnterior[b.nosso_numero])).length
+
+  // Marca nas VENDAS a data de emissão do boleto (nome + valor da parcela).
+  try { await supabase.rpc('atualizar_boletos_emitidos_vendas') } catch (_) { /* função ainda não criada */ }
 
   // log import (silently ignore if table doesn't exist yet)
   try {
