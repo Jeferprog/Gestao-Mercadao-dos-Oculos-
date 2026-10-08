@@ -474,6 +474,7 @@ export default function Cobrancas() {
   })
   const [filtroVencInicio, setFiltroVencInicio] = useState('')
   const [filtroVencFim,    setFiltroVencFim]    = useState('')
+  const [filtroSitBoleto,  setFiltroSitBoleto]  = useState('')  // situação do banco (boletos vencidos)
 
   const [filtroBolSitAtual,  setFiltroBolSitAtual]  = useState('')
   const [filtroBolSitBanco,  setFiltroBolSitBanco]  = useState('')
@@ -548,9 +549,12 @@ export default function Cobrancas() {
     if (filtros.pequenasCausas === 'sem' &&  dev.pequenas_causas) return false
     if (filtros.audiencia === 'com' && !dev.data_audiencia) return false
     if (filtros.audiencia === 'sem' &&  dev.data_audiencia) return false
-    if (filtroVencInicio || filtroVencFim) {
-      // Filtro de vencimento olha só os boletos vencidos (ignora pagos e a vencer).
+    if (filtroVencInicio || filtroVencFim || filtroSitBoleto) {
+      // Filtros de vencimento e situação olham só os boletos vencidos (ignora
+      // pagos e a vencer). O MESMO boleto precisa atender aos dois.
       const match = vencidos(dev).some(b => {
+        if (filtroSitBoleto && (b.situacao_boleto || 'Sem situação') !== filtroSitBoleto) return false
+        if (!filtroVencInicio && !filtroVencFim) return true
         if (!b.data_vencimento) return false
         if (filtroVencInicio && b.data_vencimento < filtroVencInicio) return false
         if (filtroVencFim    && b.data_vencimento > filtroVencFim)    return false
@@ -991,7 +995,10 @@ export default function Cobrancas() {
   /* ── audiências ── */
   const comAudiencia = [...devedores].filter(d => d.data_audiencia).sort((a, b) => a.data_audiencia.localeCompare(b.data_audiencia))
   const filialMap = Object.fromEntries(filiais.map(f => [f.id, f.nome]))
-  const temFiltrosVenc = filtroVencInicio || filtroVencFim
+  const temFiltrosVenc = filtroVencInicio || filtroVencFim || filtroSitBoleto
+  // Situações do banco presentes nos boletos vencidos (opções do filtro).
+  const situacoesVencidos = [...new Set(devedores.flatMap(d => vencidos(d).map(b => b.situacao_boleto || 'Sem situação')))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'))
 
   /* ── Relação de boletos ── */
   const todosBoletos = devedores.flatMap(dev =>
@@ -1048,6 +1055,7 @@ export default function Cobrancas() {
     if (filtroFilial && filialMap[filtroFilial]) p.push(`Filial: ${filialMap[filtroFilial]}`)
     if (filtroVencInicio) p.push(`Venc. de ${fDate(filtroVencInicio)}`)
     if (filtroVencFim) p.push(`Venc. até ${fDate(filtroVencFim)}`)
+    if (filtroSitBoleto) p.push(`Situação: ${filtroSitBoleto}`)
     return p.length ? p.join(' · ') : 'Todos os devedores'
   }
 
@@ -1995,7 +2003,7 @@ export default function Cobrancas() {
                 <option value="sem">Sem audiência</option>
               </select>
               {(filtros.busca || filtros.status || filtros.somenteNovos || filtros.pequenasCausas || filtros.audiencia || temFiltrosVenc) && (
-                <button onClick={() => { setFiltros({ busca: '', status: '', somenteNovos: false, pequenasCausas: '', audiencia: '' }); setFiltroVencInicio(''); setFiltroVencFim('') }}
+                <button onClick={() => { setFiltros({ busca: '', status: '', somenteNovos: false, pequenasCausas: '', audiencia: '' }); setFiltroVencInicio(''); setFiltroVencFim(''); setFiltroSitBoleto('') }}
                   style={{ fontSize: '0.8rem', color: C.statusDanger, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600', padding: '0.3rem 0.5rem', fontFamily: F.body }}>
                   ✕ Limpar
                 </button>
@@ -2012,7 +2020,7 @@ export default function Cobrancas() {
             {/* Filtro por vencimento */}
             <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: `1px solid ${C.borderSubtle}`, display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '0.625rem' }}>
               <div style={{ fontSize: '0.75rem', fontWeight: '700', color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.5px', alignSelf: 'center', whiteSpace: 'nowrap', fontFamily: F.body }}>
-                Vencimento:
+                Boletos vencidos:
               </div>
               <div>
                 <div style={{ fontSize: '0.7rem', color: C.onSurfaceVariant, fontWeight: '600', marginBottom: '0.2rem', fontFamily: F.body }}>De</div>
@@ -2024,10 +2032,18 @@ export default function Cobrancas() {
                 <input type="date" value={filtroVencFim} onChange={e => setFiltroVencFim(e.target.value)}
                   style={{ ...inputCss, padding: '0.4rem 0.6rem', fontSize: '0.82rem' }} />
               </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: C.onSurfaceVariant, fontWeight: '600', marginBottom: '0.2rem', fontFamily: F.body }}>Situação do boleto</div>
+                <select value={filtroSitBoleto} onChange={e => setFiltroSitBoleto(e.target.value)}
+                  style={{ ...inputCss, padding: '0.4rem 0.6rem', fontSize: '0.82rem', minWidth: '170px' }}>
+                  <option value="">Todas</option>
+                  {situacoesVencidos.map(sit => <option key={sit} value={sit}>{sit}</option>)}
+                </select>
+              </div>
               {temFiltrosVenc && (
-                <button onClick={() => { setFiltroVencInicio(''); setFiltroVencFim('') }}
+                <button onClick={() => { setFiltroVencInicio(''); setFiltroVencFim(''); setFiltroSitBoleto('') }}
                   style={{ fontSize: '0.78rem', color: C.statusDanger, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600', padding: '0.3rem 0.5rem', fontFamily: F.body }}>
-                  ✕ Limpar datas
+                  ✕ Limpar
                 </button>
               )}
             </div>
