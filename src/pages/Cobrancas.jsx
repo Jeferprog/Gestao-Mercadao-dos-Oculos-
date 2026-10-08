@@ -532,10 +532,15 @@ export default function Cobrancas() {
   /* ── helpers derivados ── */
   function abertos(dev) { return (dev.cobrancas_boletos || []).filter(b => !boletoQuitado(b)) }
   function valorAberto(dev) { return abertos(dev).reduce((s, b) => s + (b.valor || 0), 0) }
+  // VENCIDOS = em aberto e com vencimento antes de hoje (os "a vencer" não entram).
+  const hojeISO = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()  // data local
+  function vencidos(dev) { return abertos(dev).filter(b => b.data_vencimento && String(b.data_vencimento).slice(0, 10) < hojeISO) }
+  function valorVencido(dev) { return vencidos(dev).reduce((s, b) => s + (b.valor || 0), 0) }
 
   /* ── filtros ── */
   const listaFiltrada = devedores.filter(dev => {
-    if (abertos(dev).length === 0) return false
+    // Só clientes com boleto VENCIDO (em aberto e vencimento antes de hoje).
+    if (vencidos(dev).length === 0) return false
     if (filtros.busca && !dev.nome_pagador.toLowerCase().includes(filtros.busca.toLowerCase())) return false
     if (filtros.status && dev.status_cobranca !== filtros.status) return false
     if (filtros.somenteNovos && dev.status_cobranca !== 'Novo') return false
@@ -544,7 +549,8 @@ export default function Cobrancas() {
     if (filtros.audiencia === 'com' && !dev.data_audiencia) return false
     if (filtros.audiencia === 'sem' &&  dev.data_audiencia) return false
     if (filtroVencInicio || filtroVencFim) {
-      const match = (dev.cobrancas_boletos || []).some(b => {
+      // Filtro de vencimento olha só os boletos vencidos (ignora pagos e a vencer).
+      const match = vencidos(dev).some(b => {
         if (!b.data_vencimento) return false
         if (filtroVencInicio && b.data_vencimento < filtroVencInicio) return false
         if (filtroVencFim    && b.data_vencimento > filtroVencFim)    return false
@@ -1048,8 +1054,8 @@ export default function Cobrancas() {
   /* ── imprimir relatório dos devedores conforme o filtro atual ── */
   function imprimirRelatorio() {
     if (!listaFiltrada.length) return
-    const totalVal = listaFiltrada.reduce((s, dev) => s + valorAberto(dev), 0)
-    const totalAbertos = listaFiltrada.reduce((s, dev) => s + abertos(dev).length, 0)
+    const totalVal = listaFiltrada.reduce((s, dev) => s + valorVencido(dev), 0)
+    const totalAbertos = listaFiltrada.reduce((s, dev) => s + vencidos(dev).length, 0)
     const mostrarFilial = filiais.length > 1
 
     const linhas = listaFiltrada.map(dev => `
@@ -1057,8 +1063,8 @@ export default function Cobrancas() {
         <td>${escHtml(dev.nome_pagador)}</td>
         ${mostrarFilial ? `<td>${escHtml(filialMap[dev.filial_id] || '—')}</td>` : ''}
         <td>${escHtml(dev.telefone || '—')}</td>
-        <td class="c">${abertos(dev).length}</td>
-        <td class="n">${fBRL(valorAberto(dev))}</td>
+        <td class="c">${vencidos(dev).length}</td>
+        <td class="n">${fBRL(valorVencido(dev))}</td>
         <td>${escHtml(dev.status_cobranca || '—')}</td>
         <td class="c">${dev.pequenas_causas ? 'Sim' : '—'}</td>
         <td>${dev.data_audiencia ? fDate(dev.data_audiencia) : '—'}</td>
@@ -1097,8 +1103,8 @@ export default function Cobrancas() {
         <th>Devedor</th>
         ${mostrarFilial ? '<th>Filial</th>' : ''}
         <th>Telefone</th>
-        <th class="c">Em aberto</th>
-        <th class="n">Valor em aberto</th>
+        <th class="c">Vencidos</th>
+        <th class="n">Valor vencido</th>
         <th>Status</th>
         <th class="c">P. Causas</th>
         <th>Audiência</th>
@@ -2044,15 +2050,15 @@ export default function Cobrancas() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
                   <thead>
                     <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
-                      {['Devedor', 'Pagador', 'Telefone', 'Em aberto', 'Valor em aberto', 'Status', 'P. Causas', 'Audiência', 'Atualização'].map(h => (
+                      {['Devedor', 'Pagador', 'Telefone', 'Vencidos', 'Valor vencido', 'Status', 'P. Causas', 'Audiência', 'Atualização'].map(h => (
                         <th key={h} style={{ padding: '0.65rem 0.875rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: '600', color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap', fontFamily: F.body }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {listaFiltrada.map(dev => {
-                      const qtdAbertos = abertos(dev).length
-                      const valAberto  = valorAberto(dev)
+                      const qtdAbertos = vencidos(dev).length
+                      const valAberto  = valorVencido(dev)
                       const sStyle     = statusStyle(dev.status_cobranca)
                       return (
                         <tr
