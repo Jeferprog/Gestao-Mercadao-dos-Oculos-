@@ -1597,6 +1597,9 @@ export default function Vendas() {
                                   ['Vendedor', vendedorMap[v.vendedor_id] || '—'],
                                   ...(filiais.length > 1 ? [['Filial', filialMap[v.filial_id] || '—']] : []),
                                   ['Forma de pagamento', v.num_parcelas >= 2 ? `${v.forma_pagamento || '—'} (${v.num_parcelas}×)` : (v.forma_pagamento || '—')],
+                                  ...(Number(v.entrada_valor) > 0
+                                    ? [['Entrada', `${fBRL(v.entrada_valor)}${(v.entrada_forma || v.pagamento_entrada) ? ` (${v.entrada_forma || v.pagamento_entrada})` : ''}`]]
+                                    : []),
                                   ['Valor bruto', fBRL(v.valor_bruto)],
                                   ['Desconto', v.desconto > 0 ? `- ${fBRL(v.desconto)}` : '—'],
                                   ['Tarifa', v.tarifa > 0 ? `+ ${fBRL(v.tarifa)}` : '—'],
@@ -1626,7 +1629,7 @@ export default function Vendas() {
                                         padding: '0.3rem 0.6rem', fontSize: '0.78rem', fontFamily: F.body,
                                         color: C.onSurface, display: 'inline-flex', gap: '0.4rem', alignItems: 'center',
                                       }}>
-                                        <strong>{p.n}ª</strong>
+                                        <strong>{p.n === 1 && MODS_ENTRADA_PARCELA.includes(v.pagamento_modalidade) ? 'Entrada' : `${p.n}ª`}</strong>
                                         <span style={{ color: C.onSurfaceVariant }}>{fDateBR(p.data)}</span>
                                         <span style={{ fontFamily: F.mono }}>{fBRL(p.valor)}</span>
                                       </span>
