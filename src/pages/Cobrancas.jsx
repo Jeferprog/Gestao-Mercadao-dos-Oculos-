@@ -481,6 +481,7 @@ export default function Cobrancas() {
   const [filtroBolFilial,    setFiltroBolFilial]    = useState('')
   const [filtroBolVencInicio,setFiltroBolVencInicio]= useState('')
   const [filtroBolVencFim,   setFiltroBolVencFim]   = useState('')
+  const [filtroBolRapido,    setFiltroBolRapido]    = useState('')  // '', aberto, vencido, a_vencer, quitado
 
   const [docs,         setDocs]         = useState([])
   const [loadingDocs,  setLoadingDocs]  = useState(false)
@@ -1010,7 +1011,18 @@ export default function Cobrancas() {
     }))
   )
   const sitsBancoDB = [...new Set(todosBoletos.map(b => b.situacao_boleto).filter(Boolean))].sort()
+  // Classificação rápida (mesma regra da aba Cobranças).
+  function classeBoleto(b) {
+    if (boletoQuitado(b)) return 'quitado'
+    return b.data_vencimento && String(b.data_vencimento).slice(0, 10) < hojeISO ? 'vencido' : 'a_vencer'
+  }
+  const contagemRapida = todosBoletos.reduce((acc, b) => { const c = classeBoleto(b); acc[c] = (acc[c] || 0) + 1; return acc }, {})
+  contagemRapida.aberto = (contagemRapida.vencido || 0) + (contagemRapida.a_vencer || 0)
   const boletosFiltrados = todosBoletos.filter(b => {
+    if (filtroBolRapido) {
+      const c = classeBoleto(b)
+      if (filtroBolRapido === 'aberto' ? c === 'quitado' : c !== filtroBolRapido) return false
+    }
     if (filtroBolSitAtual && b.situacao_atual !== filtroBolSitAtual) return false
     if (filtroBolSitBanco && b.situacao_boleto !== filtroBolSitBanco) return false
     if (filtroBolFilial && b.filial_id_dev !== filtroBolFilial) return false
@@ -2220,6 +2232,31 @@ export default function Cobrancas() {
         <>
           {/* Filtros */}
           <div style={{ ...dsCard, marginBottom: '1rem', padding: '1rem 1.25rem' }}>
+            {/* Filtro rápido */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: '700', color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body, marginRight: '0.25rem' }}>Mostrar:</span>
+              {[
+                ['', 'Todos', todosBoletos.length],
+                ['aberto', 'Em aberto', contagemRapida.aberto || 0],
+                ['vencido', 'Vencidos', contagemRapida.vencido || 0],
+                ['a_vencer', 'A vencer', contagemRapida.a_vencer || 0],
+                ['quitado', 'Quitados', contagemRapida.quitado || 0],
+              ].map(([v, rotulo, qtd]) => {
+                const ativo = filtroBolRapido === v
+                return (
+                  <button key={v || 'todos'} onClick={() => setFiltroBolRapido(v)}
+                    style={{
+                      padding: '0.35rem 0.8rem', borderRadius: '999px', cursor: 'pointer', fontSize: '0.8rem', fontFamily: F.body,
+                      fontWeight: ativo ? '700' : '500',
+                      border: `1.5px solid ${ativo ? C.primaryContainer : C.borderSubtle}`,
+                      background: ativo ? C.primaryContainer : C.surfaceContainerLowest,
+                      color: ativo ? C.onPrimary : C.onSurfaceVariant,
+                    }}>
+                    {rotulo} <span style={{ opacity: 0.8, fontFamily: F.mono }}>({qtd})</span>
+                  </button>
+                )
+              })}
+            </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.625rem', alignItems: 'center' }}>
               <select
                 value={filtroBolSitAtual} onChange={e => setFiltroBolSitAtual(e.target.value)}
@@ -2253,7 +2290,7 @@ export default function Cobrancas() {
                 style={{ ...inputCss, width: '140px' }} title="Vencimento até"
               />
               <button
-                onClick={() => { setFiltroBolSitAtual(''); setFiltroBolSitBanco(''); setFiltroBolFilial(''); setFiltroBolVencInicio(''); setFiltroBolVencFim('') }}
+                onClick={() => { setFiltroBolRapido(''); setFiltroBolSitAtual(''); setFiltroBolSitBanco(''); setFiltroBolFilial(''); setFiltroBolVencInicio(''); setFiltroBolVencFim('') }}
                 style={{ padding: '0.45rem 0.9rem', borderRadius: '0.5rem', border: `1px solid ${C.borderSubtle}`, background: C.surfaceContainerHigh, color: C.onSurfaceVariant, cursor: 'pointer', fontSize: '0.82rem', fontFamily: F.body }}
               >Limpar filtros</button>
               <button
