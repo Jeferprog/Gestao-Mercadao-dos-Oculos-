@@ -993,6 +993,84 @@ function TabVendedores({ showToast }) {
   )
 }
 
+/* ── Aba Sugestões (enviadas pelo balãozinho) ── */
+function TabSugestoes({ showToast }) {
+  const [lista, setLista] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [erro, setErro] = useState('')
+  const [mostrarLidas, setMostrarLidas] = useState(false)
+
+  const carregar = useCallback(async () => {
+    setLoading(true)
+    const { data, error } = await supabase.from('sugestoes').select('*').order('created_at', { ascending: false }).limit(500)
+    if (error) { logErro('Carregar sugestões', error); setErro(error.message) } else setErro('')
+    setLista(data || [])
+    setLoading(false)
+  }, [])
+  useEffect(() => { carregar() }, [carregar])
+
+  async function marcar(s, lida) {
+    const { error } = await supabase.from('sugestoes').update({ lida }).eq('id', s.id)
+    if (error) return showToast('Erro: ' + error.message)
+    setLista(prev => prev.map(x => x.id === s.id ? { ...x, lida } : x))
+  }
+  async function excluir(s) {
+    if (!window.confirm('Excluir esta sugestão?')) return
+    const { error } = await supabase.from('sugestoes').delete().eq('id', s.id)
+    if (error) return showToast('Erro: ' + error.message)
+    setLista(prev => prev.filter(x => x.id !== s.id))
+  }
+
+  const naoLidas = lista.filter(s => !s.lida).length
+  const visiveis = lista.filter(s => mostrarLidas || !s.lida)
+
+  if (loading) return <p style={{ color: C.onSurfaceVariant, fontFamily: F.body }}>Carregando sugestões...</p>
+
+  return (
+    <div style={cardMb}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
+        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '700', color: C.onSurface, fontFamily: F.headline }}>
+          Sugestões de melhoria {naoLidas > 0 && <span style={{ color: C.primaryContainer }}>· {naoLidas} nova{naoLidas !== 1 ? 's' : ''}</span>}
+        </h3>
+        <label style={{ fontSize: '0.82rem', color: C.onSurfaceVariant, fontFamily: F.body, display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+          <input type="checkbox" checked={mostrarLidas} onChange={e => setMostrarLidas(e.target.checked)} />
+          Mostrar as já lidas
+        </label>
+      </div>
+      {erro && (
+        <p style={{ color: C.error, fontSize: '0.85rem', fontFamily: F.body }}>Não foi possível carregar as sugestões: {erro}</p>
+      )}
+      {!erro && visiveis.length === 0 && (
+        <p style={{ color: C.outlineVariant, fontSize: '0.9rem', fontFamily: F.body, margin: 0 }}>
+          {lista.length === 0 ? 'Nenhuma sugestão recebida ainda.' : 'Nenhuma sugestão nova.'}
+        </p>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        {visiveis.map(s => (
+          <div key={s.id} style={{
+            border: `1px solid ${C.borderSubtle}`, borderRadius: '0.5rem', padding: '0.85rem 1rem',
+            background: s.lida ? C.surfaceContainerLow : C.surfaceContainerLowest,
+          }}>
+            <div style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body, marginBottom: '0.4rem' }}>
+              {new Date(s.created_at).toLocaleString('pt-BR')} · <strong>{s.autor_nome || 'Usuário'}</strong>
+              {s.pagina && <> · tela {s.pagina}</>}
+            </div>
+            <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', color: C.onSurface, fontFamily: F.body, lineHeight: 1.5 }}>{s.texto}</div>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
+              <button onClick={() => marcar(s, !s.lida)} style={{ ...btnSecondary, padding: '0.3rem 0.75rem', fontSize: '0.8rem' }}>
+                {s.lida ? 'Marcar como nova' : 'Marcar como lida'}
+              </button>
+              <button onClick={() => excluir(s)} style={{ ...btnSecondary, padding: '0.3rem 0.75rem', fontSize: '0.8rem', color: C.statusDanger }}>
+                Excluir
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ── Página principal ── */
 export default function Configuracoes() {
   const { isAdmin, loading } = useAuth()
@@ -1030,6 +1108,7 @@ export default function Configuracoes() {
     color: active ? C.primaryContainer : C.onSurfaceVariant,
     borderBottom: active ? `2.5px solid ${C.primaryContainer}` : '2.5px solid transparent',
     transition: 'all 0.15s',
+    whiteSpace: 'nowrap', flexShrink: 0,
   })
 
   return (
@@ -1039,7 +1118,7 @@ export default function Configuracoes() {
       </h1>
 
       {/* Tabs */}
-      <div style={{ borderBottom: `1px solid ${C.borderSubtle}`, marginBottom: '1.75rem', display: 'flex' }}>
+      <div style={{ borderBottom: `1px solid ${C.borderSubtle}`, marginBottom: '1.75rem', display: 'flex', overflowX: 'auto' }}>
         <button onClick={() => setActiveTab('sistema')} style={tabStyle(activeTab === 'sistema')}>
           ⚙️ Sistema
         </button>
@@ -1049,11 +1128,15 @@ export default function Configuracoes() {
         <button onClick={() => setActiveTab('vendedores')} style={tabStyle(activeTab === 'vendedores')}>
           👥 Vendedores
         </button>
+        <button onClick={() => setActiveTab('sugestoes')} style={tabStyle(activeTab === 'sugestoes')}>
+          💡 Sugestões
+        </button>
       </div>
 
       {activeTab === 'sistema'    && <TabSistema    showToast={showToast} />}
       {activeTab === 'filiais'    && <TabFiliais    showToast={showToast} />}
       {activeTab === 'vendedores' && <TabVendedores showToast={showToast} />}
+      {activeTab === 'sugestoes'  && <TabSugestoes  showToast={showToast} />}
 
       <Toast msg={toast} />
     </div>
