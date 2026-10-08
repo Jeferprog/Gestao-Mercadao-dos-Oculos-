@@ -1581,6 +1581,9 @@ export default function Vendas() {
                                   ['Vendedor', vendedorMap[v.vendedor_id] || '—'],
                                   ...(filiais.length > 1 ? [['Filial', filialMap[v.filial_id] || '—']] : []),
                                   ['Forma de pagamento', v.num_parcelas >= 2 ? `${v.forma_pagamento || '—'} (${v.num_parcelas}×)` : (v.forma_pagamento || '—')],
+                                  ...(MODS_PRESTACAO.includes(v.pagamento_modalidade)
+                                    ? [['Boleto emitido em', v.boleto_emitido_em ? fDateBR(v.boleto_emitido_em) : '']]
+                                    : []),
                                   ...(Number(v.entrada_valor) > 0
                                     ? [['Entrada', `${fBRL(v.entrada_valor)}${(v.entrada_forma || v.pagamento_entrada) ? ` (${v.entrada_forma || v.pagamento_entrada})` : ''}`]]
                                     : []),
