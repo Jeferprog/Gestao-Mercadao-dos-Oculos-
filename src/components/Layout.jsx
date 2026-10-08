@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import Sidebar from './Sidebar'
+import BalaoSugestao from './BalaoSugestao'
 import { C, F } from '../lib/ds'
 
 function useIsMobile(breakpoint = 768) {
@@ -142,6 +143,8 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+
+      <BalaoSugestao />
     </div>
   )
 }

@@ -283,7 +283,8 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   const desc = num(form.desconto)
   const final = num(form.valor_final)
   const tarifa = num(form.tarifa)
-  // Base do parcelamento = valor da venda + tarifa (a tarifa entra antes de dividir).
+  // Base do parcelamento = valor da venda (+ tarifa só em vendas antigas que já tinham;
+  // o campo Tarifa foi retirado da tela).
   const baseParc = round2(final + tarifa)
   const isGrau = usaNumeroVenda(form.tipo_venda)
 
@@ -305,10 +306,6 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   function mudarEntradaValor(val) {
     const f = { ...form, entrada_valor: val }
     onChange({ ...f, parcelas: calcParcelas(f, baseParc) })
-  }
-  function mudarTarifa(val) {
-    const f = { ...form, tarifa: val }
-    onChange({ ...f, parcelas: calcParcelas(f, round2(final + num(val))) })
   }
   // Parcelas no cartão de crédito: só atualiza o texto da forma de pagamento (sem cobrança).
   function mudarParcelasCartao(raw) {
@@ -439,19 +436,6 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
             onChange={e => handleBrutoDesc('desconto', e.target.value)} />
           {desc > bruto && bruto > 0 && (
             <span style={{ color: C.error, fontSize: '0.78rem', fontFamily: F.body }}>Desconto maior que o valor bruto</span>
-          )}
-        </div>
-
-        {/* Tarifa (somada ao valor antes de calcular as parcelas) */}
-        <div>
-          <Label>Tarifa (R$)</Label>
-          <input style={inputCss} type="number" min="0" step="0.01" placeholder="0,00"
-            value={form.tarifa}
-            onChange={e => mudarTarifa(e.target.value)} />
-          {tarifa > 0 && (
-            <span style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body }}>
-              Base p/ parcelas: {fBRL(baseParc)}
-            </span>
           )}
         </div>
 
