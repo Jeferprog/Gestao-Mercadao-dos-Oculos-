@@ -21,6 +21,31 @@ function boletoEmAberto(b) {
   return b.situacao_atual !== 'Liquidada' && !situacaoBaixa(b.situacao_boleto) && !situacaoBaixa(b.situacao_atual)
 }
 function todayISO() { return new Date().toISOString().slice(0, 10) }
+function hojeLocalISO() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function semAcentoUp(t) { return String(t || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') }
+// Situações que o usuário escolhe à mão na Cobrança (Configurações). Quando a
+// "Situação Atual" é uma delas, ela vale mais que a situação vinda do banco.
+const SITUACOES_MANUAIS_PADRAO = ['Pendente', 'Em negociação', 'Acordado', 'Liquidada', 'Protestado', 'Ação judicial', 'Incobrável']
+function situacaoEfetiva(b, manuais) {
+  return manuais.has(b.situacao_atual) ? b.situacao_atual : (b.situacao_boleto || b.situacao_atual || '')
+}
+// Cards de inadimplência: vencidos, protestados e negativados (só em aberto).
+function calcInadimplencia(bols, manuais) {
+  const hoje = hojeLocalISO()
+  const r = { qtdVencidos: 0, totVencidos: 0, qtdProtestados: 0, totProtestados: 0, qtdNegativados: 0, totNegativados: 0 }
+  const devsV = new Set(), devsP = new Set(), devsN = new Set()
+  bols.forEach(b => {
+    const v = b.valor || 0
+    if (b.data_vencimento && String(b.data_vencimento).slice(0, 10) < hoje) { r.qtdVencidos++; r.totVencidos += v; devsV.add(b.devedor_id) }
+    const sit = semAcentoUp(situacaoEfetiva(b, manuais))
+    if (sit.includes('PROTEST')) { r.qtdProtestados++; r.totProtestados += v; devsP.add(b.devedor_id) }
+    if (sit.includes('NEGATIV')) { r.qtdNegativados++; r.totNegativados += v; devsN.add(b.devedor_id) }
+  })
+  return { ...r, devsVencidos: devsV.size, devsProtestados: devsP.size, devsNegativados: devsN.size }
+}
 function firstOfMonth() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
@@ -246,6 +271,30 @@ function FilialSection({ nome, stats, chartData, loading, navigate, mesTit, show
           shimmer={loading}
           onClick={() => navigate('/cobrancas')}
         />
+        <StatCard
+          icon="⏰" bg={C.statusDangerBg} color={C.statusDanger}
+          label="Boletos Vencidos"
+          value={fBRL(stats.totVencidos)}
+          sub={`${stats.qtdVencidos ?? 0} boleto${stats.qtdVencidos !== 1 ? 's' : ''} · ${stats.devsVencidos ?? 0} cliente${stats.devsVencidos !== 1 ? 's' : ''}`}
+          shimmer={loading}
+          onClick={() => navigate('/cobrancas')}
+        />
+        <StatCard
+          icon="📜" bg={C.statusWarningBg} color={C.statusWarning}
+          label="Boletos Protestados"
+          value={fBRL(stats.totProtestados)}
+          sub={`${stats.qtdProtestados ?? 0} boleto${stats.qtdProtestados !== 1 ? 's' : ''} · ${stats.devsProtestados ?? 0} cliente${stats.devsProtestados !== 1 ? 's' : ''}`}
+          shimmer={loading}
+          onClick={() => navigate('/cobrancas')}
+        />
+        <StatCard
+          icon="🚫" bg={C.surfaceContainerHigh} color={C.onSurface}
+          label="Boletos Negativados"
+          value={fBRL(stats.totNegativados)}
+          sub={`${stats.qtdNegativados ?? 0} boleto${stats.qtdNegativados !== 1 ? 's' : ''} · ${stats.devsNegativados ?? 0} cliente${stats.devsNegativados !== 1 ? 's' : ''}`}
+          shimmer={loading}
+          onClick={() => navigate('/cobrancas')}
+        />
       </div>
 
       {/* Gráfico */}
@@ -327,6 +376,10 @@ export default function Dashboard() {
         setFiliais(currentFiliais)
       }
 
+      // Situações manuais (Configurações → Situações de cobrança)
+      const { data: cfgSit } = await supabase.from('configuracoes').select('valor').eq('chave', 'situacoes_cobranca').maybeSingle()
+      const manuais = new Set(cfgSit?.valor ? cfgSit.valor.split(',').map(x => x.trim()).filter(Boolean) : SITUACOES_MANUAIS_PADRAO)
+
       /* ── ADMIN filial específica ── */
       if (filtroFilial) {
         const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud, rLem] = await Promise.all([
@@ -335,7 +388,7 @@ export default function Dashboard() {
           todos(() => supabase.from('despesas').select('valor').eq('pago', false).eq('filial_id', filtroFilial)),
           todos(() => supabase.from('despesas').select('valor').eq('pago', false).lt('data_vencimento', hoje).eq('filial_id', filtroFilial)),
           supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
-          todos(() => supabase.from('cobrancas_boletos').select('valor, devedor_id, situacao_atual, situacao_boleto').is('data_liquidacao', null).eq('filial_id', filtroFilial)),
+          todos(() => supabase.from('cobrancas_boletos').select('valor, devedor_id, situacao_atual, situacao_boleto, data_vencimento').is('data_liquidacao', null).eq('filial_id', filtroFilial)),
           todos(() => supabase.from('cobrancas_devedores').select('id, status_cobranca').eq('filial_id', filtroFilial)),
           supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia, filial_id').gte('data_audiencia', hoje).lte('data_audiencia', em7).order('data_audiencia').limit(8),
           supabase.from('cobrancas_lembretes').select('id, data, observacao, devedor_id, cobrancas_devedores(nome_pagador)').eq('concluido', false).lte('data', em7).eq('filial_id', filtroFilial).order('data').limit(10),
@@ -346,6 +399,7 @@ export default function Dashboard() {
         const bs = new Set(bols.map(b => b.devedor_id))
         setStats({
           ...calcStats(vH, vM, bols, devs),
+          ...calcInadimplencia(bols, manuais),
           totDespAberto:   dA.reduce((s, d)   => s + (d.valor || 0), 0), qtdDespAberto:   dA.length,
           totDespAtrasado: dAtr.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dAtr.length,
           qtdDevsAberto: bs.size,
@@ -365,7 +419,7 @@ export default function Dashboard() {
         todos(() => supabase.from('despesas').select('valor, filial_id').eq('pago', false)),
         todos(() => supabase.from('despesas').select('valor, filial_id').eq('pago', false).lt('data_vencimento', hoje)),
         supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
-        todos(() => supabase.from('cobrancas_boletos').select('valor, devedor_id, filial_id, situacao_atual, situacao_boleto').is('data_liquidacao', null)),
+        todos(() => supabase.from('cobrancas_boletos').select('valor, devedor_id, filial_id, situacao_atual, situacao_boleto, data_vencimento').is('data_liquidacao', null)),
         todos(() => supabase.from('cobrancas_devedores').select('id, status_cobranca, filial_id')),
         supabase.from('cobrancas_devedores').select('nome_pagador, data_audiencia, filial_id').gte('data_audiencia', hoje).lte('data_audiencia', em7).order('data_audiencia').limit(8),
         supabase.from('cobrancas_lembretes').select('id, data, observacao, devedor_id, cobrancas_devedores(nome_pagador)').eq('concluido', false).lte('data', em7).order('data').limit(10),
@@ -387,6 +441,7 @@ export default function Dashboard() {
           id: f.id, nome: f.nome,
           stats: {
             ...calcStats(vH, vM, bL, dL),
+            ...calcInadimplencia(bL, manuais),
             totDespAberto:   dFL.reduce((s, d)  => s + (d.valor || 0), 0), qtdDespAberto:   dFL.length,
             totDespAtrasado: dFLa.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dFLa.length,
           },
@@ -399,6 +454,7 @@ export default function Dashboard() {
       const bsAll = new Set(bolAll.map(b => b.devedor_id))
       setStatsTotal({
         ...calcStats(vHAll, vMAll, bolAll, devsAll),
+        ...calcInadimplencia(bolAll, manuais),
         totDespAberto:   dA.reduce((s, d)   => s + (d.valor || 0), 0), qtdDespAberto:   dA.length,
         totDespAtrasado: dAtr.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dAtr.length,
         qtdDevsAberto: bsAll.size,
