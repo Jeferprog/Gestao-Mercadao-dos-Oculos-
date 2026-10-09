@@ -251,12 +251,10 @@ function FilialSection({ nome, stats, chartData, loading, navigate, mesTit, show
         />
         {showDesp && (
           <StatCard
-            icon="💳" bg={C.statusWarningBg} color={C.statusWarning}
-            label="Contas a Pagar"
-            value={fBRL(stats.totDespAberto)}
-            sub={`${stats.qtdDespAberto ?? 0} conta${stats.qtdDespAberto !== 1 ? 's' : ''} em aberto`}
-            alert={stats.totDespAtrasado > 0 ? `⚠️ ${fBRL(stats.totDespAtrasado)} atrasado` : null}
-            alertColor={C.statusDanger}
+            icon="✅" bg={C.statusSuccessBg} color={C.statusSuccess}
+            label="Total de Contas Pagas"
+            value={fBRL(stats.totDespPagas)}
+            sub={`${stats.qtdDespPagas ?? 0} conta${stats.qtdDespPagas !== 1 ? 's' : ''} paga${stats.qtdDespPagas !== 1 ? 's' : ''} no mês`}
             shimmer={loading}
             onClick={() => navigate('/resumo')}
           />
@@ -385,7 +383,7 @@ export default function Dashboard() {
         const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud, rLem] = await Promise.all([
           todos(() => supabase.from('vendas').select('valor_final').eq('data_venda', hoje).eq('efetivada', true).eq('filial_id', filtroFilial)),
           todos(() => supabase.from('vendas').select('data_venda, valor_final').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true).eq('filial_id', filtroFilial)),
-          todos(() => supabase.from('despesas').select('valor').eq('pago', false).eq('filial_id', filtroFilial)),
+          todos(() => supabase.from('despesas').select('valor').eq('pago', true).gte('data_pagamento', inicio).lte('data_pagamento', fim).eq('filial_id', filtroFilial)),
           todos(() => supabase.from('despesas').select('valor').eq('pago', false).lt('data_vencimento', hoje).eq('filial_id', filtroFilial)),
           supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
           todos(() => supabase.from('cobrancas_boletos').select('valor, devedor_id, situacao_atual, situacao_boleto, data_vencimento').is('data_liquidacao', null).eq('filial_id', filtroFilial)),
@@ -400,7 +398,7 @@ export default function Dashboard() {
         setStats({
           ...calcStats(vH, vM, bols, devs),
           ...calcInadimplencia(bols, manuais),
-          totDespAberto:   dA.reduce((s, d)   => s + (d.valor || 0), 0), qtdDespAberto:   dA.length,
+          totDespPagas:   dA.reduce((s, d)   => s + (d.valor || 0), 0), qtdDespPagas:   dA.length,
           totDespAtrasado: dAtr.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dAtr.length,
           qtdDevsAberto: bs.size,
         })
@@ -416,7 +414,7 @@ export default function Dashboard() {
       const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud, rLem] = await Promise.all([
         todos(() => supabase.from('vendas').select('valor_final, filial_id').eq('data_venda', hoje).eq('efetivada', true)),
         todos(() => supabase.from('vendas').select('data_venda, valor_final, filial_id').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true)),
-        todos(() => supabase.from('despesas').select('valor, filial_id').eq('pago', false)),
+        todos(() => supabase.from('despesas').select('valor, filial_id').eq('pago', true).gte('data_pagamento', inicio).lte('data_pagamento', fim)),
         todos(() => supabase.from('despesas').select('valor, filial_id').eq('pago', false).lt('data_vencimento', hoje)),
         supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
         todos(() => supabase.from('cobrancas_boletos').select('valor, devedor_id, filial_id, situacao_atual, situacao_boleto, data_vencimento').is('data_liquidacao', null)),
@@ -442,7 +440,7 @@ export default function Dashboard() {
           stats: {
             ...calcStats(vH, vM, bL, dL),
             ...calcInadimplencia(bL, manuais),
-            totDespAberto:   dFL.reduce((s, d)  => s + (d.valor || 0), 0), qtdDespAberto:   dFL.length,
+            totDespPagas:   dFL.reduce((s, d)  => s + (d.valor || 0), 0), qtdDespPagas:   dFL.length,
             totDespAtrasado: dFLa.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dFLa.length,
           },
           chartData: buildChartData(vM),
@@ -455,7 +453,7 @@ export default function Dashboard() {
       setStatsTotal({
         ...calcStats(vHAll, vMAll, bolAll, devsAll),
         ...calcInadimplencia(bolAll, manuais),
-        totDespAberto:   dA.reduce((s, d)   => s + (d.valor || 0), 0), qtdDespAberto:   dA.length,
+        totDespPagas:   dA.reduce((s, d)   => s + (d.valor || 0), 0), qtdDespPagas:   dA.length,
         totDespAtrasado: dAtr.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dAtr.length,
         qtdDevsAberto: bsAll.size,
       })
