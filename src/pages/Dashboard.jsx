@@ -93,6 +93,43 @@ function calcStats(vHoje, vMes, bols, devs) {
   }
 }
 
+/* ── Vendas por forma de pagamento ──
+   Grupos: Dinheiro e Pix · Cartão · Crediário MultiCrédito · Crediário próprio.
+   Em vendas com entrada, a ENTRADA vai para a forma em que foi paga
+   (dinheiro, pix ou cartão) e o RESTANTE vai para a modalidade da venda. */
+function grupoDaForma(txt) {
+  const t = semAcentoUp(txt)
+  if (!t) return null
+  if (t.includes('MULTICRED')) return 'mc'
+  if (t.includes('CREDIARIO') || t.includes('BOLETO')) return 'cred'
+  if (t.includes('CART')) return 'cartao'
+  if (t.includes('PIX')) return 'pix'
+  if (t.includes('DINHEIRO') || t.includes('VISTA')) return 'dinheiro'
+  return null
+}
+const GRUPO_MODALIDADE = {
+  cartao_credito: 'cartao', cartao_debito: 'cartao', cartao: 'cartao',
+  boleto_multicredito: 'mc', boleto_multicredito_sem: 'mc',
+  crediario: 'cred', crediario_entrada: 'cred', boleto: 'cred',
+}
+function somarFormas(vendas) {
+  const r = { dinheiro: 0, pix: 0, cartao: 0, mc: 0, cred: 0, outros: 0 }
+  const add = (g, v) => { r[g || 'outros'] += v }
+  ;(vendas || []).forEach(v => {
+    const total = Number(v.valor_final) || 0
+    const m = v.pagamento_modalidade
+    if (!m) { add(grupoDaForma(v.forma_pagamento), total); return }            // vendas antigas
+    if (m === 'avista') { add(grupoDaForma(v.pagamento_entrada) || 'dinheiro', total); return }
+    const entrada = Math.min(Math.max(Number(v.entrada_valor) || 0, 0), total)
+    if (entrada > 0) add(grupoDaForma(v.pagamento_entrada) || 'dinheiro', entrada)
+    add(GRUPO_MODALIDADE[m] || grupoDaForma(v.forma_pagamento), total - entrada)
+  })
+  return r
+}
+function calcFormas(vHoje, vMes) {
+  return { formasMes: somarFormas(vMes), formasHoje: somarFormas(vHoje) }
+}
+
 /* ── Gráfico de barras (SVG inline) ── */
 function BarChart({ dados, shimmer }) {
   if (shimmer) return (
@@ -208,6 +245,49 @@ function LembreteShimmer() {
   )
 }
 
+/* ── Bloco: vendas do mês por forma de pagamento ── */
+function FormasPagamento({ stats, loading }) {
+  const m = stats.formasMes || {}, h = stats.formasHoje || {}
+  const totalMes = (m.dinheiro || 0) + (m.pix || 0) + (m.cartao || 0) + (m.mc || 0) + (m.cred || 0) + (m.outros || 0)
+  const pct = v => totalMes > 0 ? ` · ${Math.round((v / totalMes) * 100)}% do mês` : ''
+  const hojeTxt = v => v > 0 ? `Hoje: ${fBRL(v)}` : 'Hoje: —'
+  const din = (m.dinheiro || 0) + (m.pix || 0)
+  return (
+    <div style={{ marginBottom: '1.25rem' }}>
+      <div style={{ fontSize: '0.75rem', fontWeight: '700', color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body, margin: '0 0 0.6rem' }}>
+        Vendas do mês por forma de pagamento
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))', gap: '1rem' }}>
+        <StatCard icon="💵" bg={C.statusSuccessBg} color={C.statusSuccess}
+          label="Dinheiro e Pix" value={fBRL(din)}
+          sub={`Dinheiro ${fBRL(m.dinheiro)} · Pix ${fBRL(m.pix)}`}
+          alert={hojeTxt((h.dinheiro || 0) + (h.pix || 0)) + pct(din)} alertColor={C.onSurfaceVariant}
+          shimmer={loading} />
+        <StatCard icon="💳" bg={C.statusInfoBg} color={C.statusInfo}
+          label="Cartão" value={fBRL(m.cartao)}
+          sub="Crédito e débito"
+          alert={hojeTxt(h.cartao || 0) + pct(m.cartao || 0)} alertColor={C.onSurfaceVariant}
+          shimmer={loading} />
+        <StatCard icon="🏦" bg={C.statusWarningBg} color={C.statusWarning}
+          label="Crediário MultiCrédito" value={fBRL(m.mc)}
+          sub="Boleto MultiCredito"
+          alert={hojeTxt(h.mc || 0) + pct(m.mc || 0)} alertColor={C.onSurfaceVariant}
+          shimmer={loading} />
+        <StatCard icon="📒" bg={C.statusDangerBg} color={C.statusDanger}
+          label="Crediário Próprio" value={fBRL(m.cred)}
+          sub="Crediário e boleto da loja"
+          alert={hojeTxt(h.cred || 0) + pct(m.cred || 0)} alertColor={C.onSurfaceVariant}
+          shimmer={loading} />
+      </div>
+      {(m.outros || 0) > 0 && (
+        <div style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body, marginTop: '0.4rem' }}>
+          Sem forma de pagamento identificada: {fBRL(m.outros)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ── Seção de uma filial (cards + gráfico) ── */
 function FilialSection({ nome, stats, chartData, loading, navigate, mesTit, showDesp = false, isTotal = false }) {
   const borderColor = isTotal ? '#9d0518' : C.borderSubtle
@@ -295,6 +375,9 @@ function FilialSection({ nome, stats, chartData, loading, navigate, mesTit, show
         />
       </div>
 
+      {/* Vendas do mês por forma de pagamento */}
+      <FormasPagamento stats={stats} loading={loading} />
+
       {/* Gráfico */}
       <div style={{ ...dsCard }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -381,8 +464,8 @@ export default function Dashboard() {
       /* ── ADMIN filial específica ── */
       if (filtroFilial) {
         const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud, rLem] = await Promise.all([
-          todos(() => supabase.from('vendas').select('valor_final').eq('data_venda', hoje).eq('efetivada', true).eq('filial_id', filtroFilial)),
-          todos(() => supabase.from('vendas').select('data_venda, valor_final').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true).eq('filial_id', filtroFilial)),
+          todos(() => supabase.from('vendas').select('valor_final, pagamento_modalidade, pagamento_entrada, entrada_valor, forma_pagamento').eq('data_venda', hoje).eq('efetivada', true).eq('filial_id', filtroFilial)),
+          todos(() => supabase.from('vendas').select('data_venda, valor_final, pagamento_modalidade, pagamento_entrada, entrada_valor, forma_pagamento').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true).eq('filial_id', filtroFilial)),
           todos(() => supabase.from('despesas').select('valor').eq('pago', true).gte('data_pagamento', inicio).lte('data_pagamento', fim).eq('filial_id', filtroFilial)),
           todos(() => supabase.from('despesas').select('valor').eq('pago', false).lt('data_vencimento', hoje).eq('filial_id', filtroFilial)),
           supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
@@ -398,6 +481,7 @@ export default function Dashboard() {
         setStats({
           ...calcStats(vH, vM, bols, devs),
           ...calcInadimplencia(bols, manuais),
+          ...calcFormas(vH, vM),
           totDespPagas:   dA.reduce((s, d)   => s + (d.valor || 0), 0), qtdDespPagas:   dA.length,
           totDespAtrasado: dAtr.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dAtr.length,
           qtdDevsAberto: bs.size,
@@ -412,8 +496,8 @@ export default function Dashboard() {
 
       /* ── ADMIN: todas as filiais ── */
       const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud, rLem] = await Promise.all([
-        todos(() => supabase.from('vendas').select('valor_final, filial_id').eq('data_venda', hoje).eq('efetivada', true)),
-        todos(() => supabase.from('vendas').select('data_venda, valor_final, filial_id').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true)),
+        todos(() => supabase.from('vendas').select('valor_final, filial_id, pagamento_modalidade, pagamento_entrada, entrada_valor, forma_pagamento').eq('data_venda', hoje).eq('efetivada', true)),
+        todos(() => supabase.from('vendas').select('data_venda, valor_final, filial_id, pagamento_modalidade, pagamento_entrada, entrada_valor, forma_pagamento').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true)),
         todos(() => supabase.from('despesas').select('valor, filial_id').eq('pago', true).gte('data_pagamento', inicio).lte('data_pagamento', fim)),
         todos(() => supabase.from('despesas').select('valor, filial_id').eq('pago', false).lt('data_vencimento', hoje)),
         supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
@@ -440,6 +524,7 @@ export default function Dashboard() {
           stats: {
             ...calcStats(vH, vM, bL, dL),
             ...calcInadimplencia(bL, manuais),
+            ...calcFormas(vH, vM),
             totDespPagas:   dFL.reduce((s, d)  => s + (d.valor || 0), 0), qtdDespPagas:   dFL.length,
             totDespAtrasado: dFLa.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dFLa.length,
           },
@@ -453,6 +538,7 @@ export default function Dashboard() {
       setStatsTotal({
         ...calcStats(vHAll, vMAll, bolAll, devsAll),
         ...calcInadimplencia(bolAll, manuais),
+        ...calcFormas(vHAll, vMAll),
         totDespPagas:   dA.reduce((s, d)   => s + (d.valor || 0), 0), qtdDespPagas:   dA.length,
         totDespAtrasado: dAtr.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dAtr.length,
         qtdDevsAberto: bsAll.size,
