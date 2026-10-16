@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Login from './pages/Login'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
+import DashboardGraficos from './pages/DashboardGraficos'
 import Vendas from './pages/Vendas'
 import Resumo from './pages/Resumo'
 import Vendedores from './pages/Vendedores'
@@ -64,6 +65,7 @@ function AppRoutes() {
       >
         <Route index element={<HomeRedirect />} />
         <Route path="dashboard" element={<Dashboard />} />
+        <Route path="dashboard/graficos" element={<AdminRoute><DashboardGraficos /></AdminRoute>} />
         <Route path="vendas" element={<Vendas />} />
         <Route path="resumo" element={<AdminRoute><Resumo /></AdminRoute>} />
         <Route path="vendedores" element={<Vendedores />} />
