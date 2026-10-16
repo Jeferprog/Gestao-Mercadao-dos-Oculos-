@@ -185,6 +185,7 @@ const MODS_ENTRADA_VALOR  = ['cartao', 'boleto', 'boleto_multicredito', 'crediar
 // Cartão de crédito pode ser parcelado (na operadora). O nº de parcelas é só
 // informativo.
 const MODS_CARTAO_PARCELAS = ['cartao_credito', 'cartao']
+function ehMultiCreditoMod(m) { return m === 'boleto_multicredito' || m === 'boleto_multicredito_sem' }
 function modalidadeTemEntrada(v) {
   const m = MODALIDADES_PAGAMENTO.find(x => x.v === v)
   return m ? m.temEntrada : false
@@ -223,6 +224,8 @@ const FORM_INIT = {
   pagamento_modalidade: '',
   pagamento_entrada: '',
   entrada_valor: '',
+  valor_financiado: '',
+  _finManual: false,
   forma_pagamento: '',
   num_parcelas: 1,
   parcelas: [],
@@ -251,6 +254,16 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
     ? valoresParcelasMC(N, restante, tabelaMC)
     : valoresParcelas(N, restante, parcelasSemJuros, jurosPercent)
 
+  // Valor Financiado do MultiCredito: sugestão = Valor Final (menos a entrada,
+  // quando houver). Se o usuário digitar, vale o valor digitado.
+  function sugestaoFinanciado(f, finalV) {
+    const entr = MODS_ENTRADA_PARCELA.includes(f.pagamento_modalidade) ? num(f.entrada_valor) : 0
+    return Math.max(0, round2(finalV - entr))
+  }
+  function valorFinanciadoDe(f, finalV) {
+    return f._finManual && f.valor_financiado !== '' ? Math.max(0, num(f.valor_financiado)) : sugestaoFinanciado(f, finalV)
+  }
+
   // Monta as parcelas: entrada (se houver) como 1ª, e o RESTANTE (valor − entrada)
   // dividido em N prestações — com juros conforme a modalidade.
   function calcParcelas(f, finalV) {
@@ -260,7 +273,8 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
     const comEntrada = MODS_ENTRADA_PARCELA.includes(m) && num(f.entrada_valor) > 0
     const entrada = comEntrada ? num(f.entrada_valor) : 0
     const N = Math.max(1, Math.min(parseInt(f.num_parcelas) || 1, 36))
-    const restante = Math.max(0, round2(finalV - entrada))
+    // MultiCredito: divide o VALOR FINANCIADO (informado ou sugerido).
+    const restante = ehMultiCredito(m) ? valorFinanciadoDe(f, finalV) : Math.max(0, round2(finalV - entrada))
     const info = calcInfo(m, N, restante)
     const base = f.data_venda || todayISO()
     const off = comEntrada ? 1 : 0
@@ -289,7 +303,7 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   const isGrau = usaNumeroVenda(form.tipo_venda)
 
   const entradaVal = usaEntradaParcela ? num(form.entrada_valor) : 0
-  const restanteVal = Math.max(0, round2(baseParc - entradaVal))
+  const restanteVal = ehMultiCredito(mod) ? valorFinanciadoDe(form, baseParc) : Math.max(0, round2(baseParc - entradaVal))
   const nPrest = Math.max(1, Math.min(parseInt(form.num_parcelas) || 1, 36))
   const parcelas = form.parcelas || []
   const somaParc = parcelas.reduce((s, p) => s + num(p.valor), 0)
@@ -301,6 +315,14 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   function mudarNumParcelas(raw) {
     const nn = raw === '' ? '' : Math.max(1, Math.min(parseInt(raw) || 1, 36))
     const f = { ...form, num_parcelas: nn }
+    onChange({ ...f, parcelas: calcParcelas(f, baseParc) })
+  }
+  function mudarFinanciado(val) {
+    const f = { ...form, valor_financiado: val, _finManual: val !== '' }
+    onChange({ ...f, parcelas: calcParcelas(f, baseParc) })
+  }
+  function usarSugestaoFinanciado() {
+    const f = { ...form, valor_financiado: '', _finManual: false }
     onChange({ ...f, parcelas: calcParcelas(f, baseParc) })
   }
   function mudarEntradaValor(val) {
@@ -504,6 +526,24 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
           </div>
         )}
 
+        {/* Valor Financiado — só MultiCredito (antes do nº de parcelas) */}
+        {ehMultiCredito(mod) && (
+          <div>
+            <Label>Valor Financiado (R$)</Label>
+            <input style={inputCss} type="number" min="0" step="0.01" placeholder="0,00"
+              value={form._finManual ? form.valor_financiado : sugestaoFinanciado(form, baseParc).toFixed(2)}
+              onFocus={e => e.target.select()}
+              onChange={e => mudarFinanciado(e.target.value)} />
+            <span style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body }}>
+              {form._finManual
+                ? <>Informado manualmente · <button type="button" onClick={usarSugestaoFinanciado}
+                    style={{ background: 'none', border: 'none', padding: 0, color: C.primaryContainer, cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600', textDecoration: 'underline' }}>
+                    usar sugestão ({fBRL(sugestaoFinanciado(form, baseParc))})</button></>
+                : (usaEntradaParcela && entradaVal > 0 ? 'Sugestão: Valor Final menos a entrada' : 'Sugestão: Valor Final')}
+            </span>
+          </div>
+        )}
+
         {/* Número de prestações (divide o restante) */}
         {temPrestacoes && (
           <div>
@@ -515,7 +555,7 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
               onBlur={() => { if (form.num_parcelas === '' || parseInt(form.num_parcelas) < 1) mudarNumParcelas('1') }} />
             {restanteVal > 0 && (
               <span style={{ fontSize: '0.75rem', color: comJuros ? C.statusWarning : C.onSurfaceVariant, fontFamily: F.body }}>
-                {nPrest}× de {fBRL(infoJuros.total / nPrest)} sobre o restante {fBRL(restanteVal)}
+                {nPrest}× de {fBRL(infoJuros.total / nPrest)} sobre {ehMultiCredito(mod) ? 'o valor financiado' : 'o restante'} {fBRL(restanteVal)}
                 {comJuros ? ` (com juros — restante parcelado ${fBRL(infoJuros.total)})` : ' sem juros'}
               </span>
             )}
@@ -816,6 +856,8 @@ export default function Vendas() {
       pagamento_modalidade: v.pagamento_modalidade || '',
       pagamento_entrada: v.pagamento_entrada || '',
       entrada_valor: v.entrada_valor != null ? String(v.entrada_valor) : '',
+      valor_financiado: v.valor_financiado != null ? String(v.valor_financiado) : '',
+      _finManual: v.valor_financiado != null,
       forma_pagamento: v.forma_pagamento,
       ...carregarEdicaoParcelas(v),
       efetivada: v.efetivada !== false,
@@ -915,6 +957,11 @@ export default function Vendas() {
       num_parcelas: numParcelasSalvar,
       parcelas: parcelasPayload,
       entrada_valor: temEntradaValorSel && num(form.entrada_valor) > 0 ? num(form.entrada_valor) : null,
+      valor_financiado: ehMultiCreditoMod(modSel)
+        ? (form._finManual && form.valor_financiado !== ''
+            ? Math.max(0, num(form.valor_financiado))
+            : Math.max(0, round2(final + num(form.tarifa) - (MODS_ENTRADA_PARCELA.includes(modSel) ? num(form.entrada_valor) : 0))))
+        : null,
       entrada_forma: temEntradaValorSel ? (form.pagamento_entrada || null) : null,
       saldo_valor: null,
       saldo_forma: null,
@@ -1583,6 +1630,9 @@ export default function Vendas() {
                                   ['Forma de pagamento', v.num_parcelas >= 2 ? `${v.forma_pagamento || '—'} (${v.num_parcelas}×)` : (v.forma_pagamento || '—')],
                                   ...(MODS_PRESTACAO.includes(v.pagamento_modalidade)
                                     ? [['Boleto emitido em', v.boleto_emitido_em ? fDateBR(v.boleto_emitido_em) : '']]
+                                    : []),
+                                  ...(v.valor_financiado != null && ehMultiCreditoMod(v.pagamento_modalidade)
+                                    ? [['Valor financiado', fBRL(v.valor_financiado)]]
                                     : []),
                                   ...(Number(v.entrada_valor) > 0
                                     ? [['Entrada', `${fBRL(v.entrada_valor)}${(v.entrada_forma || v.pagamento_entrada) ? ` (${v.entrada_forma || v.pagamento_entrada})` : ''}`]]

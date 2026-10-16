@@ -126,9 +126,6 @@ function somarFormas(vendas) {
   })
   return r
 }
-function calcFormas(vHoje, vMes) {
-  return { formasMes: somarFormas(vMes), formasHoje: somarFormas(vHoje) }
-}
 
 /* ── Gráfico de barras (SVG inline) ── */
 function BarChart({ dados, shimmer }) {
@@ -245,43 +242,121 @@ function LembreteShimmer() {
   )
 }
 
-/* ── Bloco: vendas do mês por forma de pagamento ── */
-function FormasPagamento({ stats, loading }) {
-  const m = stats.formasMes || {}, h = stats.formasHoje || {}
-  const totalMes = (m.dinheiro || 0) + (m.pix || 0) + (m.cartao || 0) + (m.mc || 0) + (m.cred || 0) + (m.outros || 0)
-  const pct = v => totalMes > 0 ? ` · ${Math.round((v / totalMes) * 100)}% do mês` : ''
-  const hojeTxt = v => v > 0 ? `Hoje: ${fBRL(v)}` : 'Hoje: —'
+/* ── Período de vendas (mês navegável ou datas livres) ── */
+const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+function isoLocal(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+function limitesMes(ano, mes0) { return { ini: isoLocal(new Date(ano, mes0, 1)), fim: isoLocal(new Date(ano, mes0 + 1, 0)) } }
+function mesCompleto(ini, fim) {
+  if (!ini || !fim) return null
+  const [y, m] = ini.split('-').map(Number)
+  const l = limitesMes(y, m - 1)
+  return l.ini === ini && l.fim === fim ? { ano: y, mes0: m - 1 } : null
+}
+
+/* ── Bloco: vendas no período por forma de pagamento ── */
+function BlocoPeriodo({ ini, fim, setPeriodo, vendas, loading, filiais, mostrarFiliais }) {
+  const mc = mesCompleto(ini, fim)
+  const hoje = new Date()
+  const ehMesAtual = mc && mc.ano === hoje.getFullYear() && mc.mes0 === hoje.getMonth()
+  function irMes(delta) {
+    const base = mc || { ano: Number(ini.slice(0, 4)), mes0: Number(ini.slice(5, 7)) - 1 }
+    const d = new Date(base.ano, base.mes0 + delta, 1)
+    const l = limitesMes(d.getFullYear(), d.getMonth())
+    setPeriodo(l.ini, l.fim)
+  }
+  function mesAtual() { const l = limitesMes(hoje.getFullYear(), hoje.getMonth()); setPeriodo(l.ini, l.fim) }
+
+  const m = somarFormas(vendas)
+  const total = (vendas || []).reduce((acc, v) => acc + (Number(v.valor_final) || 0), 0)
+  const qtd = (vendas || []).length
   const din = (m.dinheiro || 0) + (m.pix || 0)
+  const pct = v => total > 0 ? `${Math.round((v / total) * 100)}% do período` : '—'
+  const titulo = mc ? `${MESES_PT[mc.mes0]} de ${mc.ano}` : `${fDateBR(ini)} a ${fDateBR(fim)}`
+
+  const porFilial = mostrarFiliais
+    ? filiais.map(f => {
+        const vs = (vendas || []).filter(v => v.filial_id === f.id)
+        return { nome: f.nome, qtd: vs.length, total: vs.reduce((acc, v) => acc + (Number(v.valor_final) || 0), 0) }
+      })
+    : []
+
+  const btnNav = {
+    background: C.surfaceContainerLowest, border: `1.5px solid ${C.borderSubtle}`, borderRadius: '0.5rem',
+    width: '34px', height: '34px', cursor: 'pointer', color: C.onSurfaceVariant,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem',
+  }
+  const inputData = { padding: '0.4rem 0.55rem', border: `1.5px solid ${C.borderSubtle}`, borderRadius: '0.5rem', fontFamily: F.body, fontSize: '0.82rem', color: C.onSurface, background: C.surfaceContainerLowest }
+
   return (
-    <div style={{ marginBottom: '1.25rem' }}>
-      <div style={{ fontSize: '0.75rem', fontWeight: '700', color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body, margin: '0 0 0.6rem' }}>
-        Vendas do mês por forma de pagamento
+    <div style={{ ...dsCard, marginBottom: '1.5rem' }}>
+      {/* Controles do período */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button type="button" onClick={() => irMes(-1)} style={btnNav} aria-label="Mês anterior" title="Mês anterior">‹</button>
+          <div style={{ minWidth: '170px', textAlign: 'center' }}>
+            <div style={{ fontSize: '0.68rem', fontWeight: '700', color: C.onSurfaceVariant, textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: F.body }}>Vendas no período</div>
+            <div style={{ fontWeight: '800', fontFamily: F.headline, color: C.onSurface, fontSize: '0.98rem' }}>{titulo}</div>
+          </div>
+          <button type="button" onClick={() => irMes(1)} style={{ ...btnNav, opacity: ehMesAtual ? 0.4 : 1, cursor: ehMesAtual ? 'default' : 'pointer' }}
+            disabled={!!ehMesAtual} aria-label="Próximo mês" title="Próximo mês">›</button>
+          {!ehMesAtual && (
+            <button type="button" onClick={mesAtual}
+              style={{ background: 'none', border: 'none', color: C.primaryContainer, fontFamily: F.body, fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer' }}>
+              Mês atual
+            </button>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', fontFamily: F.body, fontSize: '0.78rem', color: C.onSurfaceVariant }}>
+          <span>De</span>
+          <input type="date" value={ini} max={fim || undefined} style={inputData}
+            onChange={e => e.target.value && setPeriodo(e.target.value, fim < e.target.value ? e.target.value : fim)} />
+          <span>até</span>
+          <input type="date" value={fim} min={ini || undefined} style={inputData}
+            onChange={e => e.target.value && setPeriodo(ini > e.target.value ? e.target.value : ini, e.target.value)} />
+        </div>
       </div>
+
+      {/* Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))', gap: '1rem' }}>
+        <StatCard icon="🧾" bg={C.surfaceContainerHigh} color={C.onSurface}
+          label="Total Vendido" value={fBRL(total)}
+          sub={`${qtd} venda${qtd !== 1 ? 's' : ''}${qtd > 0 ? ` · ticket médio ${fBRL(total / qtd)}` : ''}`}
+          shimmer={loading} />
         <StatCard icon="💵" bg={C.statusSuccessBg} color={C.statusSuccess}
           label="Dinheiro e Pix" value={fBRL(din)}
           sub={`Dinheiro ${fBRL(m.dinheiro)} · Pix ${fBRL(m.pix)}`}
-          alert={hojeTxt((h.dinheiro || 0) + (h.pix || 0)) + pct(din)} alertColor={C.onSurfaceVariant}
+          alert={pct(din)} alertColor={C.onSurfaceVariant}
           shimmer={loading} />
         <StatCard icon="💳" bg={C.statusInfoBg} color={C.statusInfo}
           label="Cartão" value={fBRL(m.cartao)}
           sub="Crédito e débito"
-          alert={hojeTxt(h.cartao || 0) + pct(m.cartao || 0)} alertColor={C.onSurfaceVariant}
+          alert={pct(m.cartao || 0)} alertColor={C.onSurfaceVariant}
           shimmer={loading} />
         <StatCard icon="🏦" bg={C.statusWarningBg} color={C.statusWarning}
           label="Crediário MultiCrédito" value={fBRL(m.mc)}
           sub="Boleto MultiCredito"
-          alert={hojeTxt(h.mc || 0) + pct(m.mc || 0)} alertColor={C.onSurfaceVariant}
+          alert={pct(m.mc || 0)} alertColor={C.onSurfaceVariant}
           shimmer={loading} />
         <StatCard icon="📒" bg={C.statusDangerBg} color={C.statusDanger}
           label="Crediário Próprio" value={fBRL(m.cred)}
           sub="Crediário e boleto da loja"
-          alert={hojeTxt(h.cred || 0) + pct(m.cred || 0)} alertColor={C.onSurfaceVariant}
+          alert={pct(m.cred || 0)} alertColor={C.onSurfaceVariant}
           shimmer={loading} />
       </div>
-      {(m.outros || 0) > 0 && (
-        <div style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body, marginTop: '0.4rem' }}>
+      {!loading && (m.outros || 0) > 0 && (
+        <div style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body, marginTop: '0.5rem' }}>
           Sem forma de pagamento identificada: {fBRL(m.outros)}
+        </div>
+      )}
+
+      {/* Total por filial (quando "Todas") */}
+      {!loading && porFilial.length > 1 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1.5rem', marginTop: '0.9rem', paddingTop: '0.75rem', borderTop: `1px solid ${C.borderSubtle}`, fontFamily: F.body, fontSize: '0.8rem' }}>
+          {porFilial.map(p => (
+            <span key={p.nome} style={{ color: C.onSurfaceVariant }}>
+              🏪 {p.nome}: <strong style={{ color: C.onSurface, fontFamily: F.mono }}>{fBRL(p.total)}</strong> ({p.qtd} venda{p.qtd !== 1 ? 's' : ''})
+            </span>
+          ))}
         </div>
       )}
     </div>
@@ -375,9 +450,6 @@ function FilialSection({ nome, stats, chartData, loading, navigate, mesTit, show
         />
       </div>
 
-      {/* Vendas do mês por forma de pagamento */}
-      <FormasPagamento stats={stats} loading={loading} />
-
       {/* Gráfico */}
       <div style={{ ...dsCard }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -420,6 +492,32 @@ export default function Dashboard() {
   /* vendedor ou admin filial específica */
   const [stats,        setStats]        = useState({})
   const [chartData,    setChartData]    = useState([])
+
+  // Período de vendas (bloco "Vendas no período")
+  const [perIni, setPerIni] = useState(() => { const d = new Date(); return limitesMes(d.getFullYear(), d.getMonth()).ini })
+  const [perFim, setPerFim] = useState(() => { const d = new Date(); return limitesMes(d.getFullYear(), d.getMonth()).fim })
+  const [vendasPeriodo, setVendasPeriodo] = useState([])
+  const [loadingPeriodo, setLoadingPeriodo] = useState(true)
+  function setPeriodo(ini, fim) { setPerIni(ini); setPerFim(fim) }
+
+  useEffect(() => {
+    if (!profile || !isAdmin || !perIni || !perFim) return
+    let ativo = true
+    setLoadingPeriodo(true)
+    todos(() => {
+      let q = supabase.from('vendas')
+        .select('valor_final, filial_id, pagamento_modalidade, pagamento_entrada, entrada_valor, forma_pagamento')
+        .gte('data_venda', perIni).lte('data_venda', perFim).eq('efetivada', true)
+      if (filtroFilial) q = q.eq('filial_id', filtroFilial)
+      return q
+    }).then(({ data, error }) => {
+      if (!ativo) return
+      if (error) logErro('Carregar vendas do período (dashboard)', error)
+      setVendasPeriodo(data || [])
+      setLoadingPeriodo(false)
+    })
+    return () => { ativo = false }
+  }, [profile, isAdmin, filtroFilial, perIni, perFim])
 
   const [despProximas, setDespProximas] = useState([])
   const [audiencias,   setAudiencias]   = useState([])
@@ -464,8 +562,8 @@ export default function Dashboard() {
       /* ── ADMIN filial específica ── */
       if (filtroFilial) {
         const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud, rLem] = await Promise.all([
-          todos(() => supabase.from('vendas').select('valor_final, pagamento_modalidade, pagamento_entrada, entrada_valor, forma_pagamento').eq('data_venda', hoje).eq('efetivada', true).eq('filial_id', filtroFilial)),
-          todos(() => supabase.from('vendas').select('data_venda, valor_final, pagamento_modalidade, pagamento_entrada, entrada_valor, forma_pagamento').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true).eq('filial_id', filtroFilial)),
+          todos(() => supabase.from('vendas').select('valor_final').eq('data_venda', hoje).eq('efetivada', true).eq('filial_id', filtroFilial)),
+          todos(() => supabase.from('vendas').select('data_venda, valor_final').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true).eq('filial_id', filtroFilial)),
           todos(() => supabase.from('despesas').select('valor').eq('pago', true).gte('data_pagamento', inicio).lte('data_pagamento', fim).eq('filial_id', filtroFilial)),
           todos(() => supabase.from('despesas').select('valor').eq('pago', false).lt('data_vencimento', hoje).eq('filial_id', filtroFilial)),
           supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
@@ -481,7 +579,6 @@ export default function Dashboard() {
         setStats({
           ...calcStats(vH, vM, bols, devs),
           ...calcInadimplencia(bols, manuais),
-          ...calcFormas(vH, vM),
           totDespPagas:   dA.reduce((s, d)   => s + (d.valor || 0), 0), qtdDespPagas:   dA.length,
           totDespAtrasado: dAtr.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dAtr.length,
           qtdDevsAberto: bs.size,
@@ -496,8 +593,8 @@ export default function Dashboard() {
 
       /* ── ADMIN: todas as filiais ── */
       const [rH, rM, rDA, rDAtr, rDPrx, rBol, rDevs, rAud, rLem] = await Promise.all([
-        todos(() => supabase.from('vendas').select('valor_final, filial_id, pagamento_modalidade, pagamento_entrada, entrada_valor, forma_pagamento').eq('data_venda', hoje).eq('efetivada', true)),
-        todos(() => supabase.from('vendas').select('data_venda, valor_final, filial_id, pagamento_modalidade, pagamento_entrada, entrada_valor, forma_pagamento').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true)),
+        todos(() => supabase.from('vendas').select('valor_final, filial_id').eq('data_venda', hoje).eq('efetivada', true)),
+        todos(() => supabase.from('vendas').select('data_venda, valor_final, filial_id').gte('data_venda', inicio).lte('data_venda', fim).eq('efetivada', true)),
         todos(() => supabase.from('despesas').select('valor, filial_id').eq('pago', true).gte('data_pagamento', inicio).lte('data_pagamento', fim)),
         todos(() => supabase.from('despesas').select('valor, filial_id').eq('pago', false).lt('data_vencimento', hoje)),
         supabase.from('despesas').select('descricao, data_vencimento, valor').eq('pago', false).gte('data_vencimento', hoje).lte('data_vencimento', em7).order('data_vencimento').limit(8),
@@ -524,7 +621,6 @@ export default function Dashboard() {
           stats: {
             ...calcStats(vH, vM, bL, dL),
             ...calcInadimplencia(bL, manuais),
-            ...calcFormas(vH, vM),
             totDespPagas:   dFL.reduce((s, d)  => s + (d.valor || 0), 0), qtdDespPagas:   dFL.length,
             totDespAtrasado: dFLa.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dFLa.length,
           },
@@ -538,7 +634,6 @@ export default function Dashboard() {
       setStatsTotal({
         ...calcStats(vHAll, vMAll, bolAll, devsAll),
         ...calcInadimplencia(bolAll, manuais),
-        ...calcFormas(vHAll, vMAll),
         totDespPagas:   dA.reduce((s, d)   => s + (d.valor || 0), 0), qtdDespPagas:   dA.length,
         totDespAtrasado: dAtr.reduce((s, d) => s + (d.valor || 0), 0), qtdDespAtrasado: dAtr.length,
         qtdDevsAberto: bsAll.size,
@@ -731,6 +826,13 @@ export default function Dashboard() {
             </div>
 
           </div>
+
+          {/* ── Vendas no período (mês navegável / datas) ── */}
+          <BlocoPeriodo
+            ini={perIni} fim={perFim} setPeriodo={setPeriodo}
+            vendas={vendasPeriodo} loading={loadingPeriodo}
+            filiais={filiais} mostrarFiliais={!filtroFilial}
+          />
 
           {modoTodasFiliais ? (
             /* ── Modo: todas as filiais ── */
