@@ -1576,6 +1576,20 @@ export default function Vendas() {
                             padding: '0.2rem 0.55rem', fontSize: '0.78rem', fontFamily: F.body, fontWeight: '600',
                           }}>{v.forma_pagamento || '—'}</span>
                         )}
+                        {/* Boleto no banco (vendas com boleto/crediário) */}
+                        {MODS_PRESTACAO.includes(v.pagamento_modalidade) && !naoEfetivada && (
+                          <div style={{ marginTop: '0.3rem' }}>
+                            {v.boleto_emitido_em ? (
+                              <span title="Boleto encontrado no arquivo do banco" style={{ background: C.statusSuccessBg, color: C.statusSuccess, borderRadius: '0.375rem', padding: '0.15rem 0.45rem', fontSize: '0.72rem', fontWeight: '600', whiteSpace: 'nowrap', display: 'inline-block' }}>
+                                ✓ Boleto emitido em {fDateBR(v.boleto_emitido_em)}
+                              </span>
+                            ) : (
+                              <span title="Boleto ainda não encontrado no arquivo do banco" style={{ background: C.statusWarningBg, color: C.statusWarning, borderRadius: '0.375rem', padding: '0.15rem 0.45rem', fontSize: '0.72rem', fontWeight: '600', whiteSpace: 'nowrap', display: 'inline-block' }}>
+                                ⏳ Sem boleto
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: '0.65rem 0.75rem' }}>
                         {podeAlterar(v) ? (
