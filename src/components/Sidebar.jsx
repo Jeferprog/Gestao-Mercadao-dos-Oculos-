@@ -9,6 +9,13 @@ const NAV_ITEMS = [
     icon: 'dashboard',
   },
   {
+    to: '/dashboard/graficos',
+    label: 'Gráficos',
+    icon: 'bar_chart',
+    adminOnly: true,
+    sub: true,
+  },
+  {
     to: '/vendas',
     label: 'Vendas',
     icon: 'receipt_long',
@@ -175,23 +182,24 @@ export default function Sidebar({ isMobile = false, isOpen = false, onClose = ()
 
       {/* Navegação */}
       <nav style={{ flex: 1, padding: '0.25rem 0.625rem', overflowY: 'auto' }}>
-        {navItems.map(({ to, label, icon }) => (
+        {navItems.map(({ to, label, icon, sub }) => (
           <NavLink
             key={to}
             to={to}
+            end={to === '/dashboard'}
             onClick={isMobile ? onClose : undefined}
             style={({ isActive }) => ({
               display:     'flex',
               alignItems:  'center',
               gap:         '0.625rem',
-              padding:     '0.55rem 0.75rem',
+              padding:     sub ? '0.4rem 0.75rem 0.4rem 2.1rem' : '0.55rem 0.75rem',
               borderRadius:'0.375rem',
               marginBottom:'0.125rem',
               color:       isActive ? C.onSecondaryContainer : C.onSurfaceVariant,
               background:  isActive ? C.secondaryContainer   : 'transparent',
               textDecoration: 'none',
               fontWeight:  isActive ? '600' : '400',
-              fontSize:    '0.875rem',
+              fontSize:    sub ? '0.82rem' : '0.875rem',
               fontFamily:  F.body,
               transition:  'all 0.14s',
             })}
@@ -209,7 +217,7 @@ export default function Sidebar({ isMobile = false, isOpen = false, onClose = ()
                 <span
                   className="material-symbols-outlined"
                   style={{
-                    fontSize: '20px',
+                    fontSize: sub ? '17px' : '20px',
                     color: isActive ? C.onSecondaryContainer : C.onSurfaceVariant,
                     fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0",
                     flexShrink: 0,
