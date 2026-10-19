@@ -20,6 +20,8 @@ const CSS_TABELA_ROLAGEM = `
   .tabela-rolagem tfoot td { position: sticky; bottom: 0; z-index: 2; background-color: inherit; }
 `
 
+// Para busca: minúsculas, sem acento.
+function semAcentoBusca(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim() }
 function normalizarNome(nome) {
   return String(nome || '').trim().toUpperCase().replace(/\s+/g, ' ')
 }
@@ -481,6 +483,7 @@ export default function Cobrancas() {
   const [filtroBolFilial,    setFiltroBolFilial]    = useState('')
   const [filtroBolVencInicio,setFiltroBolVencInicio]= useState('')
   const [filtroBolVencFim,   setFiltroBolVencFim]   = useState('')
+  const [filtroBolNome,      setFiltroBolNome]      = useState('')  // busca pelo nome do devedor
   const [filtroBolRapido,    setFiltroBolRapido]    = useState('')  // '', aberto, vencido, a_vencer, quitado
 
   const [docs,         setDocs]         = useState([])
@@ -1019,6 +1022,10 @@ export default function Cobrancas() {
   const contagemRapida = todosBoletos.reduce((acc, b) => { const c = classeBoleto(b); acc[c] = (acc[c] || 0) + 1; return acc }, {})
   contagemRapida.aberto = (contagemRapida.vencido || 0) + (contagemRapida.a_vencer || 0)
   const boletosFiltrados = todosBoletos.filter(b => {
+    if (filtroBolNome) {
+      const termo = semAcentoBusca(filtroBolNome)
+      if (!semAcentoBusca(b.nome_pagador).includes(termo)) return false
+    }
     if (filtroBolRapido) {
       const c = classeBoleto(b)
       if (filtroBolRapido === 'aberto' ? c === 'quitado' : c !== filtroBolRapido) return false
@@ -2258,6 +2265,11 @@ export default function Cobrancas() {
               })}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.625rem', alignItems: 'center' }}>
+              <input
+                type="search" value={filtroBolNome} onChange={e => setFiltroBolNome(e.target.value)}
+                placeholder="🔍 Buscar devedor pelo nome"
+                style={{ ...inputCss, minWidth: '220px', flex: '1 1 220px' }}
+              />
               <select
                 value={filtroBolSitAtual} onChange={e => setFiltroBolSitAtual(e.target.value)}
                 style={{ ...inputCss, minWidth: '160px' }}
@@ -2290,7 +2302,7 @@ export default function Cobrancas() {
                 style={{ ...inputCss, width: '140px' }} title="Vencimento até"
               />
               <button
-                onClick={() => { setFiltroBolRapido(''); setFiltroBolSitAtual(''); setFiltroBolSitBanco(''); setFiltroBolFilial(''); setFiltroBolVencInicio(''); setFiltroBolVencFim('') }}
+                onClick={() => { setFiltroBolNome(''); setFiltroBolRapido(''); setFiltroBolSitAtual(''); setFiltroBolSitBanco(''); setFiltroBolFilial(''); setFiltroBolVencInicio(''); setFiltroBolVencFim('') }}
                 style={{ padding: '0.45rem 0.9rem', borderRadius: '0.5rem', border: `1px solid ${C.borderSubtle}`, background: C.surfaceContainerHigh, color: C.onSurfaceVariant, cursor: 'pointer', fontSize: '0.82rem', fontFamily: F.body }}
               >Limpar filtros</button>
               <button
