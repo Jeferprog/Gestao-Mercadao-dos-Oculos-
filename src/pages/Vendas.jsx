@@ -571,11 +571,18 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
               onFocus={e => e.target.select()}
               onChange={e => mudarParcelasCartao(e.target.value)}
               onBlur={() => { if (form.num_parcelas === '' || parseInt(form.num_parcelas) < 1) mudarParcelasCartao('1') }} />
-            {final > 0 && (parseInt(form.num_parcelas) || 1) >= 2 && (
-              <span style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body }}>
-                {parseInt(form.num_parcelas)}× de {fBRL(final / (parseInt(form.num_parcelas) || 1))} no cartão
-              </span>
-            )}
+            {(() => {
+              // Entrada + Cartão: o cartão parcela só o que sobra depois da entrada.
+              const entradaCartao = temEntradaValor ? Math.min(Math.max(num(form.entrada_valor), 0), final) : 0
+              const noCartao = Math.max(0, round2(final - entradaCartao))
+              const nCart = parseInt(form.num_parcelas) || 1
+              return noCartao > 0 && nCart >= 2 && (
+                <span style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body }}>
+                  {nCart}× de {fBRL(noCartao / nCart)} no cartão
+                  {entradaCartao > 0 && ` (restante ${fBRL(noCartao)}, após a entrada de ${fBRL(entradaCartao)})`}
+                </span>
+              )
+            })()}
           </div>
         )}
       </div>
