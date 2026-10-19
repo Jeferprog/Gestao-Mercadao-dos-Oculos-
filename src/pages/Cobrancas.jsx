@@ -470,7 +470,7 @@ export default function Cobrancas() {
   const [loadingHistorico,     setLoadingHistorico]     = useState(false)
 
   const [filtros, setFiltros] = useState({
-    busca: '', status: '', somenteNovos: false,
+    busca: '', status: '', somenteNovos: false, incluirSemVencidos: false,
     pequenasCausas: '', // '' = todos | 'com' | 'sem'
     audiencia: '',      // '' = todos | 'com' | 'sem'
   })
@@ -545,8 +545,12 @@ export default function Cobrancas() {
   /* ── filtros ── */
   const listaFiltrada = devedores.filter(dev => {
     // Só clientes com boleto VENCIDO (em aberto e vencimento antes de hoje).
-    if (vencidos(dev).length === 0) return false
-    if (filtros.busca && !dev.nome_pagador.toLowerCase().includes(filtros.busca.toLowerCase())) return false
+    // Exceções: ao BUSCAR pelo nome, ou com "Incluir clientes sem vencidos"
+    // marcado, aparecem também os quitados / só a vencer (para consultar o
+    // histórico: observações, lembretes e documentos).
+    const mostrarTodos = !!filtros.busca || filtros.incluirSemVencidos
+    if (!mostrarTodos && vencidos(dev).length === 0) return false
+    if (filtros.busca && !semAcentoBusca(dev.nome_pagador).includes(semAcentoBusca(filtros.busca))) return false
     if (filtros.status && dev.status_cobranca !== filtros.status) return false
     if (filtros.somenteNovos && dev.status_cobranca !== 'Novo') return false
     if (filtros.pequenasCausas === 'com' && !dev.pequenas_causas) return false
@@ -1065,6 +1069,7 @@ export default function Cobrancas() {
   function descreverFiltros() {
     const p = []
     if (filtros.busca) p.push(`Busca: "${filtros.busca}"`)
+    if (filtros.incluirSemVencidos) p.push('Inclui clientes sem vencidos')
     if (filtros.status) p.push(`Status: ${filtros.status}`)
     if (filtros.somenteNovos) p.push('Somente novos')
     if (filtros.pequenasCausas === 'com') p.push('Com pequenas causas')
@@ -2021,8 +2026,14 @@ export default function Cobrancas() {
                 <option value="com">Com audiência</option>
                 <option value="sem">Sem audiência</option>
               </select>
-              {(filtros.busca || filtros.status || filtros.somenteNovos || filtros.pequenasCausas || filtros.audiencia || temFiltrosVenc) && (
-                <button onClick={() => { setFiltros({ busca: '', status: '', somenteNovos: false, pequenasCausas: '', audiencia: '' }); setFiltroVencInicio(''); setFiltroVencFim(''); setFiltroSitBoleto('') }}
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: C.onSurfaceVariant, fontFamily: F.body, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                title="Mostra também clientes quitados ou só com boletos a vencer (para ver observações, lembretes e documentos antigos)">
+                <input type="checkbox" checked={!!filtros.incluirSemVencidos}
+                  onChange={e => setFiltros(f => ({ ...f, incluirSemVencidos: e.target.checked }))} />
+                Incluir clientes sem vencidos
+              </label>
+              {(filtros.busca || filtros.status || filtros.somenteNovos || filtros.incluirSemVencidos || filtros.pequenasCausas || filtros.audiencia || temFiltrosVenc) && (
+                <button onClick={() => { setFiltros({ busca: '', status: '', somenteNovos: false, incluirSemVencidos: false, pequenasCausas: '', audiencia: '' }); setFiltroVencInicio(''); setFiltroVencFim(''); setFiltroSitBoleto('') }}
                   style={{ fontSize: '0.8rem', color: C.statusDanger, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600', padding: '0.3rem 0.5rem', fontFamily: F.body }}>
                   ✕ Limpar
                 </button>
@@ -2112,6 +2123,11 @@ export default function Cobrancas() {
                                 <div style={{ fontWeight: '700', color: C.onSurface, fontSize: '0.875rem', fontFamily: F.body }}>{dev.nome_pagador}</div>
                                 {dev.status_cobranca === 'Novo' && (
                                   <span style={{ fontSize: '0.68rem', fontWeight: '800', background: C.primaryContainer, color: C.onPrimary, padding: '1px 6px', borderRadius: '9999px', letterSpacing: '0.5px', fontFamily: F.body }}>NOVO</span>
+                                )}
+                                {vencidos(dev).length === 0 && (
+                                  abertos(dev).length === 0
+                                    ? <span style={{ fontSize: '0.68rem', fontWeight: '700', background: C.statusSuccessBg, color: C.statusSuccess, padding: '1px 6px', borderRadius: '9999px', marginRight: '4px', fontFamily: F.body }}>✓ QUITADO</span>
+                                    : <span style={{ fontSize: '0.68rem', fontWeight: '700', background: C.statusInfoBg, color: C.statusInfo, padding: '1px 6px', borderRadius: '9999px', marginRight: '4px', fontFamily: F.body }}>A VENCER</span>
                                 )}
                                 {dev.filial_id && filialMap[dev.filial_id] && (
                                   <span style={{ fontSize: '0.68rem', fontWeight: '600', background: C.surfaceContainerLow, color: C.onSurfaceVariant, padding: '1px 6px', borderRadius: '9999px', marginLeft: '4px', fontFamily: F.body }}>
