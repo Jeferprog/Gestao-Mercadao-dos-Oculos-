@@ -47,6 +47,11 @@ const NAV_ITEMS = [
     icon: 'person_search',
   },
   {
+    to: '/agenda',
+    label: 'Agenda',
+    icon: 'event',
+  },
+  {
     to: '/configuracoes',
     label: 'Configurações',
     icon: 'settings',
