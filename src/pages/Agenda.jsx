@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { logErro } from '../lib/erros'
-import { C, F, card, inputCss, btnPrimary, btnGhost, pill } from '../lib/ds'
+import { C, F, card, inputCss, btnPrimary, btnGhost, btnSecondary, pill } from '../lib/ds'
 import { TIPOS_AGENDA, hojeISO, textoPeriodo, situacaoAgenda } from '../lib/agenda'
+import ProgramacaoSemana from '../components/ProgramacaoSemana'
 
 const SITUACAO = {
   andamento:  { rotulo: 'Em andamento', tipo: 'success' },
@@ -18,6 +19,7 @@ export default function Agenda() {
   const [itens, setItens] = useState([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
+  const [semanaAberta, setSemanaAberta] = useState(false)
 
   const carregar = useCallback(async () => {
     const { data, error } = await supabase.from('agenda').select('*').order('data_inicio', { ascending: false }).limit(1000)
@@ -29,9 +31,16 @@ export default function Agenda() {
 
   return (
     <div className="pg">
-      <h1 style={{ fontSize: '1.4rem', fontWeight: '800', fontFamily: F.headline, color: C.onSurface, margin: '0 0 0.25rem', letterSpacing: '-0.3px' }}>
-        Agenda
-      </h1>
+      {semanaAberta && <ProgramacaoSemana onFechar={() => setSemanaAberta(false)} />}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.25rem' }}>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: '800', fontFamily: F.headline, color: C.onSurface, margin: 0, letterSpacing: '-0.3px' }}>
+          Agenda
+        </h1>
+        <button type="button" onClick={() => setSemanaAberta(true)} style={btnSecondary}>
+          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>calendar_view_week</span>
+          Programação da semana
+        </button>
+      </div>
       <p style={{ color: C.onSurfaceVariant, fontFamily: F.body, margin: '0 0 1.25rem', fontSize: '0.85rem' }}>
         Cadastre as ações e promoções da loja. No período informado, elas aparecem em destaque no início do Dashboard.
       </p>
