@@ -1025,6 +1025,11 @@ export default function Vendas() {
           }
         }
       }
+      // Refaz a conferência "Boleto emitido" (o pagador pode ter mudado).
+      if (geraPrest) {
+        const { error: eConf } = await supabase.rpc('atualizar_boletos_emitidos_vendas')
+        if (eConf) logErro('Conferir boleto emitido da venda', eConf)
+      }
       setShowForm(false)
       carregarVendas()
       carregarDias()
