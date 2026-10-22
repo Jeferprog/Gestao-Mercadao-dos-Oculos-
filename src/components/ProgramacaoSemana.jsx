@@ -58,9 +58,9 @@ export default function ProgramacaoSemana({ onFechar }) {
   const promocoes = itens.filter(i => i.tipo === 'promocao')
   const acoesDoDia = dia => acoes.filter(a => a.data_inicio <= dia && a.data_fim >= dia)
 
-  // Segunda a sexta sempre; sábado e domingo só se houver ação.
+  // Segunda a sábado sempre; domingo só se houver ação.
   const dias = Array.from({ length: 7 }, (_, k) => somarDias(segunda, k))
-    .filter((dia, k) => k < 5 || acoesDoDia(dia).length > 0)
+    .filter((dia, k) => k < 6 || acoesDoDia(dia).length > 0)
 
   function salvouObs(o) { setObs(prev => ({ ...prev, [`${o.agenda_id}|${o.dia}`]: o })) }
   function excluiuObs(chave) { setObs(prev => { const n = { ...prev }; delete n[chave]; return n }) }
