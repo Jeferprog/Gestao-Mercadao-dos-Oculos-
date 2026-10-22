@@ -658,7 +658,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      <ProgramacaoSemana />
+      <ProgramacaoSemana filialId={isAdmin ? filtroFilial : ''} />
 
       {/* ════════ ADMIN VIEW ════════ */}
       {isAdmin && (

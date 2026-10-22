@@ -17,8 +17,26 @@ function segundaDaSemana(iso) { const d = paraData(iso); return somarDias(iso, -
 
 // Grade da semana: ações de cada dia (com observação de como foi) e,
 // em cima, as promoções ativas na semana. Sem onFechar, fica embutida na página.
-export default function ProgramacaoSemana({ onFechar }) {
+function EtiquetaLoja({ nome, cor }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.2rem', fontFamily: F.body, fontSize: '0.7rem', fontWeight: '700', color: cor || C.onSurfaceVariant, marginTop: '0.25rem' }}>
+      <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>storefront</span>
+      {nome}
+    </span>
+  )
+}
+
+export default function ProgramacaoSemana({ onFechar, filialId = '' }) {
   const navigate = useNavigate()
+  const [filiais, setFiliais] = useState([])
+  useEffect(() => {
+    supabase.from('filiais').select('id, nome').order('nome').then(({ data, error }) => {
+      if (error) logErro('Programação da semana: lojas', error)
+      setFiliais(data || [])
+    })
+  }, [])
+  // Só mostra a loja quando há mais de uma.
+  const nomeLoja = id => filiais.length < 2 ? null : (id ? filiais.find(f => f.id === id)?.nome || 'Loja removida' : 'Todas as lojas')
   const hoje = hojeISO()
   const [segunda, setSegunda] = useState(() => segundaDaSemana(hoje))
   const domingo = somarDias(segunda, 6)
@@ -29,7 +47,7 @@ export default function ProgramacaoSemana({ onFechar }) {
 
   const carregar = useCallback(async () => {
     setCarregando(true)
-    const { data, error } = await supabase.from('agenda').select('id, tipo, data_inicio, data_fim, texto')
+    const { data, error } = await supabase.from('agenda').select('id, tipo, data_inicio, data_fim, titulo, texto, filial_id')
       .lte('data_inicio', domingo).gte('data_fim', segunda).order('data_inicio')
     if (error) { logErro('Programação da semana', error); setErro(error.message); setCarregando(false); return }
     const lista = data || []
@@ -54,13 +72,14 @@ export default function ProgramacaoSemana({ onFechar }) {
     return () => window.removeEventListener('keydown', esc)
   }, [onFechar])
 
-  const acoes = itens.filter(i => i.tipo === 'acao')
-  const promocoes = itens.filter(i => i.tipo === 'promocao')
+  const daLoja = itens.filter(i => !filialId || !i.filial_id || i.filial_id === filialId)
+  const acoes = daLoja.filter(i => i.tipo === 'acao')
+  const promocoes = daLoja.filter(i => i.tipo === 'promocao')
   const acoesDoDia = dia => acoes.filter(a => a.data_inicio <= dia && a.data_fim >= dia)
 
-  // Segunda a sexta sempre; sábado e domingo só se houver ação.
+  // Segunda a sábado sempre; domingo só se houver ação.
   const dias = Array.from({ length: 7 }, (_, k) => somarDias(segunda, k))
-    .filter((dia, k) => k < 5 || acoesDoDia(dia).length > 0)
+    .filter((dia, k) => k < 6 || acoesDoDia(dia).length > 0)
 
   function salvouObs(o) { setObs(prev => ({ ...prev, [`${o.agenda_id}|${o.dia}`]: o })) }
   function excluiuObs(chave) { setObs(prev => { const n = { ...prev }; delete n[chave]; return n }) }
@@ -123,8 +142,14 @@ export default function ProgramacaoSemana({ onFechar }) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 260px), 1fr))', gap: '0.5rem' }}>
                 {promocoes.map(p => (
                   <div key={p.id} style={{ background: C.surfaceContainerLowest, borderRadius: '0.4rem', padding: '0.55rem 0.75rem' }}>
-                    <div style={{ fontFamily: F.body, fontSize: '0.88rem', fontWeight: '600', color: C.onSurface, whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{p.texto}</div>
-                    <div style={{ fontFamily: F.body, fontSize: '0.72rem', color: C.onSurfaceVariant, marginTop: '0.2rem', fontVariantNumeric: 'tabular-nums' }}>{textoPeriodo(p)}</div>
+                    {p.titulo && (
+                      <div style={{ fontFamily: F.headline, fontSize: '1rem', fontWeight: '800', color: metaP.cor, lineHeight: 1.3, marginBottom: '0.15rem' }}>{p.titulo}</div>
+                    )}
+                    <div style={{ fontFamily: F.body, fontSize: p.titulo ? '0.84rem' : '0.88rem', fontWeight: p.titulo ? '400' : '600', color: C.onSurface, whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{p.texto}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.2rem 0.75rem' }}>
+                      <span style={{ fontFamily: F.body, fontSize: '0.72rem', color: C.onSurfaceVariant, marginTop: '0.25rem', fontVariantNumeric: 'tabular-nums' }}>{textoPeriodo(p)}</span>
+                      {nomeLoja(p.filial_id) && <EtiquetaLoja nome={nomeLoja(p.filial_id)} cor={metaP.cor} />}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -155,7 +180,7 @@ export default function ProgramacaoSemana({ onFechar }) {
                     ) : lista.length === 0 ? (
                       <span style={{ fontFamily: F.body, fontSize: '0.8rem', color: C.onSurfaceVariant }}>Nenhuma ação programada.</span>
                     ) : lista.map(a => (
-                      <CartaoAcao key={a.id} acao={a} dia={dia} hoje={hoje}
+                      <CartaoAcao key={a.id} acao={a} dia={dia} hoje={hoje} loja={nomeLoja(a.filial_id)}
                         obs={obs[`${a.id}|${dia}`]} onSalvou={salvouObs} onExcluiu={() => excluiuObs(`${a.id}|${dia}`)} />
                     ))}
                   </div>
@@ -183,7 +208,7 @@ export default function ProgramacaoSemana({ onFechar }) {
   )
 }
 
-function CartaoAcao({ acao, dia, hoje, obs, onSalvou, onExcluiu }) {
+function CartaoAcao({ acao, dia, hoje, loja, obs, onSalvou, onExcluiu }) {
   const { profile, isAdmin } = useAuth()
   const [editando, setEditando] = useState(false)
   const [texto, setTexto] = useState('')
@@ -221,6 +246,7 @@ function CartaoAcao({ acao, dia, hoje, obs, onSalvou, onExcluiu }) {
       {acao.data_inicio !== acao.data_fim && (
         <div style={{ fontFamily: F.body, fontSize: '0.7rem', color: C.onSurfaceVariant, marginTop: '0.15rem', fontVariantNumeric: 'tabular-nums' }}>{textoPeriodo(acao)}</div>
       )}
+      {loja && <div><EtiquetaLoja nome={loja} cor={TIPOS_AGENDA.acao.cor} /></div>}
 
       <div style={{ marginTop: '0.45rem', paddingTop: '0.45rem', borderTop: `1px dashed ${C.borderSubtle}` }}>
         {editando ? (

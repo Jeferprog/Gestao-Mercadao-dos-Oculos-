@@ -20,6 +20,14 @@ export default function Agenda() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
   const [semanaAberta, setSemanaAberta] = useState(false)
+  const [filiais, setFiliais] = useState([])
+
+  useEffect(() => {
+    supabase.from('filiais').select('id, nome').order('nome').then(({ data, error }) => {
+      if (error) logErro('Agenda: lojas', error)
+      setFiliais(data || [])
+    })
+  }, [])
 
   const carregar = useCallback(async () => {
     const { data, error } = await supabase.from('agenda').select('*').order('data_inicio', { ascending: false }).limit(1000)
@@ -53,7 +61,7 @@ export default function Agenda() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: '1rem', alignItems: 'start' }}>
         {Object.keys(TIPOS_AGENDA).map(tipo => (
-          <BlocoAgenda key={tipo} tipo={tipo} carregando={carregando}
+          <BlocoAgenda key={tipo} tipo={tipo} carregando={carregando} filiais={filiais}
             itens={itens.filter(i => i.tipo === tipo)} recarregar={carregar} />
         ))}
       </div>
@@ -61,10 +69,12 @@ export default function Agenda() {
   )
 }
 
-function BlocoAgenda({ tipo, itens, carregando, recarregar }) {
+function BlocoAgenda({ tipo, itens, carregando, recarregar, filiais }) {
   const { profile, isAdmin } = useAuth()
   const meta = TIPOS_AGENDA[tipo]
-  const vazio = { id: null, data_inicio: hojeISO(), data_fim: hojeISO(), texto: '' }
+  const ehPromo = tipo === 'promocao'
+  const nomeLoja = id => (id ? filiais.find(f => f.id === id)?.nome || 'Loja removida' : 'Todas as lojas')
+  const vazio = { id: null, data_inicio: hojeISO(), data_fim: hojeISO(), titulo: '', texto: '', filial_id: profile?.filial_id || '' }
   const [form, setForm] = useState(vazio)
   const [salvando, setSalvando] = useState(false)
   const [msg, setMsg] = useState(null)  // { tipo: 'ok' | 'erro', texto }
@@ -87,13 +97,18 @@ function BlocoAgenda({ tipo, itens, carregando, recarregar }) {
   async function salvar(e) {
     e.preventDefault()
     const texto = form.texto.trim()
-    if (!texto) return setMsg({ tipo: 'erro', texto: `Escreva qual é a ${meta.singular}.` })
+    const titulo = (form.titulo || '').trim()
+    if (ehPromo && !titulo) return setMsg({ tipo: 'erro', texto: 'Escreva o título (slogan) da promoção.' })
+    if (!texto) return setMsg({ tipo: 'erro', texto: ehPromo ? 'Escreva a descrição da promoção.' : 'Escreva qual é a ação.' })
     if (!form.data_inicio || !form.data_fim) return setMsg({ tipo: 'erro', texto: 'Informe as datas de início e fim.' })
     if (form.data_fim < form.data_inicio) return setMsg({ tipo: 'erro', texto: 'A data final não pode ser antes da data inicial.' })
 
     setSalvando(true)
     setMsg(null)
-    const dados = { data_inicio: form.data_inicio, data_fim: form.data_fim, texto: texto.slice(0, 2000) }
+    const dados = {
+      data_inicio: form.data_inicio, data_fim: form.data_fim, texto: texto.slice(0, 2000),
+      filial_id: form.filial_id || null, titulo: ehPromo ? titulo.slice(0, 200) : null,
+    }
     const { error } = form.id
       ? await supabase.from('agenda').update({ ...dados, updated_at: new Date().toISOString() }).eq('id', form.id)
       : await supabase.from('agenda').insert({ ...dados, tipo, autor_nome: profile?.nome || null })
@@ -108,7 +123,7 @@ function BlocoAgenda({ tipo, itens, carregando, recarregar }) {
   }
 
   async function excluir(item) {
-    if (!window.confirm(`Excluir esta ${meta.singular}?\n\n"${item.texto}"`)) return
+    if (!window.confirm(`Excluir esta ${meta.singular}?\n\n"${item.titulo || item.texto}"`)) return
     const { error } = await supabase.from('agenda').delete().eq('id', item.id)
     if (error) {
       logErro('Excluir agenda', error)
@@ -120,7 +135,7 @@ function BlocoAgenda({ tipo, itens, carregando, recarregar }) {
   }
 
   function editar(item) {
-    setForm({ id: item.id, data_inicio: item.data_inicio, data_fim: item.data_fim, texto: item.texto })
+    setForm({ id: item.id, data_inicio: item.data_inicio, data_fim: item.data_fim, titulo: item.titulo || '', texto: item.texto, filial_id: item.filial_id || '' })
     setMsg(null)
   }
 
@@ -150,10 +165,24 @@ function BlocoAgenda({ tipo, itens, carregando, recarregar }) {
           </label>
         </div>
         <label>
-          <span style={rotuloCss}>Qual é a {meta.singular}?</span>
+          <span style={rotuloCss}>Loja</span>
+          <select value={form.filial_id} onChange={e => setForm(f => ({ ...f, filial_id: e.target.value }))} style={inputCss}>
+            <option value="">Todas as lojas</option>
+            {filiais.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+          </select>
+        </label>
+        {ehPromo && (
+          <label>
+            <span style={rotuloCss}>Título (slogan da promoção)</span>
+            <input type="text" value={form.titulo} onChange={e => setForm(f => ({ ...f, titulo: e.target.value }))}
+              maxLength={200} placeholder="Ex.: Outubro de Ofertas" style={inputCss} />
+          </label>
+        )}
+        <label>
+          <span style={rotuloCss}>{ehPromo ? 'Descrição (detalhes da promoção)' : 'Qual é a ação?'}</span>
           <textarea value={form.texto} onChange={e => setForm(f => ({ ...f, texto: e.target.value }))}
             rows={3} maxLength={2000}
-            placeholder={tipo === 'acao' ? 'Ex.: Panfletagem no centro, das 9h às 12h' : 'Ex.: Armação + lentes com 20% de desconto'}
+            placeholder={ehPromo ? 'Ex.: Armação + lentes com 20% de desconto. Válido para pagamento à vista.' : 'Ex.: Panfletagem no centro, das 9h às 12h'}
             style={{ ...inputCss, resize: 'vertical', minHeight: '76px' }} />
         </label>
         {msg && (
@@ -205,6 +234,10 @@ function BlocoAgenda({ tipo, itens, carregando, recarregar }) {
                     <span style={{ fontFamily: F.body, fontSize: '0.8rem', fontWeight: '600', color: C.onSurface, fontVariantNumeric: 'tabular-nums' }}>
                       {textoPeriodo(item)}
                     </span>
+                    <span style={{ ...pill('default'), display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>storefront</span>
+                      {nomeLoja(item.filial_id)}
+                    </span>
                     {isAdmin && (
                       <span style={{ marginLeft: 'auto', display: 'flex', gap: '0.25rem' }}>
                         <button type="button" onClick={() => editar(item)} title="Editar" aria-label="Editar"
@@ -218,6 +251,11 @@ function BlocoAgenda({ tipo, itens, carregando, recarregar }) {
                       </span>
                     )}
                   </div>
+                  {item.titulo && (
+                    <div style={{ fontFamily: F.headline, fontSize: '0.98rem', fontWeight: '800', color: meta.cor, lineHeight: 1.3, marginBottom: '0.2rem' }}>
+                      {item.titulo}
+                    </div>
+                  )}
                   <div style={{ fontFamily: F.body, fontSize: '0.875rem', color: C.onSurface, whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>
                     {item.texto}
                   </div>
