@@ -7,7 +7,7 @@ import { logErro } from '../lib/erros'
 import { buscarTodos } from '../lib/paginar'
 import { somarFormas } from '../lib/indicadores'
 import AbasDashboard from '../components/AbasDashboard'
-import AgendaHoje from '../components/AgendaHoje'
+import ProgramacaoSemana from '../components/ProgramacaoSemana'
 
 // Consulta paginada (sem o corte de 1.000 linhas do Supabase).
 const todos = montar => buscarTodos(montar, { ordenarPorId: true })
@@ -658,7 +658,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      <AgendaHoje />
+      <ProgramacaoSemana />
 
       {/* ════════ ADMIN VIEW ════════ */}
       {isAdmin && (

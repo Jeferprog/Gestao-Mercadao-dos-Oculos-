@@ -16,7 +16,7 @@ function somarDias(iso, n) { const d = paraData(iso); d.setDate(d.getDate() + n)
 function segundaDaSemana(iso) { const d = paraData(iso); return somarDias(iso, -((d.getDay() + 6) % 7)) }
 
 // Grade da semana: ações de cada dia (com observação de como foi) e,
-// em cima, as promoções ativas na semana.
+// em cima, as promoções ativas na semana. Sem onFechar, fica embutida na página.
 export default function ProgramacaoSemana({ onFechar }) {
   const navigate = useNavigate()
   const hoje = hojeISO()
@@ -48,6 +48,7 @@ export default function ProgramacaoSemana({ onFechar }) {
   useEffect(() => { carregar() }, [carregar])
 
   useEffect(() => {
+    if (!onFechar) return
     const esc = e => { if (e.key === 'Escape') onFechar() }
     window.addEventListener('keydown', esc)
     return () => window.removeEventListener('keydown', esc)
@@ -68,11 +69,11 @@ export default function ProgramacaoSemana({ onFechar }) {
   const metaP = TIPOS_AGENDA.promocao
   const metaA = TIPOS_AGENDA.acao
 
-  return (
-    <div onClick={onFechar}
-      style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(15,45,74,0.50)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '1.25rem', overflowY: 'auto' }}>
-      <div role="dialog" aria-label="Programação da semana" onClick={e => e.stopPropagation()}
-        style={{ ...card, width: '100%', maxWidth: '1200px', padding: 0, overflow: 'hidden', margin: 'auto' }}>
+  const painel = (
+      <div role={onFechar ? 'dialog' : 'region'} aria-label="Programação da semana" onClick={e => e.stopPropagation()}
+        style={onFechar
+          ? { ...card, width: '100%', maxWidth: '1200px', padding: 0, overflow: 'hidden', margin: 'auto' }
+          : { ...card, padding: 0, overflow: 'hidden', marginBottom: '1.25rem' }}>
 
         {/* Cabeçalho */}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem', padding: '1rem 1.25rem', borderBottom: `1px solid ${C.borderSubtle}`, background: C.surfaceContainerLow }}>
@@ -93,10 +94,12 @@ export default function ProgramacaoSemana({ onFechar }) {
             <button type="button" onClick={() => setSegunda(s => somarDias(s, 7))} style={navBtn} aria-label="Próxima semana" title="Próxima semana">
               <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>chevron_right</span>
             </button>
-            <button type="button" onClick={onFechar} aria-label="Fechar"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.onSurfaceVariant, marginLeft: '0.4rem', padding: '0.2rem', lineHeight: 1 }}>
-              <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>close</span>
-            </button>
+            {onFechar && (
+              <button type="button" onClick={onFechar} aria-label="Fechar"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.onSurfaceVariant, marginLeft: '0.4rem', padding: '0.2rem', lineHeight: 1 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>close</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -162,13 +165,20 @@ export default function ProgramacaoSemana({ onFechar }) {
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button type="button" onClick={() => { onFechar(); navigate('/agenda') }} style={btnSecondary}>
+            <button type="button" onClick={() => { onFechar?.(); navigate('/agenda') }} style={btnSecondary}>
               <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>edit_calendar</span>
               Cadastrar ações e promoções
             </button>
           </div>
         </div>
       </div>
+  )
+
+  if (!onFechar) return painel
+  return (
+    <div onClick={onFechar}
+      style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(15,45,74,0.50)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '1.25rem', overflowY: 'auto' }}>
+      {painel}
     </div>
   )
 }
