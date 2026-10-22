@@ -11,6 +11,7 @@ import Cobrancas from './pages/Cobrancas'
 import Clientes from './pages/Clientes'
 import CaptacaoClientes from './pages/CaptacaoClientes'
 import Configuracoes from './pages/Configuracoes'
+import Agenda from './pages/Agenda'
 
 function Loading() {
   return (
@@ -72,6 +73,7 @@ function AppRoutes() {
         <Route path="cobrancas" element={<Cobrancas />} />
         <Route path="clientes" element={<Clientes />} />
         <Route path="captacao" element={<CaptacaoClientes />} />
+        <Route path="agenda" element={<Agenda />} />
         <Route path="configuracoes" element={<AdminRoute><Configuracoes /></AdminRoute>} />
       </Route>
     </Routes>
