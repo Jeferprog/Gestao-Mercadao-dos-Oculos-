@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase, createSignupClient } from '../lib/supabase'
 import { logErro } from '../lib/erros'
 import { useAuth } from '../contexts/AuthContext'
+import { useSearchParams } from 'react-router-dom'
+import TabBackup from '../components/ConfigBackup'
 import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 
 /* card with marginBottom preserved from original */
@@ -1074,7 +1076,9 @@ function TabSugestoes({ showToast }) {
 /* ── Página principal ── */
 export default function Configuracoes() {
   const { isAdmin, loading } = useAuth()
-  const [activeTab, setActiveTab] = useState('sistema')
+  const [params] = useSearchParams()
+  const [activeTab, setActiveTab] = useState(() => params.get('aba') || 'sistema')
+  useEffect(() => { const a = params.get('aba'); if (a) setActiveTab(a) }, [params])
   const [toast, setToast] = useState('')
 
   function showToast(msg) {
@@ -1131,12 +1135,16 @@ export default function Configuracoes() {
         <button onClick={() => setActiveTab('sugestoes')} style={tabStyle(activeTab === 'sugestoes')}>
           💡 Sugestões
         </button>
+        <button onClick={() => setActiveTab('backup')} style={tabStyle(activeTab === 'backup')}>
+          🗄️ Backup
+        </button>
       </div>
 
       {activeTab === 'sistema'    && <TabSistema    showToast={showToast} />}
       {activeTab === 'filiais'    && <TabFiliais    showToast={showToast} />}
       {activeTab === 'vendedores' && <TabVendedores showToast={showToast} />}
       {activeTab === 'sugestoes'  && <TabSugestoes  showToast={showToast} />}
+      {activeTab === 'backup'     && <TabBackup     showToast={showToast} />}
 
       <Toast msg={toast} />
     </div>
