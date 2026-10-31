@@ -7,6 +7,7 @@ import {
 } from '../lib/backup'
 import { useBackup } from '../lib/useBackup'
 import BackupResultado from './BackupResultado'
+import RestaurarBackup from './RestaurarBackup'
 
 const cardMb = { ...card, marginBottom: '1.25rem' }
 const titulo = { margin: '0 0 0.3rem', fontSize: '1rem', fontWeight: '800', fontFamily: F.headline, color: C.onSurface }
@@ -160,6 +161,8 @@ export default function TabBackup({ showToast }) {
         )}
         <BackupResultado resultado={resultado} erro={erro} onFechar={limpar} />
       </section>
+
+      <RestaurarBackup />
     </div>
   )
 }
