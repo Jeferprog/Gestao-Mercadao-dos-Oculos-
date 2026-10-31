@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import Sidebar from './Sidebar'
 import BalaoSugestao from './BalaoSugestao'
+import BackupAviso from './BackupAviso'
 import { C, F } from '../lib/ds'
 
 function useIsMobile(breakpoint = 768) {
@@ -140,6 +141,7 @@ export default function Layout() {
         )}
 
         <main style={{ flex: 1, overflow: 'auto', background: C.surface }}>
+          <BackupAviso />
           <Outlet />
         </main>
       </div>
