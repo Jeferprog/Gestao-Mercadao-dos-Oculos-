@@ -311,10 +311,16 @@ function BlocoPeriodo({ ini, fim, setPeriodo, vendas, loading, filiais, mostrarF
           sub="Crediário e boleto da loja"
           alert={pct(m.cred || 0)} alertColor={C.onSurfaceVariant}
           shimmer={loading} />
+        {!loading && (m.cheque || 0) > 0 && (
+          <StatCard icon="🖋️" bg={C.surfaceContainerHigh} color={C.onSurface}
+            label="Cheque" value={fBRL(m.cheque)}
+            sub="À vista e parcelado"
+            alert={pct(m.cheque)} alertColor={C.onSurfaceVariant} />
+        )}
       </div>
       {!loading && (m.outros || 0) > 0 && (
         <div style={{ fontSize: '0.75rem', color: C.onSurfaceVariant, fontFamily: F.body, marginTop: '0.5rem' }}>
-          Sem forma de pagamento identificada: {fBRL(m.outros)}
+          Outras formas de pagamento: {fBRL(m.outros)}
         </div>
       )}
 

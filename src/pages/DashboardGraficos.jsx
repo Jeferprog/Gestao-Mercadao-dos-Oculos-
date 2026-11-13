@@ -114,7 +114,7 @@ export default function DashboardGraficos() {
   let outros = 0
   const catFormas = meses.map(m => {
     const f = somarFormas(porMes[m.chave])
-    outros += f.outros || 0
+    outros += (f.outros || 0) + (f.cheque || 0)
     return { ...m, valores: { din: (f.dinheiro || 0) + (f.pix || 0), cartao: f.cartao || 0, mc: f.mc || 0, cred: f.cred || 0 } }
   })
   const totFormas = FORMAS.map(fm => ({ ...fm, total: catFormas.reduce((s, c) => s + c.valores[fm.key], 0) }))
@@ -212,7 +212,7 @@ export default function DashboardGraficos() {
 
         <CartaoGrafico
           titulo="Vendas por forma de pagamento"
-          subtitulo={`Quanto de cada mês entrou em cada forma${outros > 0 ? ` · ${fBRL(outros)} sem forma identificada` : ''}`}
+          subtitulo={`Quanto de cada mês entrou em cada forma${outros > 0 ? ` · ${fBRL(outros)} em cheque e outras formas` : ''}`}
           legenda={FORMAS}
           carregando={carregando}
           tabela={{
