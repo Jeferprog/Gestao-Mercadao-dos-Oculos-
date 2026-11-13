@@ -345,7 +345,9 @@ function TabSistema({ showToast }) {
           Formas de Pagamento
         </h3>
         <p style={{ color: C.onSurfaceVariant, fontSize: '0.82rem', margin: '0 0 1.25rem', lineHeight: '1.5', fontFamily: F.body }}>
-          Gerencie as opções disponíveis no cadastro de vendas.
+          Usadas em Contas a Pagar e no cadastro de vendas. Na venda, as formas que o sistema já tem (Pix, Dinheiro,
+          Cartão, Boleto, Crediário, Cheque…) continuam com as opções próprias de entrada e parcelas; as demais aparecem
+          no grupo “Outras”. Depois de acrescentar, clique em Salvar.
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem', minHeight: '36px' }}>
           {formas.map(f => (

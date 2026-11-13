@@ -21,6 +21,7 @@ export function boletoQuitado(b) {
 export function grupoDaForma(txt) {
   const t = semAcentoUp(txt)
   if (!t) return null
+  if (t.includes('CHEQUE')) return 'cheque'
   if (t.includes('MULTICRED')) return 'mc'
   if (t.includes('CREDIARIO') || t.includes('BOLETO')) return 'cred'
   if (t.includes('CART')) return 'cartao'
@@ -32,9 +33,10 @@ const GRUPO_MODALIDADE = {
   cartao_credito: 'cartao', cartao_debito: 'cartao', cartao: 'cartao',
   boleto_multicredito: 'mc', boleto_multicredito_sem: 'mc',
   crediario: 'cred', crediario_entrada: 'cred', boleto: 'cred',
+  cheque_avista: 'cheque', cheque_parcelado: 'cheque',
 }
 export function somarFormas(vendas) {
-  const r = { dinheiro: 0, pix: 0, cartao: 0, mc: 0, cred: 0, outros: 0 }
+  const r = { dinheiro: 0, pix: 0, cartao: 0, mc: 0, cred: 0, cheque: 0, outros: 0 }
   const add = (g, v) => { r[g || 'outros'] += v }
   ;(vendas || []).forEach(v => {
     const total = Number(v.valor_final) || 0

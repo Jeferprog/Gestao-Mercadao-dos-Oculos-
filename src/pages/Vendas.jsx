@@ -4,6 +4,7 @@ import { buscarTodos } from '../lib/paginar'
 import { useAuth } from '../contexts/AuthContext'
 import { C, F, card as dsCard, inputCss, btnPrimary, btnSecondary } from '../lib/ds'
 import { logErro } from '../lib/erros'
+import { semAcentoUp, grupoDaForma } from '../lib/indicadores'
 
 /* ── helpers ── */
 function fBRL(v) {
@@ -174,10 +175,27 @@ const MODALIDADES_PAGAMENTO = [
   { v: 'crediario_entrada',   label: 'Entrada + Crediário',        temEntrada: true },
   { v: 'boleto_multicredito_sem', label: 'Boleto MultiCredito (sem entrada)', temEntrada: false },
   { v: 'crediario',           label: 'Crediário (sem entrada)',    temEntrada: false },
+  { v: 'cheque_avista',       label: 'Cheque à vista',             temEntrada: false },
+  { v: 'cheque_parcelado',    label: 'Cheque parcelado',           temEntrada: false },
 ]
+// Formas cadastradas em Configurações → Formas de Pagamento que não são
+// cobertas pelas modalidades acima (ex.: Transferência). Ficam salvas com
+// modalidade "outra" e o nome em forma_pagamento.
+const MOD_OUTRA = 'outra'
+function formasExtras(lista) {
+  const vistos = new Set()
+  return (lista || []).map(f => String(f).trim()).filter(f => {
+    const k = semAcentoUp(f)
+    if (!k || vistos.has(k) || grupoDaForma(f)) return false
+    vistos.add(k)
+    return true
+  })
+}
 // Modalidades com prestações (boletos/crediário). Só controle da venda —
 // a aba Cobrança recebe apenas o que vem do arquivo do banco.
 const MODS_PRESTACAO      = ['boleto', 'boleto_multicredito', 'boleto_multicredito_sem', 'crediario_entrada', 'crediario']
+// Modalidades que abrem o bloco de parcelas no formulário (prestações + cheques).
+const MODS_PARCELAS_FORM  = [...MODS_PRESTACAO, 'cheque_parcelado']
 // Modalidades cuja entrada entra como 1ª parcela (o restante vira prestações).
 const MODS_ENTRADA_PARCELA = ['boleto', 'boleto_multicredito', 'crediario_entrada']
 // Modalidades que têm campo "Valor da entrada".
@@ -203,6 +221,8 @@ function textoFormaPagamento(modalidade, entrada) {
     case 'boleto_multicredito_sem': return 'Boleto MultiCredito'
     case 'crediario_entrada': return entrada ? `${entrada} + Crediário` : 'Crediário'
     case 'crediario':         return 'Crediário'
+    case 'cheque_avista':     return 'Cheque à vista'
+    case 'cheque_parcelado':  return 'Cheque parcelado'
     default:                  return ''
   }
 }
@@ -238,9 +258,12 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   // Opções do tipo de venda: as configuradas + o valor atual (para não perder
   // o tipo de vendas antigas que não estejam mais na lista).
   const tiposOpcoes = Array.from(new Set([...(tiposVenda || []), form.tipo_venda].filter(Boolean)))
+  // Formas extras das Configurações (+ a da venda em edição, se saiu da lista).
+  const outrasFormas = formasExtras([...(formasPagamento || []),
+    ...(form.pagamento_modalidade === MOD_OUTRA && form.forma_pagamento ? [form.forma_pagamento] : [])])
   // Modalidades com prestações (boletos/crediário) — só controle da venda.
   const mod = form.pagamento_modalidade
-  const temPrestacoes = MODS_PRESTACAO.includes(mod)
+  const temPrestacoes = MODS_PARCELAS_FORM.includes(mod)
   // Modalidades que têm valor de entrada (à vista é pago integral; crediário puro não tem entrada).
   const temEntradaValor = MODS_ENTRADA_VALOR.includes(mod)
   // A entrada entra como 1ª parcela só em boleto/crediário (no cartão o restante vai no cartão).
@@ -268,7 +291,7 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
   // dividido em N prestações — com juros conforme a modalidade.
   function calcParcelas(f, finalV) {
     const m = f.pagamento_modalidade
-    const gera = MODS_PRESTACAO.includes(m)
+    const gera = MODS_PARCELAS_FORM.includes(m)
     if (!gera) return []
     const comEntrada = MODS_ENTRADA_PARCELA.includes(m) && num(f.entrada_valor) > 0
     const entrada = comEntrada ? num(f.entrada_valor) : 0
@@ -481,18 +504,28 @@ function FormVenda({ form, onChange, onFilialChange, onTipoVendaChange, vendedor
         <div>
           <Label>Forma de Pagamento</Label>
           <select style={inputCss} required
-            value={form.pagamento_modalidade}
+            value={mod === MOD_OUTRA ? `${MOD_OUTRA}:${form.forma_pagamento}` : mod}
             onChange={e => {
-              const novaMod = e.target.value
-              const entrada = modalidadeTemEntrada(novaMod) ? (form.pagamento_entrada || '') : ''
-              const f = { ...form, pagamento_modalidade: novaMod, pagamento_entrada: entrada,
-                forma_pagamento: textoFormaPagamento(novaMod, entrada, form.num_parcelas) }
+              const valor = e.target.value
+              if (valor.startsWith(`${MOD_OUTRA}:`)) {
+                const nome = valor.slice(MOD_OUTRA.length + 1)
+                onChange({ ...form, pagamento_modalidade: MOD_OUTRA, pagamento_entrada: '', forma_pagamento: nome, parcelas: [] })
+                return
+              }
+              const entrada = modalidadeTemEntrada(valor) ? (form.pagamento_entrada || '') : ''
+              const f = { ...form, pagamento_modalidade: valor, pagamento_entrada: entrada,
+                forma_pagamento: textoFormaPagamento(valor, entrada, form.num_parcelas) }
               onChange({ ...f, parcelas: calcParcelas(f, baseParc) })
             }}>
             <option value="">Selecione...</option>
             {MODALIDADES_PAGAMENTO.map(m => (
               <option key={m.v} value={m.v}>{m.label}</option>
             ))}
+            {outrasFormas.length > 0 && (
+              <optgroup label="Outras (Configurações)">
+                {outrasFormas.map(f => <option key={f} value={`${MOD_OUTRA}:${f}`}>{f}</option>)}
+              </optgroup>
+            )}
           </select>
         </div>
 
@@ -928,7 +961,7 @@ export default function Vendas() {
     }
 
     const modSel = form.pagamento_modalidade
-    const geraPrest = MODS_PRESTACAO.includes(modSel)
+    const geraPrest = MODS_PARCELAS_FORM.includes(modSel)
     const temEntradaValorSel = MODS_ENTRADA_VALOR.includes(modSel)
     const temParcelasCartaoSel = MODS_CARTAO_PARCELAS.includes(modSel)
     let parcelasPayload = null
@@ -1026,7 +1059,7 @@ export default function Vendas() {
         }
       }
       // Refaz a conferência "Boleto emitido" (o pagador pode ter mudado).
-      if (geraPrest) {
+      if (MODS_PRESTACAO.includes(modSel)) {
         const { error: eConf } = await supabase.rpc('atualizar_boletos_emitidos_vendas')
         if (eConf) logErro('Conferir boleto emitido da venda', eConf)
       }
