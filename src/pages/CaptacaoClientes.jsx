@@ -23,9 +23,19 @@ const Label = ({ children }) => (
   }}>{children}</label>
 )
 
+// (00) 00000-0000 enquanto digita; aceita fixo (00) 0000-0000.
+function mascaraTelefone(v) {
+  const d = String(v || '').replace(/\D/g, '').slice(0, 11)
+  if (d.length <= 2) return d ? `(${d}` : ''
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
+}
+
 const FORM_INIT = {
   data_consulta: todayISO(),
   nome_cliente: '',
+  telefone: '',
   numero_os: '',
   vendedor_id: '',
   filial_id: '',
@@ -114,6 +124,7 @@ export default function CaptacaoClientes() {
     setForm({
       data_consulta: r.data_consulta,
       nome_cliente:  r.nome_cliente,
+      telefone:      r.telefone || '',
       numero_os:     r.numero_os || '',
       vendedor_id:   r.vendedor_id || profile?.id || '',
       filial_id:     r.filial_id || '',
@@ -131,6 +142,7 @@ export default function CaptacaoClientes() {
     const payload = {
       data_consulta: form.data_consulta,
       nome_cliente:  form.nome_cliente.trim(),
+      telefone:      form.telefone?.trim() || null,
       numero_os:     form.numero_os?.trim() || null,
       vendedor_id:   form.vendedor_id || null,
       filial_id:     form.filial_id || null,
@@ -224,6 +236,14 @@ export default function CaptacaoClientes() {
                 <input style={inputCss} required placeholder="Nome completo do cliente"
                   value={form.nome_cliente}
                   onChange={e => setForm(f => ({ ...f, nome_cliente: e.target.value }))} />
+              </div>
+
+              {/* Telefone */}
+              <div>
+                <Label>Telefone</Label>
+                <input style={inputCss} type="tel" inputMode="tel" placeholder="(00) 00000-0000"
+                  value={form.telefone}
+                  onChange={e => setForm(f => ({ ...f, telefone: mascaraTelefone(e.target.value) }))} />
               </div>
 
               {/* Número da Venda */}
@@ -325,7 +345,7 @@ export default function CaptacaoClientes() {
               <thead>
                 <tr style={{ background: C.tableHeader, borderBottom: `1.5px solid ${C.borderSubtle}` }}>
                   {[
-                    'Data da Consulta', 'Nome do Cliente', 'Nº Venda', 'Vendedor',
+                    'Data da Consulta', 'Nome do Cliente', 'Telefone', 'Nº Venda', 'Vendedor',
                     ...(filiais.length > 1 ? ['Filial'] : []),
                     'Ações',
                   ].map(h => (
@@ -347,6 +367,11 @@ export default function CaptacaoClientes() {
                     </td>
                     <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.body, color: C.onSurface, fontWeight: '600' }}>
                       {r.nome_cliente}
+                    </td>
+                    <td style={{ padding: '0.75rem 0.875rem', fontFamily: F.body, color: C.onSurfaceVariant, whiteSpace: 'nowrap' }}>
+                      {r.telefone
+                        ? <a href={`tel:${r.telefone.replace(/\D/g, '')}`} style={{ color: C.secondary, textDecoration: 'none' }}>{r.telefone}</a>
+                        : <span style={{ color: C.borderSubtle }}>—</span>}
                     </td>
                     <td style={{ padding: '0.75rem 0.875rem' }}>
                       {r.numero_os
@@ -384,11 +409,11 @@ export default function CaptacaoClientes() {
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: `2px solid ${C.borderSubtle}`, background: C.tableHeader }}>
-                  <td colSpan={2 + (filiais.length > 1 ? 1 : 0) + 2}
+                  <td colSpan={5 + (filiais.length > 1 ? 1 : 0)}
                     style={{ padding: '0.65rem 0.875rem', fontFamily: F.body, fontWeight: '700', color: C.onSurface, fontSize: '0.82rem' }}>
                     TOTAL — {registros.length} consulta{registros.length !== 1 ? 's' : ''}
                   </td>
-                  <td colSpan={2} />
+                  <td />
                 </tr>
               </tfoot>
             </table>
